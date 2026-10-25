@@ -11,10 +11,8 @@ import { clientForHost } from "../lib/host-clients";
 import { LOCAL_HOST, refKey } from "../lib/hosts";
 import { isLaunchableAgent } from "../lib/agent-select-options";
 import { WORKER_DEFAULT_REVIEWERS } from "../lib/reviewer-harnesses";
-import { captureOrchestratorReplacementFailure } from "../lib/orchestrator-replacement-telemetry";
 import { OrchestratorSpawnError, spawnOrchestrator } from "../lib/spawn-orchestrator";
 import { openRemoteOrchestrator } from "../lib/remote-orchestrator";
-import { captureRendererEvent } from "../lib/telemetry";
 import { type OrchestratorReplacementFailure, useUiStore } from "../stores/ui-store";
 import { newestActiveOrchestrator } from "../types/workspace";
 import { RequiredAgentField } from "./CreateProjectAgentSheet";
@@ -306,17 +304,14 @@ function SettingsBody({ project, projectId, hostId, hostConnected, onSaved, sect
 	const save = async (values: ProjectSettingsDraft) => {
 		try {
 			const result = await persist(values);
-			void captureRendererEvent("ao.renderer.settings_save_succeeded", { project_id: projectId });
 			void queryClient.invalidateQueries({ queryKey: projectQueryKey(projectId, hostId) });
 			void queryClient.invalidateQueries({ queryKey: hostId ? ["project-config", hostId, projectId] : ["project-config", projectId] });
 			void onSaved();
 			if (result.replacementFailure) {
 				if (!hostId) setOrchestratorReplacementError(projectId, result.replacementFailure);
-				if (result.spawnError) captureOrchestratorReplacementFailure(result.spawnError, hostId ? refKey({ host: hostId, id: projectId }) : projectId);
 			}
 			return { replacementError: result.replacementError };
 		} catch (error) {
-			void captureRendererEvent("ao.renderer.settings_save_failed", { project_id: projectId });
 			throw error;
 		}
 	};

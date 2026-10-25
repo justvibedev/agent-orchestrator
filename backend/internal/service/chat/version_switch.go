@@ -76,23 +76,6 @@ func (s *Service) noteVersionSwitch(id domain.SessionID, version string) {
 	s.versionSwitches[id] = version
 }
 
-// SetVersionSwitchObserver late-binds a callback told how each move of a
-// Chat session to a new release ended ("succeeded" or "failed").
-func (s *Service) SetVersionSwitchObserver(observer func(id domain.SessionID, version, result string)) {
-	s.versionSwitchMu.Lock()
-	defer s.versionSwitchMu.Unlock()
-	s.versionSwitchObserver = observer
-}
-
-func (s *Service) observeVersionSwitch(id domain.SessionID, version, result string) {
-	s.versionSwitchMu.Lock()
-	observer := s.versionSwitchObserver
-	s.versionSwitchMu.Unlock()
-	if observer != nil {
-		observer(id, version, result)
-	}
-}
-
 func (s *Service) takeVersionSwitch(id domain.SessionID) (string, bool) {
 	s.versionSwitchMu.Lock()
 	defer s.versionSwitchMu.Unlock()
@@ -110,7 +93,6 @@ func (s *Service) versionSwitchFailed(ctx context.Context, id domain.SessionID, 
 	if !ok {
 		return false
 	}
-	s.observeVersionSwitch(id, version, "failed")
 	s.log.Warn("version_switch_failed: chat session could not start on the new harness release; queued messages kept",
 		"session", id, "version", version, "err", wakeErr)
 	if store, ok := s.sessions.(versionSwitchStore); ok {

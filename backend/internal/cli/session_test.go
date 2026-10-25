@@ -18,8 +18,6 @@ type sessionRequestLog struct {
 	requests []string
 }
 
-const cliInvokedRequest = "POST /internal/telemetry/cli-invoked"
-
 func requestLogEntry(r *http.Request) string {
 	entry := r.Method + " " + r.URL.Path
 	if r.URL.RawQuery != "" {
@@ -30,9 +28,6 @@ func requestLogEntry(r *http.Request) string {
 
 func appendPrimaryRequest(dst *[]string, r *http.Request) {
 	entry := requestLogEntry(r)
-	if entry == cliInvokedRequest {
-		return
-	}
 	*dst = append(*dst, entry)
 }
 

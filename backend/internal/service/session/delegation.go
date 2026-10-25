@@ -88,7 +88,7 @@ func (s *Service) DelegateTask(ctx context.Context, in DelegateTaskInput) (Deleg
 	}
 
 	effort, effortOverride := optionalTuningValue(in.Effort)
-	worker, _, _, err := s.spawnWithTelemetry(ctx, ports.SpawnConfig{
+	worker, _, _, err := s.spawnSession(ctx, ports.SpawnConfig{
 		ClientRequestID:   in.ClientRequestID,
 		ClientRequestHash: in.ClientRequestHash,
 		ProjectID:         in.ProjectID,

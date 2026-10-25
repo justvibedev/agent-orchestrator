@@ -8,14 +8,12 @@ import {
 	trackOptimisticSessionKill,
 } from "./optimistic-session-kills";
 import { apiClient, apiErrorMessage } from "../lib/api-client";
-import { captureRendererEvent } from "../lib/telemetry";
 import { createRendererCloudCpClient } from "./useCloudCp";
 import { useTranslation } from "react-i18next";
 import { settingsQueryKey, type Settings } from "./useSettings";
 import type { CloudCpSession } from "../lib/cloud-cp";
 import { clientForHost } from "../lib/host-clients";
 import { LOCAL_HOST, refKey } from "../lib/hosts";
-import { recordDirectWorkerInteraction } from "../lib/session-management-telemetry";
 import { useUiStore } from "../stores/ui-store";
 
 type TerminateSessionOptions = {
@@ -119,7 +117,6 @@ export function useTerminateSession(options: TerminateSessionOptions = {}) {
 	return useMutation({
 		mutationKey: terminateSessionMutationKey,
 		mutationFn: async (session: TerminateSessionRequest) => {
-			recordDirectWorkerInteraction(session.id, "lifecycle", session.kind, session.hostId);
 
 			return terminateSession(queryClient, session);
 		},
@@ -157,7 +154,6 @@ export function useTerminateSession(options: TerminateSessionOptions = {}) {
 			return { workspace, cloud };
 		},
 		onSuccess: async (artifactsDeleted, session) => {
-			void captureRendererEvent("ao.renderer.session_kill_succeeded", { project_id: session.workspaceId });
 			// The archive stands either way. A failed delete, or a host whose daemon
 			// predates the option, leaves the files on disk, so say so.
 			if (session.deleteArtifacts && !artifactsDeleted) {
@@ -175,7 +171,6 @@ export function useTerminateSession(options: TerminateSessionOptions = {}) {
 			options.onSuccess?.(session);
 		},
 		onError: (_error, session, context) => {
-			void captureRendererEvent("ao.renderer.session_kill_failed", { project_id: session.workspaceId });
 			// Restore the pre-mutation snapshots so a failed kill un-archives the card
 			// rather than leaving it wrongly terminated.
 			clearOptimisticSessionKill(session.id, session.hostId);

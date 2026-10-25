@@ -25,7 +25,6 @@ import { ShellTopbar } from "../components/ShellTopbar";
 import { SessionTopbarProvider } from "../components/SessionTopbarPortal";
 import { OrchestratorReplacementDialog } from "../components/OrchestratorReplacementDialog";
 import { RestartToUpdateDialog } from "../components/RestartToUpdateDialog";
-import { TelemetryConsentRenewalDialog } from "../components/TelemetryConsentRenewalDialog";
 import { Sidebar } from "../components/Sidebar";
 import type { CreateProjectInput } from "../components/CreateProjectFlow";
 import { useRemoteHosts } from "../hooks/useRemoteHosts";
@@ -48,11 +47,8 @@ import { cachedCloudBillingMode } from "../lib/cloud-offering";
 import { resolveCssColorToHex } from "../lib/css-color";
 import { refreshDaemonStatus } from "../lib/daemon-status";
 import { usesPreviewWorkspaceData } from "../lib/preview-mode";
-import { addRendererExceptionStep, captureRendererEvent, captureRendererException } from "../lib/telemetry";
-import { captureProjectAddFailed } from "../lib/project-lifecycle-telemetry";
 import { ShellProvider } from "../lib/shell-context";
 import { restartProjectOrchestrator } from "../lib/restart-orchestrator";
-import { captureOrchestratorReplacementFailure } from "../lib/orchestrator-replacement-telemetry";
 import { applyDocumentTheme, applyDocumentThemeStyle } from "../lib/theme";
 import { applyWindowTranslucency } from "../lib/window-translucency";
 import { aoBridge } from "../lib/bridge";
@@ -69,7 +65,6 @@ import {
 import { sidebarIsVisible, sidebarOccupiesLayout, useUiStore } from "../stores/ui-store";
 import { CLOUD_PROJECT_KIND, hasConfiguredOrchestratorAgent, newestActiveOrchestrator, sessionIsActive, STANDALONE_WORKSPACE_ID, toProjectKind, type WorkspaceSession, type WorkspaceSummary } from "../types/workspace";
 import type { components } from "../../api/schema";
-import { useAgentInventoryTelemetry } from "../hooks/useAgentInventoryTelemetry";
 import { useSessionSwitchSnap } from "../hooks/useSessionSwitchSnap";
 import { remoteWorkspaceQueryKey } from "../hooks/useWorkspaceQuery";
 import { clientForHost } from "../lib/host-clients";
@@ -81,7 +76,6 @@ import { sessionUiKey } from "../lib/hosts";
 import { buildSidebarSessionOrder, sessionWantsAttention, stepSessionNav, type SidebarNavSession } from "../lib/sidebar-order";
 import { useSidebarOrderStore } from "../stores/sidebar-order-store";
 import { useAppShortcut } from "../hooks/useAppShortcut";
-import { recordManualWorkerOpen, recordSessionSurface } from "../lib/session-management-telemetry";
 
 const SHELL_LOADER_STALE_MS = 2_000;
 
@@ -148,7 +142,6 @@ function ShellOutlet({ startingChat }: { startingChat: ReactNode }) {
 }
 
 function captureSessionViewCrash(error: Error) {
-	void captureRendererException(error, { source: "react-error-boundary", operation: "session_view" });
 }
 
 /**
@@ -286,7 +279,6 @@ const ShellCenter = memo(function ShellCenter({
 // instead of Zustand. The daemon-status effect runs here exactly once.
 function ShellLayout() {
 	// Reports how many agents this install has available, once per launch.
-	useAgentInventoryTelemetry();
 	useSessionSwitchSnap();
 	const { t } = useTranslation();
 	const navigate = useNavigate();
@@ -490,11 +482,6 @@ function ShellLayout() {
 			.find((session) => session.id === routeParams.sessionId)
 		: undefined;
 	useEffect(() => {
-		recordSessionSurface(
-			scopedSession?.kind === "orchestrator" || scopedSession?.kind === "worker"
-				? { kind: scopedSession.kind, sessionId: sessionUiKey(scopedSession.id, routeParams.hostId) }
-				: null,
-		);
 	}, [routeParams.hostId, scopedSession?.id, scopedSession?.kind]);
 	// Warms the New Task composer's model-catalog cache while the user is just
 	// looking at the project, so the picker never shows a loading flash the
@@ -577,7 +564,6 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 	}, []);
 	const openNavSession = useCallback(
 		(entry: SidebarNavSession) => {
-			if (entry.session.kind === "worker") recordManualWorkerOpen(sessionUiKey(entry.sessionId, entry.hostId));
 			void navigate(sessionNavigateTarget(entry.projectId, entry.sessionId, entry.hostId));
 		},
 		[navigate],
@@ -647,10 +633,6 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 					: `Failed to spawn orchestrator (${spawnResponse.status})`;
 				throw new Error(message);
 			}
-			void captureRendererEvent("ao.renderer.orchestrator_spawn_succeeded", {
-				project_id: workspace.id,
-				source,
-			});
 			const sessionId = spawnData.session.id;
 			// Publish before navigating so Chat does not wait for a list refresh.
 			await queryClient.cancelQueries({ queryKey: workspaceQueryKey });
@@ -675,10 +657,6 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 		} catch (spawnError) {
 			window.clearTimeout(provisioningGuard);
 			setProjectProvisioning(workspace.id, false);
-			void captureRendererEvent("ao.renderer.orchestrator_spawn_failed", {
-				project_id: workspace.id,
-				source,
-			});
 			const message = spawnError instanceof Error ? spawnError.message : "Could not start orchestrator";
 			const startupMessage = `Project added, but orchestrator did not start: ${message}`;
 			setOrchestratorStartupError(workspace.id, startupMessage);
@@ -703,7 +681,6 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 				orchestratorAgent: input.orchestratorAgent as WorkspaceSummary["orchestratorAgent"],
 				sessions: [],
 			};
-			void captureRendererEvent(`ao.renderer.${source}_succeeded`, { project_id: workspace.id });
 			// A pre-create list request must not erase the newly registered project.
 			await queryClient.cancelQueries({ queryKey: workspaceQueryKey });
 			useSidebarOrderStore.getState().moveProjectToTop(workspace.id);
@@ -725,18 +702,8 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 			asWorkspace?: boolean;
 			clonePreparationId?: string;
 		}) => {
-			void addRendererExceptionStep("Project add requested", {
-				source: "project-add",
-				operation: "project_add",
-				surface: "project_board",
-			});
-			const reportFailure = (code: string | undefined) => captureProjectAddFailed(
-				(event, properties) => { void captureRendererEvent(event, properties); },
-				code,
-			);
 			const status = await refreshDaemonStatus();
 			if (status.state !== "ready" || !status.port) {
-				reportFailure("DAEMON_NOT_READY");
 				throw new Error(status.message || "AO daemon is not ready.");
 			}
 			const { data, error } = await apiClient.POST("/api/v1/projects", {
@@ -747,7 +714,6 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 					config: createProjectConfig(input),
 				},
 			}).catch((requestError: unknown) => {
-				reportFailure("REQUEST_FAILED");
 				throw requestError;
 			});
 			if (error) {
@@ -796,16 +762,9 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 						return;
 					}
 				}
-				reportFailure(failure.code);
-				void captureRendererException(failure, {
-					source: "project-add",
-					operation: "project_add",
-					surface: "project_board",
-				});
 				throw failure;
 			}
 			if (!data?.project) {
-				reportFailure("NO_PROJECT");
 				throw new Error("Project creation returned no project");
 			}
 			await completeProjectCreation(data.project, input, "project_add");
@@ -822,17 +781,10 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 			trackerIntake?: components["schemas"]["TrackerIntakeConfig"];
 			signal?: AbortSignal;
 		}) => {
-			void addRendererExceptionStep("Project clone requested", {
-				source: "project-clone",
-				operation: "project_clone",
-				surface: "project_board",
-			});
 			const reportFailure = (code: string | undefined) => {
-				void captureRendererEvent("ao.renderer.project_clone_failed", { error_code: code || "unknown" });
 			};
 			const status = await refreshDaemonStatus();
 			if (status.state !== "ready" || !status.port) {
-				reportFailure("DAEMON_NOT_READY");
 				throw new Error(status.message || "AO daemon is not ready.");
 			}
 			const { data, error } = await apiClient.POST("/api/v1/projects/clone", {
@@ -856,16 +808,9 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 				failure.code = apiErrorCode(error);
 				failure.details = apiErrorDetails(error);
 				failure.requestId = apiErrorRequestId(error);
-				reportFailure(failure.code);
-				void captureRendererException(failure, {
-					source: "project-clone",
-					operation: "project_clone",
-					surface: "project_board",
-				});
 				throw failure;
 			}
 			if (!data?.project) {
-				reportFailure("NO_PROJECT");
 				throw new Error("Project clone returned no project");
 			}
 			await completeProjectCreation(data.project, input, "project_clone");
@@ -946,12 +891,6 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 		async (projectId: string) => {
 			const isLastWorkspace =
               workspaces.length === 1 && workspaces[0]?.id === projectId;
-			void addRendererExceptionStep("Project removal requested", {
-				source: "project-remove",
-				operation: "project_remove",
-				surface: "project_board",
-				project_id: projectId,
-			});
 			// Cloud projects live in the control plane, not the local daemon: route
 			// their delete to the CP (which archives the project and all its
 			// sessions) instead of the local project endpoint.
@@ -963,12 +902,6 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 						code?: string;
 					};
 					failure.code = "cloud_not_ready";
-					void captureRendererException(failure, {
-						source: "project-remove",
-						operation: "project_remove",
-						surface: "project_board",
-						project_id: projectId,
-					});
 					throw failure;
 				}
 				try {
@@ -977,15 +910,8 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 					const failure = new Error(
 						error instanceof Error ? error.message : "Unable to delete cloud project",
 					) as Error & { code?: string };
-					void captureRendererException(failure, {
-						source: "project-remove",
-						operation: "project_remove",
-						surface: "project_board",
-						project_id: projectId,
-					});
 					throw failure;
 				}
-				void captureRendererEvent("ao.renderer.project_removed", { project_id: projectId });
 				// The archive is asynchronous (202); refresh the cloud queries so the
 				// merged board drops the project and its sessions on the next fetch.
 				await queryClient.invalidateQueries({ queryKey: cloudProjectsQueryKey });
@@ -1001,15 +927,8 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 			if (error) {
 				const failure = new Error(apiErrorMessage(error)) as Error & { code?: string };
 				failure.code = apiErrorCode(error);
-				void captureRendererException(failure, {
-					source: "project-remove",
-					operation: "project_remove",
-					surface: "project_board",
-					project_id: projectId,
-				});
 				throw failure;
 			}
-			void captureRendererEvent("ao.renderer.project_removed", { project_id: projectId });
 			updateWorkspaces((current) => current.filter((item) => item.id !== projectId));
 			if (isLastWorkspace) {
               void navigate({ to: "/" });
@@ -1064,7 +983,6 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 				mode,
 				approvalMode,
 				onError: (error) => {
-					captureOrchestratorReplacementFailure(error, projectId);
 				},
 			});
 		},
@@ -1416,7 +1334,6 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 				<GlobalNewTaskDialog />
 				<GlobalToast />
 				<RestartToUpdateDialog />
-				<TelemetryConsentRenewalDialog />
 				{quitConfirmDialog}
 				<KeyboardShortcutsDialog
 					open={isKeyboardShortcutsOpen}

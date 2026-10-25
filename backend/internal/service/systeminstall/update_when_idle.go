@@ -214,9 +214,7 @@ func (s *Service) runIdleBatch(ctx context.Context, coordinator IdleUpdateCoordi
 		s.updateLevels = make(map[Target]UpdateWhileRunning)
 	}
 	s.updateLevels[target] = UpdateWhileRunningIdle
-	waited := time.Since(*job.StartedAt)
 	s.mu.Unlock()
-	s.emit(EventHarnessIdleWait, map[string]any{"harness": string(target), "wait_ms": waited.Milliseconds(), "sessions": len(stopped)})
 	// The update finishes the job itself, succeeded or failed. Either way the
 	// sessions resume: on the new release, or on the old one it left in place.
 	s.runAgentOperation(ctx, plan, AgentOperationUpdate, job, baseline)
@@ -237,9 +235,7 @@ func (s *Service) resumeAfterIdleBatch(target Target, coordinator IdleUpdateCoor
 	defer cancel()
 	// The coordinator retries a session it could not start again; report the
 	// failure rather than letting it pass unseen.
-	if err := coordinator.ResumeHarnessSessions(ctx, stopped); err != nil {
-		s.emit(EventHarnessResumeFailed, map[string]any{"harness": string(target), "sessions": len(stopped), "error": err.Error()})
-	}
+	_ = coordinator.ResumeHarnessSessions(ctx, stopped)
 }
 
 func (s *Service) finishIdleUpdate(job *Job, run *idleUpdateRun, status Status, message string) {

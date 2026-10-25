@@ -44,7 +44,7 @@ func TestMobileLANRejectsReassignedAddressWithSamePassword(t *testing.T) {
 	})
 	// The address formerly belonged to h_A; h_B now answers there and happens
 	// to use the same connection password.
-	m := NewMobileLAN(inner, "h_B", 0, nil, nil)
+	m := NewMobileLAN(inner, "h_B", 0, nil)
 	m.SetPasswordHash(mobilebridge.HashPassword("same-secret"))
 	request := func(expectedHostID, password string) *httptest.ResponseRecorder {
 		req := loopbackRequest(http.MethodPost, "/api/v1/orchestrators/delegate", nil)
@@ -76,7 +76,7 @@ func TestLANManagerAuthGatesSharedHandler(t *testing.T) {
 	})
 	st := &authState{}
 	st.setHash(mobilebridge.HashPassword("secret12"))
-	m := NewLANManager(inner, st, 0, slog.Default(), nil) // port 0 → ephemeral
+	m := NewLANManager(inner, st, 0, slog.Default()) // port 0 → ephemeral
 	port, err := m.Start(0)
 	if err != nil {
 		t.Fatalf("start: %v", err)
@@ -107,7 +107,7 @@ func TestLANManagerServesHTTP2WithoutTLS(t *testing.T) {
 	})
 	st := &authState{}
 	st.setHash(mobilebridge.HashPassword("secret12"))
-	m := NewLANManager(inner, st, 0, slog.Default(), nil)
+	m := NewLANManager(inner, st, 0, slog.Default())
 	port, err := m.Start(0)
 	if err != nil {
 		t.Fatalf("start: %v", err)
@@ -140,7 +140,7 @@ func TestLANManagerServesHTTP2WithoutTLS(t *testing.T) {
 }
 
 func TestLANManagerTunnelOnlyBindsLoopback(t *testing.T) {
-	m := NewMobileLAN(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}), "h_test", 0, nil, nil)
+	m := NewMobileLAN(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}), "h_test", 0, nil)
 	m.SetPasswordHash(mobilebridge.HashPassword("secret12"))
 	if _, err := m.StartLoopback(0); err != nil {
 		t.Fatal(err)
@@ -161,7 +161,7 @@ func TestAccountTokenIssuanceReturnsThroughRealLANListener(t *testing.T) {
 	}
 	router := chi.NewRouter()
 	mountMobile(router, &controllers.MobileController{Bridge: bridge})
-	lan := NewMobileLAN(router, bridge.HostID, 0, nil, nil)
+	lan := NewMobileLAN(router, bridge.HostID, 0, nil)
 	bridge.LAN = lan
 	lan.SetPasswordHash(mobilebridge.HashPassword("secret12"))
 	port, err := lan.StartLoopback(0)
@@ -197,7 +197,7 @@ func TestLANManagerIdentityEndpoint(t *testing.T) {
 	})
 	st := &authState{}
 	st.setHash(mobilebridge.HashPassword("secret12"))
-	m := NewLANManager(inner, st, 0, slog.Default(), nil)
+	m := NewLANManager(inner, st, 0, slog.Default())
 	port, err := m.Start(0)
 	if err != nil {
 		t.Fatalf("start: %v", err)
@@ -241,7 +241,7 @@ func TestLANManagerBlocksLoopbackOnlyControlRoutes(t *testing.T) {
 	})
 	st := &authState{}
 	st.setHash(mobilebridge.HashPassword("secret12"))
-	m := NewLANManager(inner, st, 0, slog.Default(), nil)
+	m := NewLANManager(inner, st, 0, slog.Default())
 	port, err := m.Start(0)
 	if err != nil {
 		t.Fatalf("start: %v", err)
@@ -255,7 +255,7 @@ func TestLANManagerBlocksLoopbackOnlyControlRoutes(t *testing.T) {
 		"/api/v1/awake/low-power/revoke",
 		"/api/v1/awake/browser",
 		"/shutdown",
-		"/internal/telemetry/cli-invoked",
+		"/internal/example",
 		"/api/v1/mobile/status",
 		"/api/v1/mobile/keep-awake",
 		"/api/v1/mobile/devices",
@@ -412,7 +412,7 @@ func TestLANManagerBlocksLoopbackOnlyControlRoutes(t *testing.T) {
 }
 
 func TestLANManagerStartStopIdempotent(t *testing.T) {
-	m := NewLANManager(http.NotFoundHandler(), &authState{}, 0, slog.Default(), nil)
+	m := NewLANManager(http.NotFoundHandler(), &authState{}, 0, slog.Default())
 	p1, _ := m.Start(0)
 	p2, _ := m.Start(0) // idempotent — same port, no error
 	if p1 != p2 {
@@ -439,7 +439,7 @@ func TestLANManagerServesIdentityProbeWithoutAPassword(t *testing.T) {
 	})
 	st := &authState{}
 	st.setHash(mobilebridge.HashPassword("secret12"))
-	m := NewLANManager(inner, st, 0, slog.Default(), nil)
+	m := NewLANManager(inner, st, 0, slog.Default())
 	port, err := m.Start(0)
 	if err != nil {
 		t.Fatalf("start: %v", err)
@@ -520,7 +520,7 @@ func TestLANListenerServesCodexModelRoutesFromRealRouter(t *testing.T) {
 
 	st := &authState{}
 	st.setHash(mobilebridge.HashPassword("secret12"))
-	m := NewLANManager(router, st, 0, slog.Default(), nil)
+	m := NewLANManager(router, st, 0, slog.Default())
 	port, err := m.Start(0)
 	if err != nil {
 		t.Fatalf("start: %v", err)

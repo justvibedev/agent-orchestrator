@@ -9,7 +9,6 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/httpd/apierr"
-	"github.com/aoagents/agent-orchestrator/backend/internal/observe/ownership"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 )
 
@@ -20,20 +19,12 @@ import (
 type errCapture struct{ captured CapturedError }
 
 // CapturedError is request-local observability metadata recorded when an error
-// is rendered. Err remains available for structured logging; ReportingOwner
-// decides which layer owns the Sentry report.
+// is rendered. Err remains available for structured logging.
 type CapturedError struct {
-	Err            error
-	ReportingOwner ownership.Owner
-	Fields         map[string]any
+	Err error
 }
 
 type errCaptureKey struct{}
-
-var safeTelemetryFields = map[string]struct{}{
-	"browser_command":    {},
-	"runtime_link_state": {},
-}
 
 // WithErrorCapture returns a copy of the request whose context carries an
 // error-capture slot, plus a getter for the error recorded by WriteError while
@@ -48,7 +39,6 @@ func WithErrorCapture(r *http.Request) (*http.Request, func() CapturedError) {
 func captureError(r *http.Request, err error) {
 	if c, ok := r.Context().Value(errCaptureKey{}).(*errCapture); ok {
 		c.captured.Err = err
-		c.captured.ReportingOwner = ownership.OwnerOf(err)
 	}
 }
 
@@ -58,31 +48,13 @@ func CaptureError(r *http.Request, err error) {
 	captureError(r, err)
 }
 
-// SetTelemetryField records a bounded, privacy-safe field for the request's
-// structured telemetry. Callers must only pass values that are already safe to
-// export; request bodies, URLs, and page content must never be stored here.
-func SetTelemetryField(r *http.Request, key string, value any) {
-	c, ok := r.Context().Value(errCaptureKey{}).(*errCapture)
-	if !ok || c == nil {
-		return
-	}
-	if _, allowed := safeTelemetryFields[key]; !allowed {
-		return
-	}
-	if c.captured.Fields == nil {
-		c.captured.Fields = make(map[string]any)
-	}
-	c.captured.Fields[key] = value
-}
-
 // APIError is the locked wire shape for every non-2xx response.
 type APIError struct {
-	Error          string          `json:"error"`
-	Code           string          `json:"code"`
-	Message        string          `json:"message"`
-	RequestID      string          `json:"requestId,omitempty"`
-	Details        map[string]any  `json:"details,omitempty"`
-	ReportingOwner ownership.Owner `json:"reporting_owner,omitempty" enum:"http"`
+	Error     string         `json:"error"`
+	Code      string         `json:"code"`
+	Message   string         `json:"message"`
+	RequestID string         `json:"requestId,omitempty"`
+	Details   map[string]any `json:"details,omitempty"`
 }
 
 // WriteJSON serialises v as JSON with the given status.
@@ -94,17 +66,16 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 
 // WriteAPIError emits the locked envelope for any non-2xx response.
 func WriteAPIError(w http.ResponseWriter, r *http.Request, status int, kind, code, message string, details map[string]any) {
-	writeAPIError(w, r, status, kind, code, message, details, "")
+	writeAPIError(w, r, status, kind, code, message, details)
 }
 
-func writeAPIError(w http.ResponseWriter, r *http.Request, status int, kind, code, message string, details map[string]any, reportingOwner ownership.Owner) {
+func writeAPIError(w http.ResponseWriter, r *http.Request, status int, kind, code, message string, details map[string]any) {
 	WriteJSON(w, status, APIError{
-		Error:          kind,
-		Code:           code,
-		Message:        message,
-		RequestID:      middleware.GetReqID(r.Context()),
-		Details:        details,
-		ReportingOwner: reportingOwner,
+		Error:     kind,
+		Code:      code,
+		Message:   message,
+		RequestID: middleware.GetReqID(r.Context()),
+		Details:   details,
 	})
 }
 
@@ -114,11 +85,10 @@ func writeAPIError(w http.ResponseWriter, r *http.Request, status int, kind, cod
 // only place an apierr.Kind is translated into an HTTP status and wire word.
 func WriteError(w http.ResponseWriter, r *http.Request, err error) {
 	captureError(r, err)
-	reportingOwner := ownership.OwnerOf(err)
 	var e *apierr.Error
 	if errors.As(err, &e) {
 		status, kind := httpStatus(e.Kind)
-		writeAPIError(w, r, status, kind, e.Code, e.Message, e.Details, reportingOwner)
+		writeAPIError(w, r, status, kind, e.Code, e.Message, e.Details)
 		return
 	}
 	// A transient failure (the database was momentarily busy/locked, or a
@@ -127,7 +97,7 @@ func WriteError(w http.ResponseWriter, r *http.Request, err error) {
 	// INTERNAL_ERROR 500 and so clients can back off and retry.
 	if isTransient(err) {
 		writeAPIError(w, r, http.StatusServiceUnavailable, "unavailable", "SERVICE_UNAVAILABLE",
-			"The service is momentarily unavailable, please retry.", nil, reportingOwner)
+			"The service is momentarily unavailable, please retry.", nil)
 		return
 	}
 	// A project whose source repository has been deleted from disk turns any
@@ -139,10 +109,10 @@ func WriteError(w http.ResponseWriter, r *http.Request, err error) {
 	// errors.Is matches it through any wrapping.
 	if errors.Is(err, ports.ErrWorkspaceRepoUnavailable) {
 		writeAPIError(w, r, http.StatusNotFound, "not_found", "PROJECT_FOLDER_MISSING",
-			"Project repository is missing from disk", nil, reportingOwner)
+			"Project repository is missing from disk", nil)
 		return
 	}
-	writeAPIError(w, r, http.StatusInternalServerError, "internal", "INTERNAL_ERROR", "Internal server error", nil, reportingOwner)
+	writeAPIError(w, r, http.StatusInternalServerError, "internal", "INTERNAL_ERROR", "Internal server error", nil)
 }
 
 // SQLite primary result codes for a busy/locked database. Extended codes (e.g.

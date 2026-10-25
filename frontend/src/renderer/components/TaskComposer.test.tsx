@@ -78,7 +78,6 @@ vi.mock("../lib/host-clients", () => ({
 	subscribeConnectedHosts: () => () => undefined,
 }));
 
-vi.mock("../lib/telemetry", () => ({ captureRendererEvent: h.capture }));
 
 vi.mock("../hooks/useWorkspaceQuery", () => ({
 	useCloudProjectsQuery: () => ({ data: h.cloudProjects }),

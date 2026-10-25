@@ -14,7 +14,6 @@ import (
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/httpd/envelope"
 	"github.com/aoagents/agent-orchestrator/backend/internal/httpd/requestscope"
-	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 	"github.com/aoagents/agent-orchestrator/backend/internal/service/systeminstall"
 )
 
@@ -41,9 +40,9 @@ type LANManager struct {
 // NewLANManager wraps handler in the LAN control-block and authMiddleware
 // (backed by the shared state) and returns a manager that can start/stop the
 // network-facing listener. Most callers want NewMobileLAN, which owns the state.
-func NewLANManager(handler http.Handler, state *authState, defaultPort int, log *slog.Logger, sink ports.EventSink) *LANManager {
+func NewLANManager(handler http.Handler, state *authState, defaultPort int, log *slog.Logger) *LANManager {
 	lock := newLockout(time.Now)
-	auth := authMiddleware(state, lock, newMobileConnectReporter(sink, time.Now))
+	auth := authMiddleware(state, lock)
 	m := &LANManager{
 		handler:     lanControlBlock(auth(handler)),
 		defaultPort: defaultPort,
@@ -57,7 +56,7 @@ func NewLANManager(handler http.Handler, state *authState, defaultPort int, log 
 
 // lanControlBlockedPrefixes are the loopback-only daemon-control route
 // prefixes that must never be reachable through the LAN listener: /shutdown,
-// the telemetry routes under /internal/, and the Connect Mobile control
+// the control routes under /internal/, and the Connect Mobile control
 // surface under /api/v1/mobile, developer maintenance routes under /api/v1/dev,
 // host-mutating installer routes under /api/v1/system/install, and personal
 // Codex account-management routes under /api/v1/agents/codex/accounts and
@@ -135,8 +134,8 @@ func IsLANControlBlockedPathForTest(path string) bool { return isLANControlBlock
 // outside this package (the daemon) cannot construct an authState directly
 // since it is unexported; this gives them a LANManager that owns one, and the
 // daemon rotates the connection password exclusively via SetPasswordHash.
-func NewMobileLAN(handler http.Handler, hostID string, defaultPort int, log *slog.Logger, sink ports.EventSink) *LANManager {
-	return NewLANManager(expectedHostGuard(hostID)(handler), &authState{}, defaultPort, log, sink)
+func NewMobileLAN(handler http.Handler, hostID string, defaultPort int, log *slog.Logger) *LANManager {
+	return NewLANManager(expectedHostGuard(hostID)(handler), &authState{}, defaultPort, log)
 }
 
 // expectedHostGuard prevents a saved address from sending work to a different

@@ -23,7 +23,6 @@ vi.mock("./hosts", () => ({
 vi.mock("./account", () => ({ loadAccount: async () => null }));
 vi.mock("./accountHosts", () => ({ syncAccountHosts: vi.fn(), cancelAccountHostSync: vi.fn() }));
 vi.mock("./installId", () => ({ primeInstallId: vi.fn() }));
-vi.mock("./telemetry/runtime", () => ({ mobileTelemetry: () => null, trackFeature: vi.fn() }));
 vi.mock("./chat/conversationEvents", () => ({ useConversationEventTransport: () => {} }));
 vi.mock("./otherHosts", () => ({ useOtherHosts: () => ({ snapshots: {}, refreshHost: vi.fn() }) }));
 

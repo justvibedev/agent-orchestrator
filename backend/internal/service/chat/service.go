@@ -84,22 +84,20 @@ type Service struct {
 	versionRefresh func() (time.Duration, bool)
 	// versionSwitches holds the release each stopped-for-refresh session is
 	// moving to, until its wake succeeds or fails.
-	versionSwitchMu sync.Mutex
-	versionSwitches map[domain.SessionID]string
-	// versionSwitchObserver hears how each such move ended.
-	versionSwitchObserver func(id domain.SessionID, version, result string)
-	viewMu                sync.Mutex
-	viewLeases            map[domain.SessionID]map[string]time.Time
-	viewClosedAt          map[domain.SessionID]time.Time
-	wakeMu                sync.Mutex
-	waking                map[domain.SessionID]int
-	wakeRuns              map[domain.SessionID]*wakeRun
-	backgroundWakes       map[domain.SessionID]bool
-	autoResumeMu          sync.Mutex
-	autoResumeRetryAt     map[string]time.Time
-	autoResumeInFlight    map[string]bool
-	autoResumeScanning    bool
-	usageLimitAccounts    usageLimitAccountReader
+	versionSwitchMu    sync.Mutex
+	versionSwitches    map[domain.SessionID]string
+	viewMu             sync.Mutex
+	viewLeases         map[domain.SessionID]map[string]time.Time
+	viewClosedAt       map[domain.SessionID]time.Time
+	wakeMu             sync.Mutex
+	waking             map[domain.SessionID]int
+	wakeRuns           map[domain.SessionID]*wakeRun
+	backgroundWakes    map[domain.SessionID]bool
+	autoResumeMu       sync.Mutex
+	autoResumeRetryAt  map[string]time.Time
+	autoResumeInFlight map[string]bool
+	autoResumeScanning bool
+	usageLimitAccounts usageLimitAccountReader
 	// updateStops are sessions stopped so an update could replace their
 	// executable; the update starts them again, so their queue is kept.
 	updateStops map[domain.SessionID]bool

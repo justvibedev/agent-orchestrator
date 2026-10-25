@@ -20,7 +20,6 @@ vi.mock("../lib/bridge", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("../lib/bridge")>();
 	return { ...actual, aoBridge: { ...actual.aoBridge, remotes: { connect: remoteConnect, disconnect: vi.fn() } } };
 });
-vi.mock("../lib/telemetry", () => ({ captureRendererEvent: vi.fn() }));
 vi.mock("@tanstack/react-router", async (importOriginal) => ({
 	...await importOriginal<typeof import("@tanstack/react-router")>(),
 	useNavigate: () => vi.fn(),

@@ -8,8 +8,6 @@ import { useLocaleStore } from "../stores/locale-store";
 import { useSoundNotificationsStore } from "../stores/sound-notifications-store";
 import { useTerminalShellStore } from "../stores/terminal-shell-store";
 import { useUiStore } from "../stores/ui-store";
-import { useTelemetryPolicyStore } from "../stores/telemetry-policy-store";
-import { useAnalyticsOptOutStore } from "../stores/analytics-opt-out-store";
 import { TooltipProvider } from "./ui/tooltip";
 
 const { harnessSettingsSectionMock } = vi.hoisted(() => ({ harnessSettingsSectionMock: vi.fn() }));
@@ -49,11 +47,6 @@ const {
 	setKeybindings,
 	setKeybindingRecording,
 	setMacDifferentialUpdates,
-	getTelemetryPolicy,
-	setTelemetryEvents,
-	onTelemetryPolicy,
-	getAnalyticsOptOut,
-	setAnalyticsOptOut,
 	isMacPlatform,
 	isWindowsPlatform,
 } = vi.hoisted(() => ({
@@ -80,11 +73,6 @@ const {
 	setMacDifferentialUpdates: vi.fn().mockResolvedValue(undefined),
 	// install the per-test policy response. Preserve the bridge's Promise
 	// contract for that initial read as well.
-	getTelemetryPolicy: vi.fn().mockResolvedValue(undefined),
-	setTelemetryEvents: vi.fn(),
-	onTelemetryPolicy: vi.fn(),
-	getAnalyticsOptOut: vi.fn(),
-	setAnalyticsOptOut: vi.fn(),
 	isMacPlatform: vi.fn(() => false),
 	isWindowsPlatform: vi.fn(() => true),
 }));
@@ -134,7 +122,6 @@ vi.mock("../lib/bridge", () => ({
 			onStatus: updOnStatus,
 		},
 		featureBuilds: { list: featListBuilds, getActive: featGetActive },
-		telemetry: { getPolicy: getTelemetryPolicy, setEventsEnabled: setTelemetryEvents, onPolicy: onTelemetryPolicy, getBootstrap: vi.fn(), capture: vi.fn(), getAnalyticsOptOut, setAnalyticsOptOut },
 	},
 }));
 
@@ -178,11 +165,6 @@ beforeEach(async () => {
 		setKeybindings,
 		setKeybindingRecording,
 		setMacDifferentialUpdates,
-		getTelemetryPolicy,
-		setTelemetryEvents,
-		onTelemetryPolicy,
-		getAnalyticsOptOut,
-		setAnalyticsOptOut,
 		isMacPlatform,
 		isWindowsPlatform,
 	]) {
@@ -214,11 +196,6 @@ beforeEach(async () => {
 	setKeybindings.mockImplementation(async (overrides) => overrides);
 	setKeybindingRecording.mockResolvedValue(undefined);
 	setMacDifferentialUpdates.mockResolvedValue(undefined);
-	getTelemetryPolicy.mockResolvedValue({ eventsEnabled: false, consentGeneration: "generation-off", updatedAt: "2026-08-28T10:15:30.000Z", acknowledged: true, consentRenewalRequired: false, state: "applied", environmentVeto: false, durabilitySupported: true });
-	setTelemetryEvents.mockResolvedValue({ eventsEnabled: true, consentGeneration: "generation-on", updatedAt: "2026-08-28T10:15:31.000Z", acknowledged: true, consentRenewalRequired: false, state: "applied", environmentVeto: false, durabilitySupported: true });
-	onTelemetryPolicy.mockReturnValue(() => undefined);
-	getAnalyticsOptOut.mockResolvedValue(false);
-	setAnalyticsOptOut.mockImplementation(async (optedOut: boolean) => optedOut);
 	// Locale defaults to English so existing copy assertions stay green.
 	await appI18n.changeLanguage("en");
 	useLocaleStore.setState({ locale: "en", loaded: false, saving: false, saveError: false });
@@ -230,8 +207,6 @@ beforeEach(async () => {
 		saveError: false,
 	});
 	useUiStore.setState({ developerMode: false, remoteHosts: false, diagnostics: false, sideChats: false, windowTranslucency: false });
-	useTelemetryPolicyStore.setState({ view: { eventsEnabled: false, consentGeneration: "generation-off", updatedAt: "2026-08-28T10:15:30.000Z", acknowledged: true, consentRenewalRequired: false, state: "applied", environmentVeto: false, durabilitySupported: true }, loaded: true, saving: false, saveError: false });
-	useAnalyticsOptOutStore.setState({ optedOut: false, loaded: false, saving: false, loadError: false, saveError: false });
 	document.documentElement.lang = "en";
 });
 
@@ -396,58 +371,6 @@ describe("GlobalSettingsForm", () => {
 
 		await waitFor(() => expect(setUiSettings).toHaveBeenCalledWith({ soundNotificationsEnabled: false }));
 		expect(toggle).not.toBeChecked();
-	});
-
-	it("shows pending daemon cleanup without claiming opt-out completed", async () => {
-		setTelemetryEvents.mockResolvedValue({ eventsEnabled: false, consentGeneration: "generation-off-2", updatedAt: "2026-08-28T10:15:31.000Z", acknowledged: false, consentRenewalRequired: false, state: "cleanup_pending", environmentVeto: false, durabilitySupported: true, reason: "cleanup_failed" });
-		useTelemetryPolicyStore.setState({ view: { eventsEnabled: true, consentGeneration: "generation-on", updatedAt: "2026-08-28T10:15:30.000Z", acknowledged: true, consentRenewalRequired: false, state: "applied", environmentVeto: false, durabilitySupported: true }, loaded: true });
-		const user = userEvent.setup(); renderForm();
-		await user.click(await screen.findByRole("switch", { name: "Share error events" }));
-		expect(await screen.findByText("Telemetry is off locally. Daemon cleanup is still pending.")).toBeInTheDocument();
-	});
-
-	it("opts out of PostHog usage analytics from the Privacy section, independent of error events", async () => {
-		const user = userEvent.setup();
-		renderForm();
-		const toggle = await screen.findByRole("switch", { name: "Share usage analytics" });
-		await waitFor(() => expect(toggle).toBeEnabled());
-		expect(toggle).toBeChecked();
-		expect(screen.getByText(/your email is used only as a person property/)).toBeInTheDocument();
-
-		await user.click(toggle);
-
-		await waitFor(() => expect(setAnalyticsOptOut).toHaveBeenCalledWith(true));
-		await waitFor(() => expect(toggle).not.toBeChecked());
-		// The error-event policy is a separate control and was not touched.
-		expect(setTelemetryEvents).not.toHaveBeenCalled();
-	});
-
-	it("labels an analytics preference load failure as a load failure", async () => {
-		getAnalyticsOptOut.mockRejectedValueOnce(new Error("unavailable"));
-		renderForm();
-		expect(await screen.findByText("Could not load the analytics preference.")).toHaveAttribute("role", "alert");
-		expect(screen.queryByText("Could not save the analytics preference.")).not.toBeInTheDocument();
-	});
-
-	it("names the platform restriction instead of claiming cleanup keeps retrying", async () => {
-		useTelemetryPolicyStore.setState({ view: { eventsEnabled: false, consentGeneration: "generation-off", updatedAt: "2026-08-28T10:15:30.000Z", acknowledged: false, consentRenewalRequired: false, state: "cleanup_failed", environmentVeto: false, durabilitySupported: false, reason: "durability_unsupported" }, loaded: true });
-		renderForm();
-		expect(await screen.findByText("Enabling is unavailable on this platform because durable consent writes are not supported.")).toBeInTheDocument();
-		expect(screen.queryByText("Telemetry cleanup failed. Reporting remains disabled while cleanup retries.")).not.toBeInTheDocument();
-	});
-
-	it("does not promise retries for the fail-closed view when the controller is unavailable", async () => {
-		useTelemetryPolicyStore.setState({ view: { eventsEnabled: false, consentGeneration: "unavailable", updatedAt: new Date(0).toISOString(), acknowledged: false, consentRenewalRequired: false, state: "cleanup_failed", environmentVeto: true, durabilitySupported: false, reason: "invalid_authority" }, loaded: true });
-		renderForm();
-		expect(await screen.findByText("Enabling is unavailable on this platform because durable consent writes are not supported.")).toBeInTheDocument();
-		expect(screen.queryByText("Telemetry cleanup failed. Reporting remains disabled while cleanup retries.")).not.toBeInTheDocument();
-	});
-
-	it("names the release gate when a saved opt-in cannot be honoured", async () => {
-		useTelemetryPolicyStore.setState({ view: { eventsEnabled: true, consentGeneration: "generation-on", updatedAt: "2026-08-28T10:15:30.000Z", acknowledged: true, consentRenewalRequired: false, state: "applied", environmentVeto: false, durabilitySupported: true, reason: "release_blocked" }, loaded: true });
-		renderForm();
-		expect(await screen.findByText("Error reporting is disabled by this release's safety gate.")).toBeInTheDocument();
-		expect(screen.queryByText("Telemetry is off locally. Daemon cleanup is still pending.")).not.toBeInTheDocument();
 	});
 
 	it("selects Git Bash as the default Windows terminal", async () => {

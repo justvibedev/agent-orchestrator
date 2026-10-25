@@ -25,7 +25,7 @@ func TestLANTunnelAuthorizesTheUpgradeAndEveryRequestInside(t *testing.T) {
 	})
 	st := &authState{}
 	st.setHash(mobilebridge.HashPassword("secret12"))
-	m := NewLANManager(inner, st, 0, slog.Default(), nil)
+	m := NewLANManager(inner, st, 0, slog.Default())
 	port, err := m.Start(0)
 	if err != nil {
 		t.Fatalf("start: %v", err)
@@ -86,7 +86,7 @@ func TestLANTunnelAuthorizesTheUpgradeAndEveryRequestInside(t *testing.T) {
 func TestLANTunnelLocksOutTheTunnelsClient(t *testing.T) {
 	st := &authState{}
 	st.setHash(mobilebridge.HashPassword("secret12"))
-	m := NewLANManager(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}), st, 0, slog.Default(), nil)
+	m := NewLANManager(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}), st, 0, slog.Default())
 	port, err := m.StartLoopback(0)
 	if err != nil {
 		t.Fatalf("start: %v", err)
@@ -140,7 +140,7 @@ func TestLANTunnelLocksOutTheTunnelsClient(t *testing.T) {
 func TestLANTunnelClosesWhenThePasswordRotates(t *testing.T) {
 	st := &authState{}
 	st.setHash(mobilebridge.HashPassword("secret12"))
-	m := NewLANManager(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), st, 0, slog.Default(), nil)
+	m := NewLANManager(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), st, 0, slog.Default())
 	port, err := m.Start(0)
 	if err != nil {
 		t.Fatalf("start: %v", err)
@@ -169,7 +169,7 @@ func TestLANTunnelCarriesMessagesOverOneMiB(t *testing.T) {
 	st.setHash(mobilebridge.HashPassword("secret12"))
 	m := NewLANManager(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, "ok")
-	}), st, 0, slog.Default(), nil)
+	}), st, 0, slog.Default())
 	port, err := m.Start(0)
 	if err != nil {
 		t.Fatalf("start: %v", err)

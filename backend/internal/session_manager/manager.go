@@ -522,9 +522,6 @@ type Manager struct {
 	// nil means they do not (see SetVersionRefreshPolicy).
 	versionPolicyMu sync.Mutex
 	versionPolicy   func() VersionRefreshPolicy
-	// versionTelemetry receives version-move events; nil drops them.
-	versionTelemetryMu sync.Mutex
-	versionTelemetry   ports.EventSink
 
 	reviewersMu sync.Mutex
 	reviewers   ReviewerTerminator

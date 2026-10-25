@@ -1,7 +1,6 @@
 import { CloudCpError } from "./cloud-cp";
 import type { CloudCpClient, CloudCpCreateSessionRequest, CloudCpInterfaceMode, CloudCpSessionResponse } from "./cloud-cp";
 import type { Settings } from "../hooks/useSettings";
-import { reportCloudSessionCreateRequested } from "./cloud-telemetry";
 
 /**
  * The default session interface a new cloud orchestrator is created with: the
@@ -34,7 +33,6 @@ export async function createCloudSession(
 	body: CloudCpCreateSessionRequest,
 ): Promise<CloudCpSessionResponse> {
 	try {
-		reportCloudSessionCreateRequested(body);
 	} catch {
 		// Telemetry must never break the create.
 	}

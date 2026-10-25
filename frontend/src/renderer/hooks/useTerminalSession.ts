@@ -16,12 +16,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { getApiBaseUrl } from "../lib/api-client";
 import { consumeFreshTerminalHandle } from "../lib/fresh-terminal-handles";
-import { captureRendererEvent } from "../lib/telemetry";
 import { LOCAL_ECHO_ENABLED, withLineBufferedLocalInput } from "../lib/terminal-local-echo";
 import { createTerminalMux, muxUrlFromApiBase, type TerminalMux } from "../lib/terminal-mux";
 import { sessionIsActive, type WorkspaceSession } from "../types/workspace";
 import { workspaceQueryKeyForHost } from "./useWorkspaceQuery";
-import { recordDirectWorkerInteraction } from "../lib/session-management-telemetry";
 
 /**
  * The slice of xterm's Terminal the attachment needs. Structural, so tests can
@@ -772,7 +770,6 @@ export function useTerminalSession(session: WorkspaceSession | undefined, option
 				// and its error text inspectable while disposing the failed socket;
 				// an explicit session restore can create a fresh attachment later.
 				teardownMux();
-				void captureRendererEvent("ao.renderer.terminal_attach_failed", { reason: "pane_error" });
 				invalidateWorkspaces();
 			}),
 			mux.onConnectionChange((connectionState) => {
@@ -831,7 +828,6 @@ export function useTerminalSession(session: WorkspaceSession | undefined, option
 			// end the gate immediately.
 			if (r.replayBuffering) flushReplay();
 			else revealReplayTail();
-			if (session) recordDirectWorkerInteraction(session.id, "terminal", session.kind, session.hostId);
 			mux.sendInput(handle, data);
 			return true;
 		});
@@ -908,7 +904,6 @@ export function useTerminalSession(session: WorkspaceSession | undefined, option
 				// Only the first timeout of a reattach sequence is reported; the
 				// backoff loop retrying against a restarting daemon is not news.
 				if (r.attempts === 0) {
-					void captureRendererEvent("ao.renderer.terminal_attach_failed", { reason: "open_timeout" });
 				}
 				transition("reattaching");
 				teardownMux();

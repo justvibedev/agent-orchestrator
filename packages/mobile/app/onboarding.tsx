@@ -10,8 +10,6 @@ import MASCOT from "../assets/mascot.png";
 import { useThemedStyles } from "../lib/ThemeProvider";
 import type { Theme } from "../lib/theme";
 import { haptics } from "../lib/haptics";
-import { MOBILE_EVENTS } from "../lib/telemetry/events";
-import { mobileTelemetry } from "../lib/telemetry/runtime";
 import { space, type } from "../lib/tokens";
 
 export default function OnboardingScreen() {
@@ -22,11 +20,9 @@ export default function OnboardingScreen() {
 	const { reloadConfig } = useApp();
 
 	useEffect(() => {
-		mobileTelemetry()?.capture(MOBILE_EVENTS.onboardingStarted);
 	}, []);
 
 	async function skip() {
-		mobileTelemetry()?.capture(MOBILE_EVENTS.onboardingSkipped);
 		await setOnboardingSkipped();
 		await reloadConfig();
 		completeOnboarding(navigation);

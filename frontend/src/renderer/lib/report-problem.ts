@@ -1,5 +1,4 @@
 import { aoBridge } from "./bridge";
-import { routeSurface } from "./telemetry";
 
 export type ReportProblemOutput = "github" | "discord" | "email";
 export type ReportProblemEmailProvider = "system" | "gmail" | "outlook";
@@ -232,4 +231,18 @@ function currentRoutePath(): string {
 	const hashPath = window.location.hash.replace(/^#/, "").split("?")[0];
 	if (hashPath?.startsWith("/")) return hashPath;
 	return window.location.pathname;
+}
+
+function routeSurface(pathname: string): string {
+	if (pathname === "/") return "home";
+	if (/^\/settings(?:\/|$)/.test(pathname)) return "global_settings";
+	if (/^\/projects\/[^/]+\/sessions\/[^/]+$/.test(pathname)) return "session_detail";
+	if (/^\/projects\/[^/]+(?:\/|$)/.test(pathname)) {
+		if (/\/settings$/.test(pathname)) return "project_settings";
+		return "project_board";
+	}
+	if (/^\/sessions\/[^/]+$/.test(pathname)) return "session_detail";
+	if (/^\/automations(?:\/|$)/.test(pathname)) return "automations";
+	if (/^\/artifacts(?:\/|$)/.test(pathname)) return "artifacts";
+	return "other";
 }

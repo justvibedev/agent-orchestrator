@@ -6,8 +6,6 @@ import type { AppLocale } from "../../i18n";
 import { useLocaleStore } from "../../stores/locale-store";
 import { useSoundNotificationsStore } from "../../stores/sound-notifications-store";
 import { useUiStore } from "../../stores/ui-store";
-import { useTelemetryPolicyStore } from "../../stores/telemetry-policy-store";
-import { useAnalyticsOptOutStore } from "../../stores/analytics-opt-out-store";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { CliLinkSettings } from "./CliLinkSettingsRow";
 import { useTerminalShellStore } from "../../stores/terminal-shell-store";
@@ -267,11 +265,6 @@ export function GeneralSettingsSection({
 
 			<DefaultCloudSandboxSection />
 
-			<SettingsSection title={t("settings.privacy")} grouped>
-				<TelemetryEventsRow />
-				<AnalyticsRow />
-			</SettingsSection>
-
 			{/* Advanced */}
 			<SettingsSection title={t("settings.advanced")} grouped>
 				<SettingsRow label={t("settings.developerMode")}>
@@ -287,73 +280,6 @@ export function GeneralSettingsSection({
 				{developerMode && <SideChatsRow />}
 			</SettingsSection>
 		</>
-	);
-}
-
-/**
- * PostHog usage analytics opt-out. Independent of the error-event row above: it
- * switches off the renderer, the daemon and a paired phone together.
- */
-function AnalyticsRow() {
-	const { t } = useTranslation();
-	const optedOut = useAnalyticsOptOutStore((state) => state.optedOut);
-	const loaded = useAnalyticsOptOutStore((state) => state.loaded);
-	const saving = useAnalyticsOptOutStore((state) => state.saving);
-	const loadError = useAnalyticsOptOutStore((state) => state.loadError);
-	const saveError = useAnalyticsOptOutStore((state) => state.saveError);
-	const load = useAnalyticsOptOutStore((state) => state.load);
-	const setOptedOut = useAnalyticsOptOutStore((state) => state.setOptedOut);
-	useEffect(() => {
-		void load();
-	}, [load]);
-	return (
-		<SettingsRow
-			label={t("settings.analytics.label")}
-			description={
-				<span className={cn((loadError || saveError) && "text-error")} role={loadError || saveError ? "alert" : undefined}>
-					{t(loadError ? "settings.analytics.loadFailed" : saveError ? "settings.analytics.saveFailed" : "settings.analytics.description")}
-				</span>
-			}
-		>
-			<Switch
-				aria-label={t("settings.analytics.label")}
-				checked={!optedOut}
-				disabled={saving || !loaded}
-				onCheckedChange={(share) => {
-					void setOptedOut(!share);
-				}}
-			/>
-		</SettingsRow>
-	);
-}
-
-function TelemetryEventsRow() {
-	const { t } = useTranslation();
-	const view = useTelemetryPolicyStore((state) => state.view);
-	const saving = useTelemetryPolicyStore((state) => state.saving);
-	const saveError = useTelemetryPolicyStore((state) => state.saveError);
-	const setEnabled = useTelemetryPolicyStore((state) => state.setEnabled);
-	const checked = view?.eventsEnabled ?? false;
-	const blockedEnable = !checked && (view?.environmentVeto || !view?.durabilitySupported);
-	const status = saveError ? "failed"
-		: !view ? null
-		: !view.durabilitySupported ? "unsupported"
-		: view.state === "cleanup_failed" ? "failed"
-		: view.state === "cleanup_pending" ? "pending"
-		: view.reason === "environment_veto" ? "veto"
-		: view.reason === "release_blocked" ? "releaseBlocked"
-		: null;
-	return (
-		<SettingsRow
-			label={t("settings.telemetryEvents.label")}
-			description={
-				<span className={cn(status === "failed" && "text-error")} role={status === "failed" ? "alert" : undefined}>
-					{t(status ? `settings.telemetryEvents.${status}` : "settings.telemetryEvents.description")}
-				</span>
-			}
-		>
-			<Switch aria-label={t("settings.telemetryEvents.label")} checked={checked} disabled={saving || !view || blockedEnable} onCheckedChange={(enabled) => { void setEnabled(enabled); }} />
-		</SettingsRow>
 	);
 }
 

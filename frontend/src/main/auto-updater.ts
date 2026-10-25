@@ -30,11 +30,8 @@ import {
   boundPlainReleaseNotes,
   isNetErrorMessage,
   normalizeReleaseNotes,
-  updateFailureOutcome,
   updateFailureCategory,
-  type UpdateOutcome,
   type UpdatePhase,
-  type UpdateTrigger,
 } from "../shared/update-telemetry";
 
 // Current AO uses the stock full-ZIP path. A future compatible build explicitly
@@ -54,17 +51,9 @@ let lastAppliedUpdateSettings: UpdateSettings = FAIL_CLOSED_UPDATE_SETTINGS;
 let developerModeHydrated = false;
 let developerModeRequested = false;
 let differentialEligible = false;
-let pendingTargetBytes: number | undefined;
 let offeredUpdateVersion: string | undefined;
 let offeredMacFiles: Array<{ url: string; size?: number }> = [];
 
-function selectMacTargetBytes(arm64: boolean): void {
-  const hasArm64 = offeredMacFiles.some(file => file.url.includes("arm64"));
-  const file = offeredMacFiles.find(file =>
-    /\.zip(?:$|[?#])/i.test(file.url) && file.url.includes("arm64") === (arm64 && hasArm64));
-  pendingTargetBytes = typeof file?.size === "number" && Number.isFinite(file.size) && file.size >= 0
-    ? file.size : undefined;
-}
 let transferObservation = {
   eligible: false,
   attemptedDifferential: false,
@@ -106,7 +95,6 @@ function wireUpdaterLogger(): void {
     const message = typeof first === "string" ? first : "";
     if (message === "Checked for macOS Rosetta environment (isRosetta=true)" ||
         message === "Checked 'uname -a': arm64=true") {
-      selectMacTargetBytes(true);
     }
     if (message.startsWith("Download block maps") || message.startsWith("Differential download:")) {
       transferObservation.attemptedDifferential = true;
@@ -510,9 +498,6 @@ function armDownloadStallWatchdog(): void {
     // manual retry would just wait behind the dead download.
     activeDownloadCancellation?.cancel();
     activeDownloadCancellation = undefined;
-    emitUpdateOutcome(
-      updateFailureOutcome("download stalled", "download", activeUpdateTrigger(), pendingUpdateVersion),
-    );
     broadcast(
       withActiveRequest({
         state: "error",
@@ -535,7 +520,7 @@ let lastCheckedAtMs: number | undefined;
  * NOT BrowserWindow.getAllWindows(). Since #3750 the AO shell is a BaseWindow
  * hosting the UI in a WebContentsView, and BrowserWindow.getAllWindows() only
  * ever returns BrowserWindow instances — so enumerating windows here matched
- * nothing and every "updates:status" and "updates:telemetry" push was dropped
+ * nothing and every "updates:status" push was dropped
  * on the floor from 2026-08-09 onward. `invoke` handlers reply to their own
  * sender regardless of window type, so updates:getStatus kept working and the
  * breakage looked like a stale-cache bug: Settings showed a correct timestamp
@@ -556,35 +541,6 @@ export function setRendererSink(resolve: () => RendererSink | null | undefined):
 // window is recreated, and holding the first one would silently stop delivering.
 function sendToRenderer(channel: string, payload: unknown): void {
   resolveRendererSink()?.send(channel, payload);
-}
-
-// emitUpdateOutcome pushes an update outcome to renderers on a channel separate
-// from "updates:status", so suppressing a status for UI reasons (as the
-// automatic path does) never suppresses the telemetry for it.
-function emitUpdateOutcome(outcome: UpdateOutcome): void {
-  if (outcome.phase === "download" && process.platform === "darwin") {
-    outcome = {
-      ...outcome,
-      differential_eligible: transferObservation.eligible,
-      transfer_mode: transferObservation.attemptedDifferential ? "differential" : "full",
-      fallback: transferObservation.fallback,
-      ...(transferObservation.transferred === undefined ? {} : { transferred_bytes: transferObservation.transferred }),
-      ...(pendingTargetBytes === undefined ? {} : { target_bytes: pendingTargetBytes }),
-    };
-  }
-  sendToRenderer("updates:telemetry", outcome);
-}
-
-function activeUpdateTrigger(): UpdateTrigger {
-  return activeUpdaterOperation === "automatic-check" ? "automatic" : "manual";
-}
-
-function emitUpdateFailure(err: unknown): void {
-  const message =
-    err instanceof Error ? err.message : err === undefined ? undefined : String(err);
-  emitUpdateOutcome(
-    updateFailureOutcome(message, activeUpdaterPhase, activeUpdateTrigger(), pendingUpdateVersion),
-  );
 }
 
 // broadcast pushes the latest update status to every renderer window so the
@@ -1795,7 +1751,6 @@ function wireUpdaterEvents(): void {
   autoUpdater.on("update-available", (info) => {
     offeredMacFiles = Array.isArray(info?.files) ? info.files : [];
     offeredUpdateVersion = info?.version;
-    selectMacTargetBytes(process.arch === "arm64");
     transferObservation = {
       eligible: differentialEligible,
       attemptedDifferential: false,
@@ -1823,7 +1778,6 @@ function wireUpdaterEvents(): void {
       forgetInstallRejections();
     }
     pendingUpdateVersion = info?.version;
-    emitUpdateOutcome({ event: "ao.renderer.update_check_succeeded", phase: "check", trigger: activeUpdateTrigger() });
     offeredReleaseNotes = normalizeReleaseNotes(info?.releaseNotes) ?? directFeedReleaseNotes;
     broadcastCompletedCheck({ state: "available", version: info?.version });
     if (autoUpdater.autoDownload) {
@@ -1836,7 +1790,6 @@ function wireUpdaterEvents(): void {
     clearDownloadStallWatchdog();
   });
   autoUpdater.on("update-not-available", (info) => {
-    emitUpdateOutcome({ event: "ao.renderer.update_check_succeeded", phase: "check", trigger: activeUpdateTrigger() });
     // A successful check proves the network stack is healthy.
     consecutiveAutomaticNetFailures = 0;
     consecutiveAutomaticCheckFailures = 0;
@@ -1872,12 +1825,6 @@ function wireUpdaterEvents(): void {
   autoUpdater.on("update-downloaded", (info) => {
     clearDownloadStallWatchdog();
     downloadStalled = false;
-    emitUpdateOutcome({
-      event: "ao.renderer.update_downloaded",
-      phase: "download",
-      trigger: activeUpdateTrigger(),
-      ...(info?.version ? { to_version: info.version } : {}),
-    });
     // Re-staging the SAME build must not restart the staged clock. electron-updater
     // re-runs its download task whenever a check finds a version it has already
     // cached, so this event repeats on every automatic check until the user quits.
@@ -1936,7 +1883,6 @@ function wireUpdaterEvents(): void {
   autoUpdater.on("error", (err) => {
     clearDownloadStallWatchdog();
     if (handleMacStagingFailure(err)) {
-      emitUpdateFailure(err);
       return;
     }
     if (downloadStalled) {
@@ -1959,7 +1905,6 @@ function wireUpdaterEvents(): void {
     // not flash an error the user never asked for. That suppression is a UI
     // decision and must not suppress the telemetry: automatic checks are the
     // main way an install goes silently stale.
-    emitUpdateFailure(err);
     // The native installer rejected the build already sitting in the cache
     // (#4254). This is the one failure class that cannot be left to the
     // automatic path's suppress-and-retry, because retrying it is exactly what
@@ -2373,12 +2318,6 @@ export async function checkForUpdatesNow(
   // Asking again IS the explicit retry the exhausted message points at.
   forgetInstallRejections();
 	if (!app.isPackaged) {
-    emitUpdateOutcome({
-      event: "ao.renderer.update_unsupported",
-      phase: activeUpdaterPhase,
-      trigger: activeUpdateTrigger(),
-      error_category: "not_supported",
-    });
     broadcast({
       state: "unsupported",
       message: "Updates are only available in the installed app.",
@@ -2480,12 +2419,6 @@ export async function returnToHome(
   escalationStateDir = stateDir;
   wireUpdaterEvents();
   if (!app.isPackaged) {
-    emitUpdateOutcome({
-      event: "ao.renderer.update_unsupported",
-      phase: activeUpdaterPhase,
-      trigger: activeUpdateTrigger(),
-      error_category: "not_supported",
-    });
     broadcast({
       state: "unsupported",
       message: "Updates are only available in the installed app.",
@@ -2545,12 +2478,6 @@ export async function downloadUpdateNow(requestId?: string): Promise<void> {
   wireUpdaterEvents();
   forgetInstallRejections();
 	if (!app.isPackaged) {
-    emitUpdateOutcome({
-      event: "ao.renderer.update_unsupported",
-      phase: activeUpdaterPhase,
-      trigger: activeUpdateTrigger(),
-      error_category: "not_supported",
-    });
     broadcast({
       state: "unsupported",
       message: "Updates are only available in the installed app.",

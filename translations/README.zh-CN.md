@@ -223,10 +223,6 @@ cd agent-orchestrator
 
 加入 [Discord](https://discord.com/invite/UZv7JjxbwG) 获取帮助并参与贡献者讨论，关注 [@useOrchestrator](https://x.com/useOrchestrator) 了解最新动态，或在 [GitHub Issues](https://github.com/OrchestratorInc/agent-orchestrator/issues) 中发起讨论。
 
-## 产品遥测
-
-Orchestrator.inc 收集不包含项目内容的使用和可靠性指标。但项目的 GitHub 所有者及已登录的 GitHub 用户名可能识别个人，因此这些遥测数据并非匿名。关闭遥测也会停止发送这些信息。[查看详情和设置](../docs/telemetry.md)。
-
 ## 许可证
 
 Orchestrator.inc 基于 [Apache License 2.0](../LICENSE) 提供。

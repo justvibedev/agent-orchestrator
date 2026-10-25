@@ -46,7 +46,6 @@ import { projectNavigateTarget, sessionNavigateTarget } from "../lib/navigate-to
 import { WORKER_DEFAULT_REVIEWERS } from "../lib/reviewer-harnesses";
 import { cloudSessionsQueryKey, workspaceQueryKeyForHost } from "../hooks/useWorkspaceQuery";
 import { useOpenArtifactPreview } from "../hooks/useOpenArtifactPreview";
-import { captureRendererEvent } from "../lib/telemetry";
 import { formatTimeCompact } from "../lib/format-time";
 import { AgentAvatar } from "./AgentAvatar";
 import { SessionArtifactsView, type ArtifactOpenRequest } from "./SessionArtifactsView";
@@ -1432,7 +1431,6 @@ function LocalReviewsSection({
 		mutationFn: async (enabled: boolean) => {
 			// Intent, not effect: emitted before the PUT, so a failed save still
 			// counts as the user reaching for the switch.
-			void captureRendererEvent("ao.renderer.review_auto_review_toggled", { enabled });
 			const { error } = await clientForSessionHost(hostId).PUT("/api/v1/sessions/{sessionId}/auto-review", {
 				params: { path: { sessionId: session.id } },
 				body: { enabled },

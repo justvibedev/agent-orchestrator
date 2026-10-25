@@ -10,7 +10,6 @@ const navigate = vi.hoisted(() => vi.fn());
 vi.mock("./useCloudCp", () => ({ useCloudCp: () => ({ client: cloud, ready: true, baseUrl: "https://cp.test" }) }));
 vi.mock("../lib/navigate-to-session", () => ({ useNavigateToSession: () => navigate }));
 vi.mock("./useAgentReadinessQuery", () => ({ useAgentReadinessQuery: () => ({ data: { agents: [] } }) }));
-vi.mock("../lib/telemetry", () => ({ captureRendererEvent: () => Promise.resolve() }));
 const settings = vi.hoisted(() => ({ current: { defaultSessionMode: "chat" } as { defaultSessionMode?: string } }));
 vi.mock("./useSettings", () => ({ useSettings: () => ({ settings: settings.current }) }));
 

@@ -17,14 +17,6 @@ import (
 
 const browserCapabilityHeader = "X-AO-Browser-Capability"
 
-var browserTelemetryActions = map[string]struct{}{
-	"open": {}, "snapshot": {}, "act": {}, "click": {}, "dblclick": {}, "focus": {}, "fill": {}, "type": {}, "press": {},
-	"hover": {}, "highlight": {}, "unhighlight": {}, "scrollintoview": {}, "drag": {}, "tabs": {}, "tab-new": {},
-	"tab-select": {}, "tab-close": {}, "scroll": {}, "select": {}, "check": {}, "uncheck": {}, "get": {}, "wait": {},
-	"screenshot": {}, "network-start": {}, "network-status": {}, "network-list": {}, "network-stop": {}, "network-clear": {},
-	"console": {}, "errors": {}, "frame": {}, "dialog": {}, "devtools-open": {}, "devtools-close": {},
-}
-
 // BrowserService authorizes and executes session-scoped browser operations.
 type BrowserService interface {
 	Status(ctx context.Context, sessionID domain.SessionID, capability string) (browserruntime.Status, error)
@@ -79,16 +71,6 @@ func (c *BrowserController) execute(w http.ResponseWriter, r *http.Request) {
 		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "SESSION_ID_REQUIRED", "sessionId is required", nil)
 		return
 	}
-	envelope.SetTelemetryField(r, "browser_command", browserTelemetryAction(in.Action))
-	if status, statusErr := c.Svc.Status(r.Context(), in.SessionID, r.Header.Get(browserCapabilityHeader)); statusErr == nil {
-		if status.Connected {
-			envelope.SetTelemetryField(r, "runtime_link_state", "connected")
-		} else {
-			envelope.SetTelemetryField(r, "runtime_link_state", "disconnected")
-		}
-	} else {
-		envelope.SetTelemetryField(r, "runtime_link_state", "unknown")
-	}
 	result, action, err := c.Svc.Execute(
 		r.Context(),
 		in.SessionID,
@@ -106,17 +88,6 @@ func (c *BrowserController) execute(w http.ResponseWriter, r *http.Request) {
 		Action:    action,
 		Result:    result.Value,
 	})
-}
-
-func browserTelemetryAction(action string) string {
-	action = strings.ToLower(strings.TrimSpace(action))
-	if len(action) > 64 {
-		return "invalid"
-	}
-	if _, ok := browserTelemetryActions[action]; !ok {
-		return "invalid"
-	}
-	return action
 }
 
 func writeBrowserError(w http.ResponseWriter, r *http.Request, err error) {
@@ -171,6 +142,6 @@ func writeBrowserError(w http.ResponseWriter, r *http.Request, err error) {
 
 func captureBrowserFailure(r *http.Request, kind apierr.Kind, code string) {
 	// Keep the captured error message generic: command errors can contain
-	// provider/page details, while telemetry only needs the stable code.
+	// provider/page details, while the access log only needs the stable code.
 	envelope.CaptureError(r, apierr.New(kind, code, "browser command failed", nil))
 }

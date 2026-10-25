@@ -45,8 +45,6 @@ import { IncompatibleHostVersionError } from "./race";
 import { primeInstallId } from "./installId";
 import { collectPRs } from "./prView";
 import { ALL_PROJECTS, NO_PROJECTS_KNOWN, STANDALONE_PROJECT, projectsForMachine, resolveActiveProject, retainProjects, sessionRowsForMachine, type KnownProjects } from "./projectFilter";
-import { MOBILE_EVENTS } from "./telemetry/events";
-import { mobileTelemetry, trackFeature } from "./telemetry/runtime";
 import { useConversationEventTransport } from "./chat/conversationEvents";
 import { commitHostSwitch, hostRouteMatches, promotableHostConfig } from "./hostRoute";
 import { emptyHostSnapshot, useOtherHosts, type HostSnapshot } from "./otherHosts";
@@ -644,7 +642,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
 				openRef.current = true;
 				const trigger = everConnectedRef.current ? "reconnect" : "launch";
 				everConnectedRef.current = true;
-				mobileTelemetry()?.capture(MOBILE_EVENTS.connected, { trigger });
 			}
 			// Badge count for the board's bell. Deliberately after the session fetch
 			// and separately caught: an older daemon without /notifications must not
@@ -887,7 +884,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 	const spawn = useCallback(
 		async ({ hostId, projectId, prompt, harness, model, mode, attachments, clientRequestId }: SpawnOptions) => {
 			const resolvedMode = mode ?? "chat";
-			return trackFeature("spawn", async () => {
+			return (async () => {
 				const c = requireConfig(hostId);
 				if (projectId === STANDALONE_PROJECT) {
 					const session = await spawnSession(c, { prompt, harness, model, mode: resolvedMode, attachments, clientRequestId });
@@ -908,39 +905,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
 				});
 				await refreshHost(hostId);
 				return session;
-			}, { mode: resolvedMode });
+			})();
 		},
 		[targetProject, requireConfig, hostStates, selectedHostId, refreshHost],
 	);
 
 	const launchConductor = useCallback(
 		async (projectId: string, clean = false, mode: SessionMode = "chat", hostId?: string) =>
-			trackFeature("conductor", async () => {
+			(async () => {
 				const c = requireConfig(hostId);
 				const link = await apiLaunchOrchestrator(c, projectId, clean, mode);
 				await refreshHost(c.hostId ?? "");
 				return link;
-			}),
+			})(),
 		[requireConfig, refreshHost],
 	);
 
 	const merge = useCallback(
 		async (pr: DashboardPR, hostId?: string) =>
-			trackFeature("merge", async () => {
+			(async () => {
 				const c = requireConfig(hostId);
 				await apiMergePR(c, pr);
 				await refreshHost(c.hostId ?? "");
-			}),
+			})(),
 		[requireConfig, refreshHost],
 	);
 
 	const kill = useCallback(
 		async (id: string, hostId?: string) =>
-			trackFeature("kill", async () => {
+			(async () => {
 				const c = requireConfig(hostId);
 				await killSession(c, id);
 				await refreshHost(c.hostId ?? "");
-			}),
+			})(),
 		[requireConfig, refreshHost],
 	);
 
@@ -964,11 +961,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
 	const restore = useCallback(
 		async (id: string, hostId?: string) =>
-			trackFeature("restore", async () => {
+			(async () => {
 				const c = requireConfig(hostId);
 				await restoreSession(c, id);
 				await refreshHost(c.hostId ?? "");
-			}),
+			})(),
 		[requireConfig, refreshHost],
 	);
 
@@ -977,16 +974,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
 	// agent/controller is resumed without resurrecting the session around it.
 	const resumeAgent = useCallback(
 		async (id: string, hostId?: string) =>
-			trackFeature("restore", async () => {
+			(async () => {
 				const c = requireConfig(hostId);
 				await resumeSessionAgent(c, id);
 				await refreshHost(c.hostId ?? "");
-			}),
+			})(),
 		[requireConfig, refreshHost],
 	);
 
 	const send = useCallback(async (id: string, message: string, hostId?: string) => {
-		await trackFeature("send", () => sendMessage(requireConfig(hostId), id, message));
+		await sendMessage(requireConfig(hostId), id, message);
 	}, [requireConfig]);
 	const refresh = useCallback(async () => {
 		await fetchAll(true);

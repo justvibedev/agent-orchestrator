@@ -13,21 +13,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/httpd/apierr"
-	"github.com/aoagents/agent-orchestrator/backend/internal/observe/ownership"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 	sessionmanager "github.com/aoagents/agent-orchestrator/backend/internal/session_manager"
 )
-
-type fakeTelemetrySink struct{ events []ports.TelemetryEvent }
-
-func (f *fakeTelemetrySink) Emit(_ context.Context, ev ports.TelemetryEvent) {
-	f.events = append(f.events, ev)
-}
-func (f *fakeTelemetrySink) Close(context.Context) error { return nil }
 
 type fakeAgentReadiness struct {
 	snapshot                domain.AgentReadinessSnapshot
@@ -242,9 +233,6 @@ func TestTaskPreparationsStayOutOfSessionReads(t *testing.T) {
 	var apiError *apierr.Error
 	if !errors.As(err, &apiError) || apiError.Code != "SESSION_NOT_FOUND" {
 		t.Fatalf("get preparation error = %v", err)
-	}
-	if first, err := svc.isFirstSession(context.Background()); err != nil || !first {
-		t.Fatalf("isFirstSession = %v, %v", first, err)
 	}
 }
 
@@ -3301,35 +3289,6 @@ func TestSpawnInvalidatesReadinessAfterTypedLaunchFailure(t *testing.T) {
 	}
 }
 
-func TestSpawnEmitsFirstSessionOnboardingAndDuration(t *testing.T) {
-	st := newFakeStore()
-	st.projects["mer"] = domain.ProjectRecord{ID: "mer", RegisteredAt: time.Unix(100, 0).UTC()}
-	sink := &fakeTelemetrySink{}
-	fc := &fakeCommander{}
-	svc := NewWithDeps(Deps{
-		Manager:   fc,
-		Store:     st,
-		Telemetry: sink,
-		Clock:     func() time.Time { return time.Unix(102, 0).UTC() },
-	})
-
-	if _, _, _, err := svc.Spawn(context.Background(), ports.SpawnConfig{ProjectID: "mer"}); err != nil {
-		t.Fatalf("Spawn: %v", err)
-	}
-	if len(sink.events) != 2 {
-		t.Fatalf("events = %#v, want spawned + first_session", sink.events)
-	}
-	if sink.events[0].Name != "ao.session.spawned" || sink.events[1].Name != "ao.onboarding.first_session_spawned" {
-		t.Fatalf("event names = %#v", []string{sink.events[0].Name, sink.events[1].Name})
-	}
-	if got := sink.events[0].Payload["duration_ms"]; got != int64(0) {
-		t.Fatalf("spawn duration_ms = %#v, want 0 with fixed clock", got)
-	}
-	if got := sink.events[1].Payload["since_first_project_ms"]; got != int64(2000) {
-		t.Fatalf("since_first_project_ms = %#v, want 2000", got)
-	}
-}
-
 type fakeTracker struct {
 	issue domain.Issue
 	err   error
@@ -3580,154 +3539,6 @@ func TestSpawnIssueContextFromSelfManagedGitLabTracker(t *testing.T) {
 	}
 }
 
-func TestSpawnFailedEmitsDuration(t *testing.T) {
-	st := newFakeStore()
-	st.projects["mer"] = domain.ProjectRecord{ID: "mer"}
-	sink := &fakeTelemetrySink{}
-	fc := &fakeCommander{spawnErr: errors.New("boom")}
-	now := time.Unix(200, 0).UTC()
-	svc := NewWithDeps(Deps{
-		Manager:   fc,
-		Store:     st,
-		Telemetry: sink,
-		Clock: func() time.Time {
-			v := now
-			now = now.Add(1500 * time.Millisecond)
-			return v
-		},
-	})
-
-	if _, _, _, err := svc.Spawn(context.Background(), ports.SpawnConfig{ProjectID: "mer"}); err == nil {
-		t.Fatal("Spawn should fail")
-	}
-	if len(sink.events) != 1 || sink.events[0].Name != "ao.session.spawn_failed" {
-		t.Fatalf("events = %#v, want one spawn_failed", sink.events)
-	}
-	if got := sink.events[0].Payload["duration_ms"]; got != int64(1500) {
-		t.Fatalf("spawn_failed duration_ms = %#v, want 1500", got)
-	}
-	if got := sink.events[0].Payload["error_kind"]; got != "internal" {
-		t.Fatalf("spawn_failed error_kind = %#v, want internal", got)
-	}
-	if got := sink.events[0].Payload["error_code"]; got != "SPAWN_INTERNAL" {
-		t.Fatalf("spawn_failed error_code = %#v, want SPAWN_INTERNAL", got)
-	}
-	if got := sink.events[0].Payload["component"]; got != "session_service" {
-		t.Fatalf("spawn_failed component = %#v, want session_service", got)
-	}
-	if got := sink.events[0].Payload["operation"]; got != "spawn_session" {
-		t.Fatalf("spawn_failed operation = %#v, want spawn_session", got)
-	}
-	if got := sink.events[0].Payload["fingerprint"]; got == "" {
-		t.Fatalf("spawn_failed fingerprint = %#v, want non-empty", got)
-	}
-}
-
-func TestSpawnEmitsTelemetryOnSuccess(t *testing.T) {
-	st := newFakeStore()
-	st.projects["mer"] = domain.ProjectRecord{ID: "mer"}
-	st.sessions["old-1"] = domain.SessionRecord{ID: "old-1", ProjectID: "other"}
-	fc := &fakeCommander{}
-	ts := &fakeTelemetrySink{}
-	svc := NewWithDeps(Deps{Manager: fc, Store: st, Telemetry: ts, Clock: func() time.Time { return time.Unix(1700000000, 0).UTC() }})
-
-	_, _, _, err := svc.Spawn(context.Background(), ports.SpawnConfig{
-		ProjectID: "mer",
-		Kind:      domain.KindWorker,
-		Harness:   domain.HarnessCodex,
-	})
-	if err != nil {
-		t.Fatalf("Spawn: %v", err)
-	}
-	if len(ts.events) != 1 {
-		t.Fatalf("telemetry events = %d, want 1", len(ts.events))
-	}
-	ev := ts.events[0]
-	if ev.Name != "ao.session.spawned" || ev.Source != "session_service" {
-		t.Fatalf("event = %+v", ev)
-	}
-	if ev.ProjectID == nil || *ev.ProjectID != "mer" || ev.SessionID == nil || *ev.SessionID != "mer-9" {
-		t.Fatalf("event ids = %+v", ev)
-	}
-	// With no GitHub identity resolver wired, the handle degrades to anonymous and
-	// the carrier event omits github_actor entirely.
-	if _, ok := ev.Payload["github_actor"]; ok {
-		t.Fatalf("payload should omit github_actor without a resolver: %#v", ev.Payload)
-	}
-}
-
-func TestSpawnEmitsTelemetryOnFailure(t *testing.T) {
-	st := newFakeStore()
-	st.projects["mer"] = domain.ProjectRecord{ID: "mer"}
-	fc := &fakeCommander{spawnErr: errors.New("boom")}
-	ts := &fakeTelemetrySink{}
-	svc := NewWithDeps(Deps{Manager: fc, Store: st, Telemetry: ts, Clock: func() time.Time { return time.Unix(1700000000, 0).UTC() }})
-
-	_, _, _, err := svc.Spawn(context.Background(), ports.SpawnConfig{
-		ProjectID: "mer",
-		Kind:      domain.KindWorker,
-		Harness:   domain.HarnessCodex,
-	})
-	if err == nil {
-		t.Fatal("Spawn error = nil, want failure")
-	}
-	if len(ts.events) != 1 {
-		t.Fatalf("telemetry events = %d, want 1", len(ts.events))
-	}
-	ev := ts.events[0]
-	if ev.Name != "ao.session.spawn_failed" || ev.Source != "session_service" || ev.Level != ports.TelemetryLevelError {
-		t.Fatalf("event = %+v", ev)
-	}
-	if ev.ProjectID == nil || *ev.ProjectID != "mer" || ev.SessionID != nil {
-		t.Fatalf("event ids = %+v", ev)
-	}
-	if got := ev.Payload["error_kind"]; got != "internal" {
-		t.Fatalf("event payload error_kind = %#v, want internal", got)
-	}
-	if got := ev.Payload["error_code"]; got != "SPAWN_INTERNAL" {
-		t.Fatalf("event payload error_code = %#v, want SPAWN_INTERNAL", got)
-	}
-	if got := ev.Payload["component"]; got != "session_service" {
-		t.Fatalf("event payload component = %#v, want session_service", got)
-	}
-	if got := ev.Payload["operation"]; got != "spawn_session" {
-		t.Fatalf("event payload operation = %#v, want spawn_session", got)
-	}
-	if got := ev.Payload["fingerprint"]; got == "" {
-		t.Fatalf("event payload fingerprint = %#v, want non-empty", got)
-	}
-	if _, ok := ev.Payload["error"]; ok {
-		t.Fatalf("event payload leaked raw error: %+v", ev.Payload)
-	}
-}
-
-func TestSpawnEmitsTypedErrorCodeOnFailure(t *testing.T) {
-	st := newFakeStore()
-	st.projects["mer"] = domain.ProjectRecord{ID: "mer"}
-	fc := &fakeCommander{spawnErr: fmt.Errorf("spawn: %w: %q", sessionmanager.ErrUnknownHarness, "bogus")}
-	ts := &fakeTelemetrySink{}
-	svc := NewWithDeps(Deps{Manager: fc, Store: st, Telemetry: ts, Clock: func() time.Time { return time.Unix(1700000000, 0).UTC() }})
-
-	_, _, _, err := svc.Spawn(context.Background(), ports.SpawnConfig{
-		ProjectID: "mer",
-		Kind:      domain.KindWorker,
-		Harness:   domain.HarnessCodex,
-	})
-	if err == nil {
-		t.Fatal("Spawn error = nil, want failure")
-	}
-	if len(ts.events) != 1 {
-		t.Fatalf("telemetry events = %d, want 1", len(ts.events))
-	}
-	ev := ts.events[0]
-	if got := ev.Payload["error_kind"]; got != "invalid" {
-		t.Fatalf("event payload error_kind = %#v, want invalid", got)
-	}
-	if got := ev.Payload["error_code"]; got != "UNKNOWN_HARNESS" {
-		t.Fatalf("event payload error_code = %#v, want UNKNOWN_HARNESS", got)
-	}
-}
-
 // A spawn whose request budget runs out before it extends it (its project's
 // Setup steps) timed out; it is not a cancellation by the client.
 func TestSpawnReportsTimeoutWhenTheBaseRequestBudgetRunsOut(t *testing.T) {
@@ -3901,63 +3712,6 @@ func TestToSpawnAPIErrorMapsSpawnStageSentinels(t *testing.T) {
 	}
 }
 
-func TestSpawnEmitsTypedErrorCodeForRuntimeFailure(t *testing.T) {
-	st := newFakeStore()
-	st.projects["mer"] = domain.ProjectRecord{ID: "mer"}
-	fc := &fakeCommander{
-		spawnErr: fmt.Errorf("spawn mer-1: %w: tmux runtime: create session mer-1: boom", sessionmanager.ErrRuntimeCreate),
-	}
-	ts := &fakeTelemetrySink{}
-	svc := NewWithDeps(Deps{Manager: fc, Store: st, Telemetry: ts, Clock: func() time.Time { return time.Unix(1700000000, 0).UTC() }})
-
-	_, _, _, err := svc.Spawn(context.Background(), ports.SpawnConfig{
-		ProjectID: "mer",
-		Kind:      domain.KindWorker,
-		Harness:   domain.HarnessCodex,
-	})
-	if err == nil {
-		t.Fatal("Spawn error = nil, want failure")
-	}
-	var apiError *apierr.Error
-	if !errors.As(err, &apiError) || apiError.Code != "RUNTIME_CREATE_FAILED" {
-		t.Fatalf("err = %v, want RUNTIME_CREATE_FAILED", err)
-	}
-	if len(ts.events) != 1 {
-		t.Fatalf("telemetry events = %d, want 1", len(ts.events))
-	}
-	if got := ts.events[0].Payload["error_code"]; got != "RUNTIME_CREATE_FAILED" {
-		t.Fatalf("event payload error_code = %#v, want RUNTIME_CREATE_FAILED", got)
-	}
-	if got := ts.events[0].Payload["error_kind"]; got != "internal" {
-		t.Fatalf("event payload error_kind = %#v, want internal", got)
-	}
-}
-
-func TestEmitSpawnFailedClassifiesRawStageSentinel(t *testing.T) {
-	ts := &fakeTelemetrySink{}
-	svc := NewWithDeps(Deps{
-		Telemetry: ts,
-		Clock:     func() time.Time { return time.Unix(1700000000, 0).UTC() },
-	})
-
-	raw := fmt.Errorf("spawn mer-1: %w: tmux runtime: create session mer-1: boom", sessionmanager.ErrRuntimeCreate)
-	svc.emitSpawnFailed(context.Background(), ports.SpawnConfig{
-		ProjectID: "mer",
-		Kind:      domain.KindWorker,
-		Harness:   domain.HarnessCodex,
-	}, raw, 42)
-
-	if len(ts.events) != 1 {
-		t.Fatalf("telemetry events = %d, want 1", len(ts.events))
-	}
-	if got := ts.events[0].Payload["error_code"]; got != "RUNTIME_CREATE_FAILED" {
-		t.Fatalf("event payload error_code = %#v, want RUNTIME_CREATE_FAILED", got)
-	}
-	if got := ts.events[0].Payload["error_kind"]; got != "internal" {
-		t.Fatalf("event payload error_kind = %#v, want internal", got)
-	}
-}
-
 func TestToSpawnAPIErrorIsIdempotentForMappedErrors(t *testing.T) {
 	raw := fmt.Errorf("spawn mer-1: %w: tmux runtime: create session mer-1: boom", sessionmanager.ErrRuntimeCreate)
 	first := toSpawnAPIError(raw)
@@ -3969,13 +3723,6 @@ func TestToSpawnAPIErrorIsIdempotentForMappedErrors(t *testing.T) {
 	}
 	if firstErr.Code != "RUNTIME_CREATE_FAILED" || secondErr.Code != "RUNTIME_CREATE_FAILED" {
 		t.Fatalf("codes = %q / %q, want RUNTIME_CREATE_FAILED", firstErr.Code, secondErr.Code)
-	}
-}
-
-func TestToAPIErrorDefaultsUnownedErrorsToHTTP(t *testing.T) {
-	mapped := toAPIError(errors.New("pre-admission storage unavailable"))
-	if got := ownership.OwnerOf(mapped); got != ownership.OwnerHTTP {
-		t.Fatalf("OwnerOf(mapped) = %q, want %q", got, ownership.OwnerHTTP)
 	}
 }
 
@@ -5822,59 +5569,6 @@ func sameStrings(got, want []string) bool {
 		}
 	}
 	return true
-}
-
-// TestSpawnTelemetryCarriesRequestID pins the correlation the daemon needs:
-// spawn telemetry detaches from the request context on purpose, so the request
-// id has to be read at the emit site or every session_service row lands with an
-// empty request_id and cannot be joined to the HTTP request that caused it.
-func TestSpawnTelemetryCarriesRequestID(t *testing.T) {
-	requestCtx := context.WithValue(context.Background(), middleware.RequestIDKey, "req-1")
-	cases := []struct {
-		name     string
-		ctx      context.Context
-		spawnErr error
-		want     string
-	}{
-		{name: "request scoped", ctx: requestCtx, want: "req-1"},
-		{
-			name: "spawn failure",
-			ctx:  requestCtx,
-			spawnErr: fmt.Errorf(
-				"spawn mer-1: %w: tmux runtime: create session mer-1: boom",
-				sessionmanager.ErrRuntimeCreate,
-			),
-			want: "req-1",
-		},
-		{name: "background context", ctx: context.Background(), want: ""},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			st := newFakeStore()
-			st.projects["mer"] = domain.ProjectRecord{ID: "mer", RegisteredAt: time.Unix(100, 0).UTC()}
-			sink := &fakeTelemetrySink{}
-			svc := NewWithDeps(Deps{
-				Manager:   &fakeCommander{spawnErr: tc.spawnErr},
-				Store:     st,
-				Telemetry: sink,
-				Clock:     func() time.Time { return time.Unix(102, 0).UTC() },
-			})
-
-			_, _, _, err := svc.Spawn(tc.ctx, ports.SpawnConfig{ProjectID: "mer", Kind: domain.KindWorker})
-			if (err != nil) != (tc.spawnErr != nil) {
-				t.Fatalf("Spawn err = %v, want error: %t", err, tc.spawnErr != nil)
-			}
-			if len(sink.events) == 0 {
-				t.Fatal("no telemetry events emitted")
-			}
-			for _, ev := range sink.events {
-				if ev.RequestID != tc.want {
-					t.Fatalf("%s RequestID = %q, want %q", ev.Name, ev.RequestID, tc.want)
-				}
-			}
-		})
-	}
 }
 
 func TestGetReconcilesWhenPersistedArtifactOutputHasNoFilesLeft(t *testing.T) {

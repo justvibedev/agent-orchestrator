@@ -15,7 +15,7 @@ import (
 // A client that leaves mid-body breaks ReverseProxy's copy, which then aborts
 // the response with http.ErrAbortHandler. Nothing in the daemon failed: the
 // abort reaches the server, with no panic log, event or report.
-func TestRecoverTelemetryLetsAnAbortedResponseThrough(t *testing.T) {
+func TestRecoverPanicsLetsAnAbortedResponseThrough(t *testing.T) {
 	release := make(chan struct{})
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, "first part")
@@ -28,9 +28,8 @@ func TestRecoverTelemetryLetsAnAbortedResponseThrough(t *testing.T) {
 	t.Cleanup(upstream.Close)
 	t.Cleanup(func() { close(release) })
 	target, _ := url.Parse(upstream.URL)
-	sink := &captureSink{}
 	var logs bytes.Buffer
-	proxy := recoverTelemetry(slog.New(slog.NewTextHandler(&logs, nil)), sink)(httputil.NewSingleHostReverseProxy(target))
+	proxy := recoverPanics(slog.New(slog.NewTextHandler(&logs, nil)))(httputil.NewSingleHostReverseProxy(target))
 	handled := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer close(handled)
@@ -50,7 +49,7 @@ func TestRecoverTelemetryLetsAnAbortedResponseThrough(t *testing.T) {
 	cancel()
 	_ = response.Body.Close()
 	<-handled
-	if len(sink.events) != 0 || logs.Len() != 0 {
-		t.Fatalf("a client leaving mid-body was reported as a panic: events %v, log %q", sink.events, logs.String())
+	if logs.Len() != 0 {
+		t.Fatalf("a client leaving mid-body was reported as a panic: log %q", logs.String())
 	}
 }

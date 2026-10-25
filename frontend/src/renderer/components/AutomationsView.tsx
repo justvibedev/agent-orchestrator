@@ -58,7 +58,6 @@ import {
 	onboardingFooterActionsEndClass,
 	onboardingFormLabelClass,
 } from "../lib/onboarding-ui";
-import { automationPromptLengthBucket, captureRendererEvent } from "../lib/telemetry";
 import { cn } from "../lib/utils";
 import { hidesShellTopbar } from "../lib/platform";
 
@@ -267,7 +266,6 @@ function AutomationFormDialog({
 
 	useEffect(() => {
 		if (!open) return;
-		if (!automation) void captureRendererEvent("ao.renderer.automation_create_opened");
 		setProjectId(automation?.projectId ?? "");
 		setName(automation?.displayName ?? "");
 		setPrompt(automation?.prompt ?? "");
@@ -341,13 +339,6 @@ function AutomationFormDialog({
 		const nextRRule = buildRRuleFromSchedule(schedule);
 		const scheduleChanged = !(editing && automation && initialSchedule && schedulesEqual(schedule, initialSchedule));
 		const harnessChanged = !editing || harness !== (automation?.harness ?? "");
-		const funnel = editing
-			? null
-			: {
-					project_id: projectId,
-					schedule_preset: schedule.preset,
-					prompt_length_bucket: automationPromptLengthBucket(prompt.trim()),
-				};
 		try {
 			await onSubmit({
 				// Kind is not a form choice: automations are workers, and editing
@@ -359,14 +350,10 @@ function AutomationFormDialog({
 				...(scheduleChanged ? { rrule: nextRRule } : {}),
 			});
 		} catch (error) {
-			if (!funnel) throw error;
-			// The dialog already renders the mutation's error, so letting this
-			// reject only reported the same failure a second time as an
-			// unhandled renderer exception.
-			void captureRendererEvent("ao.renderer.automation_create_failed", funnel);
+			if (editing) throw error;
+			// The dialog already renders the mutation's error.
 			return;
 		}
-		if (funnel) void captureRendererEvent("ao.renderer.automation_create_succeeded", funnel);
 	}
 
 	return (

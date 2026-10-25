@@ -2472,18 +2472,6 @@ type IdentityResponse struct {
 	APIVersion int    `json:"apiVersion"`
 }
 
-// TelemetryIdentityResponse is the body of GET /api/v1/telemetry/identity. A
-// phone paired to this desktop identifies only a signed-in AO Cloud user ID.
-// Without one, DistinctID is the desktop install ID and stays anonymous. The
-// phone honors OptedOut. This response carries no email.
-type TelemetryIdentityResponse struct {
-	DistinctID  string `json:"distinctId"`
-	InstallID   string `json:"installId,omitempty"`
-	CloudUserID string `json:"cloudUserId,omitempty"`
-	GitHubLogin string `json:"githubLogin,omitempty"`
-	OptedOut    bool   `json:"optedOut"`
-}
-
 // LinkPreviewQuery selects the external page to unfurl.
 type LinkPreviewQuery struct {
 	URL string `query:"url" description:"Absolute http(s) URL of the page to preview."`

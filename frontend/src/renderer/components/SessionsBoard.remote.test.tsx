@@ -77,7 +77,6 @@ vi.mock("../stores/ui-store", () => {
 	return { useUiStore: Object.assign((selector: (value: typeof state) => unknown) => selector(state), { getState: () => state }) };
 });
 vi.mock("./NotificationCenter", () => ({ NotificationCenter: () => null }));
-vi.mock("../lib/telemetry", () => ({ captureRendererEvent: vi.fn() }));
 
 function worker(hostId: string, title = "Fix login", status = "working") {
 	return {

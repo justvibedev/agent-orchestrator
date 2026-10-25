@@ -6,7 +6,6 @@ import { apiClient, apiErrorMessage } from "../lib/api-client";
 import { buildRankedAgentOptions, DEFAULT_AGENT_PRIORITY_RANK, isReadyAgent } from "../lib/agent-select-options";
 import { cloudDefaultInterfaceMode, createCloudSession } from "../lib/cloud-session-create";
 import { useNavigateToSession } from "../lib/navigate-to-session";
-import { captureRendererEvent } from "../lib/telemetry";
 import { useUiStore } from "../stores/ui-store";
 import { useAgentReadinessQuery } from "./useAgentReadinessQuery";
 import { useCloudCp } from "./useCloudCp";
@@ -43,7 +42,6 @@ export function useCreateArtifactSession() {
 
 	const create = useCallback(
 		async (projectId?: string, cloudOrgId?: string) => {
-			const scope = cloudOrgId ? "cloud" : projectId ? "project" : "standalone";
 			setPending(true);
 			try {
 				if (cloudOrgId && projectId) {
@@ -60,7 +58,6 @@ export function useCreateArtifactSession() {
 						requestedOutput: "artifact",
 						defaultInterfaceMode: cloudDefaultInterfaceMode(settings),
 					});
-					void captureRendererEvent("ao.renderer.artifact_create_succeeded", { scope });
 					await queryClient.invalidateQueries({ queryKey: cloudSessionsQueryKey });
 					navigateToSession(projectId, session.id);
 					return;
@@ -77,11 +74,9 @@ export function useCreateArtifactSession() {
 				});
 				if (error) throw new Error(apiErrorMessage(error, t("artifacts.createError")));
 				if (!data?.session.id) throw new Error(t("artifacts.createError"));
-				void captureRendererEvent("ao.renderer.artifact_create_succeeded", { scope });
 				await queryClient.invalidateQueries({ queryKey: workspaceQueryKey });
 				navigateToSession(projectId, data.session.id);
 			} catch (error) {
-				void captureRendererEvent("ao.renderer.artifact_create_failed", { scope });
 				useUiStore
 					.getState()
 					.showGlobalToast(error instanceof Error ? error.message : t("artifacts.createError"), undefined, "error");

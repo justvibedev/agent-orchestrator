@@ -1,8 +1,6 @@
 import type { ArchiveSummary } from "./archive/archiveSummary";
 import { authHeaders, httpBase, normalizeServerHost, type ServerConfig } from "./config";
-import type { DesktopTelemetryIdentity } from "./telemetry/telemetry";
 import { cachedInstallId, getInstallId } from "./installId";
-import { captureMobileApiError, httpCategory } from "./sentry";
 import { UnreachableError } from "./connectionError";
 import type { AttentionLevel } from "./theme";
 
@@ -473,10 +471,8 @@ async function req(cfg: ServerConfig, path: string, init?: RequestInit, timeoutM
 			// error envelope stalls. Never turn a 401 into a retryable timeout.
 		} else if ((e as { name?: string })?.name === "AbortError") {
 			// Timed out reaching the host (commonly a sleeping Tailscale peer).
-			captureMobileApiError(path, "timeout");
 			throw new UnreachableError("timeout", { cause: e });
 		} else {
-			captureMobileApiError(path, "offline");
 			throw new UnreachableError("offline", { cause: e });
 		}
 	} finally {
@@ -498,9 +494,6 @@ async function req(cfg: ServerConfig, path: string, init?: RequestInit, timeoutM
 		} catch {
 			/* ignore */
 		}
-		// Server answered with an error: classify by status + daemon code, and tag
-		// the requestId so a mobile event pivots to the daemon's own capture.
-		captureMobileApiError(path, httpCategory(res.status), res.status, code, requestId);
 		throw new ApiError(
 			res.status,
 			`${res.status} ${res.statusText}${detail ? ` - ${detail}` : ""}`,
@@ -723,24 +716,6 @@ export async function getSettings(cfg: ServerConfig): Promise<AOSettings> {
 	return {
 		defaultSessionMode: data?.defaultSessionMode === "tui" ? "tui" : "chat",
 		chatHarnesses: Array.isArray(data?.chatHarnesses) ? data.chatHarnesses.filter((value: unknown): value is string => typeof value === "string") : [],
-	};
-}
-
-/**
- * The paired desktop's telemetry identity and opt-out. Older daemons without the
- * route answer 404 (ApiError); callers treat any failure as "no identity" and
- * keep the phone anonymous.
- */
-export async function getTelemetryIdentity(cfg: ServerConfig): Promise<DesktopTelemetryIdentity> {
-	const res = await req(cfg, `${API}/telemetry/identity`);
-	const data = await res.json();
-	const str = (value: unknown) => (typeof value === "string" && value !== "" ? value : undefined);
-	return {
-		distinctId: str(data?.distinctId),
-		installId: str(data?.installId),
-		cloudUserId: str(data?.cloudUserId),
-		githubLogin: str(data?.githubLogin),
-		optedOut: data?.optedOut === true,
 	};
 }
 

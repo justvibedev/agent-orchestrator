@@ -24,7 +24,6 @@ vi.mock("../lib/host-clients", () => ({
 	clientForHost: (hostId: string) => ({ POST: (...args: unknown[]) => remotePostMock(hostId, ...args) }),
 }));
 
-vi.mock("../lib/telemetry", () => ({ captureRendererEvent: vi.fn() }));
 
 import { useTerminateSession, useTerminateSessionState } from "./useTerminateSession";
 import { remoteWorkspaceQueryKey, workspaceQueryKey } from "./useWorkspaceQuery";

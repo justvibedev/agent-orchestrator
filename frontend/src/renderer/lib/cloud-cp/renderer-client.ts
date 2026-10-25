@@ -3,7 +3,6 @@ import { createCloudCpClient, type CloudCpClient } from "./index";
 import { queryClient } from "../query-client";
 import { cachedCloudBillingMode, cloudMeQueryKey } from "../cloud-offering";
 import { appI18n } from "../../i18n";
-import { instrumentCloudClient, reportPlanRefusal } from "../cloud-telemetry";
 
 type CloudCpBridgeRequest = (init: {
 	baseUrl: string;
@@ -41,9 +40,7 @@ export const cloudCpFetch: typeof fetch = async (input, init) => {
 };
 
 export function createRendererCloudCpClient(baseUrl: string): CloudCpClient {
-	// Funnel telemetry (cloud-telemetry.ts) wraps the client; it passes results
-	// and errors through unchanged.
-	return instrumentCloudClient(createCloudCpClient({
+	return createCloudCpClient({
 		baseUrl,
 		getToken: async () => MAIN_PROCESS_TOKEN,
 		fetchImpl: cloudCpFetch,
@@ -51,8 +48,8 @@ export function createRendererCloudCpClient(baseUrl: string): CloudCpClient {
 			void queryClient.invalidateQueries({ queryKey: ["cloud-org"] });
 			void queryClient.invalidateQueries({ queryKey: cloudMeQueryKey });
 		},
-		onPlanRefused: (code) => reportPlanRefusal(code, openUpgradeAfterPlanRefusal()),
-	}));
+		onPlanRefused: () => { openUpgradeAfterPlanRefusal(); },
+	});
 }
 
 /** How often a plan refusal may open the Upgrade page; retries must not keep reopening it. */

@@ -35,8 +35,6 @@ import { useApp } from "../lib/store";
 import { Button, NumberedStep } from "../lib/ui";
 import { useTheme, useThemedStyles } from "../lib/ThemeProvider";
 import { MinimalBackButton } from "../lib/MinimalBackButton";
-import { MOBILE_EVENTS } from "../lib/telemetry/events";
-import { mobileTelemetry } from "../lib/telemetry/runtime";
 import { iconSize, space, type } from "../lib/tokens";
 import { backOr } from "../lib/backNavigation";
 
@@ -289,8 +287,6 @@ export default function PairScreen() {
 				await syncAccountHosts(account);
 			}
 		}).catch(() => {});
-		mobileTelemetry()?.capture(MOBILE_EVENTS.paired, { method: "qr", from_onboarding: fromOnboarding });
-		if (fromOnboarding) mobileTelemetry()?.capture(MOBILE_EVENTS.onboardingCompleted);
 		haptics.success();
 		await finish();
 		// A successful scan counts as a deliberate trigger for the one-shot OS

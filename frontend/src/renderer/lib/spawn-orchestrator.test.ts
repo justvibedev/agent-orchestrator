@@ -7,7 +7,6 @@ import {
 	spawnOrchestrator,
 } from "./spawn-orchestrator";
 import { apiClient } from "./api-client";
-import { captureRendererEvent } from "./telemetry";
 
 const { notificationShowMock } = vi.hoisted(() => ({
 	notificationShowMock: vi.fn(),
@@ -37,15 +36,10 @@ vi.mock("./api-client", () => ({
 	},
 }));
 
-vi.mock("./telemetry", () => ({
-	captureRendererEvent: vi.fn().mockResolvedValue(undefined),
-}));
-
 vi.mock("./bridge", () => ({
 	aoBridge: { notifications: { show: notificationShowMock } },
 }));
 
-const captureMock = vi.mocked(captureRendererEvent);
 
 describe("spawnOrchestrator", () => {
 	beforeEach(() => {
@@ -96,11 +90,6 @@ describe("spawnOrchestrator", () => {
 			response: { status: 201 },
 		});
 		await spawnOrchestrator("proj", "sidebar");
-		expect(captureMock).not.toHaveBeenCalledWith("ao.renderer.orchestrator_spawn_requested", expect.anything());
-		expect(captureMock).toHaveBeenCalledWith("ao.renderer.orchestrator_spawn_succeeded", {
-			project_id: "proj",
-			source: "sidebar",
-		});
 	});
 
 	it("accepts project_clone as a first-class orchestrator spawn source", async () => {
@@ -110,7 +99,6 @@ describe("spawnOrchestrator", () => {
 			response: { status: 201 },
 		});
 		await spawnOrchestrator("proj", "project_clone");
-		expect(captureMock).not.toHaveBeenCalledWith("ao.renderer.orchestrator_spawn_requested", expect.anything());
 	});
 
 	it("emits the failed event and rethrows when the daemon rejects the spawn", async () => {
@@ -120,11 +108,6 @@ describe("spawnOrchestrator", () => {
 			response: { status: 500 },
 		});
 		await expect(spawnOrchestrator("proj", "topbar")).rejects.toThrow("boom");
-		expect(captureMock).toHaveBeenCalledWith("ao.renderer.orchestrator_spawn_failed", {
-			project_id: "proj",
-			source: "topbar",
-		});
-		expect(captureMock).not.toHaveBeenCalledWith("ao.renderer.orchestrator_spawn_succeeded", expect.anything());
 	});
 
 	it("surfaces daemon spawn error messages and codes", async () => {

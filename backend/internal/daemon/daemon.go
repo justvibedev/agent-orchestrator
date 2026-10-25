@@ -32,7 +32,6 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/reviewer"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/runtime/runtimeselect"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/systemexec"
-	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/telemetry/policyauthority"
 	"github.com/aoagents/agent-orchestrator/backend/internal/attachmentstore"
 	"github.com/aoagents/agent-orchestrator/backend/internal/autoreview"
 	"github.com/aoagents/agent-orchestrator/backend/internal/browserruntime"
@@ -46,7 +45,6 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/httpd/controllers"
 	"github.com/aoagents/agent-orchestrator/backend/internal/mobilebridge"
 	"github.com/aoagents/agent-orchestrator/backend/internal/notify"
-	"github.com/aoagents/agent-orchestrator/backend/internal/observe/sentryobs"
 	usagepipeline "github.com/aoagents/agent-orchestrator/backend/internal/observe/usage"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 	"github.com/aoagents/agent-orchestrator/backend/internal/presence"
@@ -89,22 +87,6 @@ const usageReconcileTick = 3 * time.Minute
 
 const chatHibernateSweepTick = 30 * time.Second
 
-// sentryEnvironment maps the daemon's app version to a Sentry environment so a
-// nightly/edge build's issues do not mix with stable release health.
-func sentryEnvironment(version string) string {
-	v := strings.ToLower(strings.TrimSpace(version))
-	switch {
-	case v == "":
-		return "unknown"
-	case strings.Contains(v, "nightly"):
-		return "nightly"
-	case strings.Contains(v, "edge") || strings.Contains(v, "pr"):
-		return "development"
-	default:
-		return "stable"
-	}
-}
-
 // Session Manager asserts the terminal input gate's optional capabilities at
 // runtime: a signature drift compiles but silently turns the send guard's
 // keystroke fence off (#5711).
@@ -116,14 +98,11 @@ var _ interface {
 
 // Run starts the daemon and blocks until it exits. SIGINT/SIGTERM drive
 // graceful shutdown through the HTTP server and background workers.
-func Run(buildVersion string) error {
+func Run() error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
 	}
-	cfg.Telemetry.AppVersion = telemetryAppVersion(cfg.Telemetry.AppVersion, buildVersion)
-	// Children inherit os.Environ(); the export settings stay in cfg only.
-	config.ScrubTelemetryEnv()
 	if cwd, err := os.Getwd(); err == nil {
 		cfg.StartupWorkingDirectory = cwd
 	}
@@ -180,8 +159,7 @@ func Run(buildVersion string) error {
 	//     harness installer, background workers, agent-switch workers, Codex
 	//     account-switch workers, chat StopAll, LAN listener;
 	//   - fixed caps: 5s agent-switch fault enqueue, 3s `tailscale serve off`,
-	//     5s closed-lid lease release plus 3s caffeinate exit (keep-awake), and
-	//     a 2s Sentry flush.
+	//     5s closed-lid lease release plus 3s caffeinate exit (keep-awake).
 	// Wait 9T+18s (108s by default), one stage of margin. Run's uncapped waits
 	// (startup reconcile, preview servers, chat side stops, usage, pricing,
 	// lifecycle stack) are not covered: a predecessor stuck in one past the
@@ -210,60 +188,10 @@ func Run(buildVersion string) error {
 		log.Warn("install using-ao skill", "err", err)
 	}
 
-	// The app owns the user's "Share error events" choice and writes it to the
-	// policy file. It gates Sentry capture only: product telemetry answers to
-	// AO_TELEMETRY_EVENTS alone, as documented.
-	telemetryPolicy := policyauthority.New(filepath.Join(cfg.DataDir, policyauthority.FileName))
-	eventsAllowed := telemetryPolicy.EventsAllowed(context.Background(), cfg.Telemetry.Events, cfg.Telemetry.EventsExplicit)
-	sentryobs.SetPolicyEnabled(eventsAllowed)
-	telemetrySink, telemetryIdentity := newTelemetrySink(cfg, store, log)
-	defer func() { _ = telemetrySink.Close(context.Background()) }()
-	installID := ""
-	if telemetryIdentity != nil {
-		installID = telemetryIdentity.Snapshot().InstallID
-	}
-	// Initialize daemon Sentry once so a later policy opt-in works without a
-	// restart. The policy gate is checked before every capture. An unavailable
-	// install ID omits the tag without disabling error reporting.
-	if err := sentryobs.Init(sentryobs.Config{
-		DSN:         cfg.Telemetry.SentryDSN,
-		InstallID:   installID,
-		Release:     cfg.Telemetry.AppVersion,
-		Environment: sentryEnvironment(cfg.Telemetry.AppVersion),
-	}); err != nil {
-		log.Warn("daemon sentry disabled", "err", err)
-	}
-	defer sentryobs.Flush(2 * time.Second)
-	telemetrySink.Emit(context.Background(), ports.TelemetryEvent{
-		Name:       "ao.daemon.started",
-		Source:     "daemon",
-		OccurredAt: time.Now().UTC(),
-		Level:      ports.TelemetryLevelInfo,
-		Payload: map[string]any{
-			"port":  cfg.Port,
-			"agent": cfg.Agent,
-		},
-	})
-	if telemetryIdentity != nil && cfg.Telemetry.Events {
-		marked, err := telemetryIdentity.MarkInstalledEvent(context.Background())
-		if err != nil {
-			log.Warn("record telemetry install event", "error", err)
-		} else if marked {
-			telemetrySink.Emit(context.Background(), ports.TelemetryEvent{
-				Name:       "ao.app.installed",
-				Source:     "daemon",
-				OccurredAt: time.Now().UTC(),
-				Level:      ports.TelemetryLevelInfo,
-			})
-		}
-	}
-
 	// signal.NotifyContext cancels ctx on SIGINT/SIGTERM, which drives the
 	// graceful shutdown inside Server.Run and stops the background goroutines.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	go telemetryPolicy.Watch(ctx, time.Second, cfg.Telemetry.Events, cfg.Telemetry.EventsExplicit, eventsAllowed, sentryobs.SetPolicyEnabled)
-	startGitHubLoginResolver(ctx, cfg, telemetryIdentity, log)
 	cdcPipe, err := startCDC(ctx, store, log)
 	if err != nil {
 		return err
@@ -316,7 +244,7 @@ func Run(buildVersion string) error {
 	}
 	messenger := newSessionMessenger(store, runtimeAdapter, log, agents)
 
-	lcStack := startLifecycle(ctx, cfg.DataDir, store, runtimeAdapter, lifecycleMessenger, notificationWriter, telemetrySink, agents, log)
+	lcStack := startLifecycle(ctx, cfg.DataDir, store, runtimeAdapter, lifecycleMessenger, notificationWriter, agents, log)
 
 	// Wire the controller-facing session service over the same store + LCM, the
 	// selected runtime, routed git/scratch workspaces, the per-session agent
@@ -532,7 +460,7 @@ func Run(buildVersion string) error {
 		}
 		return fmt.Errorf("reviewer resolver: %w", err)
 	}
-	sessionSvc, reviewSvc, wiredSessMgr, err := startSession(ctx, cfg, runtimeAdapter, store, lcStack.LCM, lcStack.ArtifactVersions, messenger, telemetrySink, notificationWriter, agents, agentSvc, managedPreview, browserBroker, browserAuthority, chatLauncher{svc: chatSvc, persistentHostReconcileDone: persistentHostsReconciled}, reviewerChatsRecovered, settingsSvc, tracker, codexOperationGate, reviewers, log)
+	sessionSvc, reviewSvc, wiredSessMgr, err := startSession(ctx, cfg, runtimeAdapter, store, lcStack.LCM, lcStack.ArtifactVersions, messenger, notificationWriter, agents, agentSvc, managedPreview, browserBroker, browserAuthority, chatLauncher{svc: chatSvc, persistentHostReconcileDone: persistentHostsReconciled}, reviewerChatsRecovered, settingsSvc, tracker, codexOperationGate, reviewers, log)
 	if err != nil {
 		stop()
 		lcStack.Stop()
@@ -634,7 +562,7 @@ func Run(buildVersion string) error {
 	lcStack.LCM.SetSessionInputLease(sessMgr)
 	lcStack.LCM.SetSessionOperationGate(sessMgr)
 	termMgr.SetSessionInputLease(sessMgr)
-	projectSvc := projectsvc.NewWithDeps(projectsvc.Deps{Store: store, Sessions: sessionSvc, DefaultHarness: domain.AgentHarness(cfg.Agent), Telemetry: telemetrySink, Logger: log})
+	projectSvc := projectsvc.NewWithDeps(projectsvc.Deps{Store: store, Sessions: sessionSvc, DefaultHarness: domain.AgentHarness(cfg.Agent), Logger: log})
 	reportSessions, ok := sessMgr.(reportSemanticSession)
 	if !ok {
 		return errors.New("wire report delivery: session manager lacks semantic send support")
@@ -705,12 +633,9 @@ func Run(buildVersion string) error {
 			invalidateHarnessBinary(agentSvc, harness, binaryCaches...)
 		}
 	})
-	systemInstall.SetTelemetry(telemetrySink)
-	sessMgr.SetVersionTelemetry(telemetrySink)
 	sessMgr.SetVersionRefreshPolicy(func() sessionmanager.VersionRefreshPolicy {
 		return versionRefreshPolicy(ctx, cfg, settingsSvc)
 	})
-	chatSvc.SetVersionSwitchObserver(sessMgr.ObserveChatVersionSwitch)
 	systemInstall.SetOnSucceeded(func(target systeminstall.Target) {
 		harness, ok := installedAgentHarness(target)
 		if !ok {
@@ -1024,8 +949,6 @@ func Run(buildVersion string) error {
 		UsageSummary:       usagesvc.NewSummaryReader(store),
 		SessionMemory:      memoryReader,
 		SessionSteps:       lcStack.LCM,
-		Telemetry:          telemetrySink,
-		TelemetryIdentity:  telemetryIdentity,
 		Mobile:             mc,
 		BrowserLive:        browserLive,
 		DevImport: devimportsvc.New(devimportsvc.Deps{
@@ -1085,7 +1008,7 @@ func Run(buildVersion string) error {
 
 	// Late-bind: the LAN listener shares the exact loopback router instance so
 	// the LAN surface and loopback surface never drift apart.
-	lan := httpd.NewMobileLAN(srv.Handler(), hostIdentity.HostID, mobilebridge.DefaultPort, log, telemetrySink)
+	lan := httpd.NewMobileLAN(srv.Handler(), hostIdentity.HostID, mobilebridge.DefaultPort, log)
 	bs.LAN = lan
 
 	// Restore Connect Mobile across a daemon restart: if the bridge was left
@@ -1207,7 +1130,7 @@ func Run(buildVersion string) error {
 				}
 			}
 		}()
-		go runVersionRefreshSweep(ctx, cfg, settingsSvc, sessMgr, systemInstall, telemetrySink, log)
+		go runVersionRefreshSweep(ctx, cfg, settingsSvc, sessMgr, systemInstall, log)
 	})
 
 	// Both graceful shutdown paths (SIGTERM and POST /shutdown) funnel through
@@ -1285,17 +1208,6 @@ func Run(buildVersion string) error {
 		log.Error("cdc pipeline shutdown", "err", err)
 	}
 	return runErr
-}
-
-func telemetryAppVersion(configured, buildVersion string) string {
-	if configured != "" {
-		return configured
-	}
-	buildVersion = strings.TrimSpace(buildVersion)
-	if buildVersion == "dev" {
-		return ""
-	}
-	return buildVersion
 }
 
 type reportSemanticSession interface {

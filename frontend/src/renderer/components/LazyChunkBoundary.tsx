@@ -1,6 +1,5 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { captureRendererException } from "../lib/telemetry";
 import { Button } from "./ui/button";
 
 type Props = { children: React.ReactNode };
@@ -35,10 +34,6 @@ class LazyChunkErrorBoundary extends React.Component<Props, State> {
 
 	static getDerivedStateFromError(): State {
 		return { hasError: true };
-	}
-
-	componentDidCatch(error: Error) {
-		void captureRendererException(error, { source: "react-error-boundary", operation: "lazy_chunk" });
 	}
 
 	render() {

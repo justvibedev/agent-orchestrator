@@ -10,7 +10,6 @@ import { aoBridge } from "../../lib/bridge";
 import { CloudCpError } from "../../lib/cloud-cp/errors";
 import type { CloudCpBillingSummary, CloudCpPlanLimits, CloudCpPlanOffer } from "../../lib/cloud-cp/types";
 import { useCloudSession } from "../../lib/cloud-session";
-import { reportUpgradeViewed } from "../../lib/cloud-telemetry";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../ui/dialog";
@@ -60,7 +59,6 @@ function BillingSectionInner({ titleHidden }: { titleHidden?: boolean }) {
 	const [confirmReset, setConfirmReset] = useState(false);
 	// The Upgrade page is the paywall's landing: count each visit once mounted.
 	useEffect(() => {
-		if (status === "authenticated") reportUpgradeViewed("settings");
 	}, [status]);
 
 	const title = t("settings.billing.title");

@@ -12432,26 +12432,6 @@ paths:
       summary: Cancel an unclaimed speculative task worktree
       tags:
       - projects
-  /api/v1/telemetry/identity:
-    get:
-      operationId: getTelemetryIdentity
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TelemetryIdentityResponse'
-          description: OK
-        "501":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Not Implemented
-      summary: Report the desktop telemetry identity and opt-out so a paired phone
-        can adopt it
-      tags:
-      - identity
   /api/v1/usage/memory/pressure:
     get:
       operationId: getMemoryPressure
@@ -12592,10 +12572,6 @@ components:
         error:
           type: string
         message:
-          type: string
-        reporting_owner:
-          enum:
-          - http
           type: string
         requestId:
           type: string
@@ -20644,22 +20620,6 @@ components:
       required:
       - ready
       - requirements
-      type: object
-    TelemetryIdentityResponse:
-      properties:
-        cloudUserId:
-          type: string
-        distinctId:
-          type: string
-        githubLogin:
-          type: string
-        installId:
-          type: string
-        optedOut:
-          type: boolean
-      required:
-      - distinctId
-      - optedOut
       type: object
     TrackerIntakeConfig:
       properties:

@@ -52,7 +52,6 @@ vi.mock("../hooks/useAwake", () => ({
 	awakeCapability: () => ({ available: true }),
 }));
 
-vi.mock("../lib/telemetry", () => ({ captureRendererEvent: vi.fn() }));
 vi.mock("../lib/api-client", () => ({
 	apiClient: {
 		GET: async (path: string) =>

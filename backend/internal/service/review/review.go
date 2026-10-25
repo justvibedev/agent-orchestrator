@@ -15,9 +15,7 @@ import (
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
-	"github.com/aoagents/agent-orchestrator/backend/internal/reqid"
 	reviewcore "github.com/aoagents/agent-orchestrator/backend/internal/review"
-	"github.com/aoagents/agent-orchestrator/backend/internal/telemetrymeta"
 )
 
 // errRunSuperseded marks a run that became terminal before its result arrived.
@@ -36,30 +34,6 @@ var (
 	ErrPROwnedElsewhere     = reviewcore.ErrPROwnedElsewhere
 	ErrAgentBinaryNotFound  = ports.ErrAgentBinaryNotFound
 )
-
-// reviewErrorKind reduces a trigger failure to a safe category. Raw error text
-// can carry repository paths and agent binary locations, so only the kind and a
-// stable code ever leave the process.
-func reviewErrorKind(err error) string {
-	// The engine returns its own sentinels (reviewcore.ErrInvalid / ErrNotFound)
-	// and ports.ErrAgentBinaryNotFound, wrapped with %w. Those are mapped to API
-	// error kinds only at the HTTP controller boundary, after Trigger has already
-	// returned here, so telemetrymeta.ErrorKindAndCode (which only classifies
-	// *apierr.Error) would collapse every trigger failure to "internal" and the
-	// field could never say why a trigger failed. Classify the sentinels first.
-	switch {
-	case errors.Is(err, reviewcore.ErrInvalid):
-		return "invalid"
-	case errors.Is(err, reviewcore.ErrNotFound):
-		return "not_found"
-	case errors.Is(err, reviewcore.ErrConflict):
-		return "conflict"
-	case errors.Is(err, ports.ErrAgentBinaryNotFound):
-		return "agent_unavailable"
-	}
-	kind, _ := telemetrymeta.ErrorKindAndCode(err)
-	return kind
-}
 
 // Manager is the reviews surface the HTTP controller depends on.
 type Manager interface {
@@ -87,7 +61,6 @@ type Service struct {
 	requester          ports.SCMReviewRequester
 	resolver           ports.SCMReviewResolver
 	clock              func() time.Time
-	telemetry          ports.EventSink
 	codexOperationGate ports.CodexOperationGate
 	notifications      reviewNotificationSink
 	prRefresher        PRRefresher
@@ -159,16 +132,6 @@ func WithReviewResolver(resolver ports.SCMReviewResolver) Option {
 	return func(s *Service) { s.resolver = resolver }
 }
 
-// WithTelemetry records review outcomes.
-//
-// Code review is a headline feature with no telemetry at all, so there is no way
-// to answer whether reviewers are used, whether they approve or request changes,
-// or how long a pass takes. Optional so the service still works unwired, which
-// is how every existing test constructs it.
-func WithTelemetry(sink ports.EventSink) Option {
-	return func(s *Service) { s.telemetry = sink }
-}
-
 // WithNotificationSink publishes durable review results after their run has
 // reached complete. The run id is the dedupe key, so submit retries are safe.
 func WithNotificationSink(sink reviewNotificationSink) Option {
@@ -179,28 +142,6 @@ func WithNotificationSink(sink reviewNotificationSink) Option {
 // entering while the device-global Codex credential is changing.
 func WithCodexAccountOperationGate(gate ports.CodexOperationGate) Option {
 	return func(s *Service) { s.codexOperationGate = gate }
-}
-
-// emit reports an event when a sink is wired.
-//
-// Only enum-like fields are ever passed in. Never the review body, the PR URL,
-// or the target SHA: the body is reviewer prose about someone's code, and the URL
-// and SHA identify the repository. The daemon's remote allowlist would drop
-// unknown keys anyway, but the intent belongs at the call site.
-func (s *Service) emit(ctx context.Context, name string, sessionID domain.SessionID, payload map[string]any) {
-	if s.telemetry == nil {
-		return
-	}
-	session := sessionID
-	s.telemetry.Emit(context.Background(), ports.TelemetryEvent{
-		Name:       name,
-		Source:     "review_service",
-		OccurredAt: s.clock(),
-		Level:      ports.TelemetryLevelInfo,
-		SessionID:  &session,
-		RequestID:  reqid.FromContext(ctx),
-		Payload:    payload,
-	})
 }
 
 // New wraps a core review engine as the API-facing service.
@@ -264,9 +205,6 @@ func (s *Service) RequestRereview(ctx context.Context, workerID domain.SessionID
 		}
 		return err
 	}
-	s.emit(ctx, "ao.review.rereview_requested", workerID, map[string]any{
-		"provider": pr.Provider,
-	})
 	return nil
 }
 
@@ -419,7 +357,6 @@ func (s *Service) ResolveReviewComment(ctx context.Context, workerID domain.Sess
 	} else if !updated {
 		return fmt.Errorf("%w: review comment is not tracked for this PR", ErrNotFound)
 	}
-	s.emit(ctx, "ao.review.comment_resolved", workerID, map[string]any{"provider": pr.Provider})
 	return nil
 }
 
@@ -571,14 +508,9 @@ func (s *Service) triggerWithOptions(
 	workerID domain.SessionID,
 	opts reviewcore.TriggerOptions,
 ) (reviewcore.TriggerResult, error) {
-	harness, config, source := opts.Harness, opts.Config, opts.Source
-	triggeredPayload := map[string]any{"trigger": string(source), "rerun": opts.Rerun}
+	harness, config := opts.Harness, opts.Config
 	if err := config.Validate(); err != nil {
 		err = fmt.Errorf("%w: reviewer config: %w", ErrInvalid, err)
-		s.emit(ctx, "ao.review.trigger_failed", workerID, map[string]any{
-			"error_kind": reviewErrorKind(err),
-			"trigger":    string(source),
-		})
 		return reviewcore.TriggerResult{}, err
 	}
 	usesCodex := s.codexReviewUsesCodex(ctx, workerID, harness)
@@ -593,14 +525,7 @@ func (s *Service) triggerWithOptions(
 	}
 	result, err := s.engineTrigger(ctx, workerID, opts)
 	if err != nil {
-		s.emit(ctx, "ao.review.trigger_failed", workerID, map[string]any{
-			"error_kind": reviewErrorKind(err),
-			"trigger":    string(source),
-		})
 		return result, err
-	}
-	if result.Run.Harness != "" {
-		triggeredPayload["harness"] = string(result.Run.Harness)
 	}
 	// A created run or a restarted pass is an actual review. Reused and skipped
 	// automatic attempts can recur on every sweep and are not new reviews.
@@ -608,8 +533,6 @@ func (s *Service) triggerWithOptions(
 	if !createdOrRestarted {
 		return result, nil
 	}
-	triggeredPayload["created_runs"] = len(result.CreatedRuns)
-	s.emit(ctx, "ao.review.triggered", workerID, triggeredPayload)
 	return result, nil
 }
 
@@ -619,9 +542,6 @@ func (s *Service) Cancel(ctx context.Context, workerID domain.SessionID) (review
 	if err != nil {
 		return result, err
 	}
-	s.emit(ctx, "ao.review.cancelled", workerID, map[string]any{
-		"cancelled_runs": len(result.CancelledRuns),
-	})
 	return result, nil
 }
 
@@ -830,26 +750,6 @@ func (s *Service) submitOne(ctx context.Context, workerID domain.SessionID, revi
 		run.Body = body
 		run.GithubReviewID = githubReviewID
 		run.AutoInjectReview = session.AutoInjectReview
-		// Only on the real running -> complete transition. Re-submitting an
-		// already-complete run returns early below, so telemetry stays idempotent
-		// the same way the store does.
-		s.emit(ctx, "ao.review.submitted", workerID, map[string]any{
-			"harness":            string(run.Harness),
-			"verdict":            string(verdict),
-			"duration_ms":        s.clock().Sub(run.CreatedAt).Milliseconds(),
-			"posted_to_provider": githubReviewID != "",
-			// Which pass produced this verdict. A manual and an automatic review
-			// mean different things about how the feature is being used, and the
-			// verdict split between them is the whole question.
-			"trigger": string(run.TriggerSource),
-			// A size, never the text. Review depth is otherwise unobservable: a
-			// changes-requested verdict with a two-line body and one with a full
-			// findings list are the same event without it.
-			"body_bytes": len(body),
-			// Whether the session policy will let this result reach the worker at
-			// all, recorded at the moment it is snapshotted onto the run.
-			"auto_inject": session.AutoInjectReview,
-		})
 	case domain.ReviewRunComplete:
 		if run.Verdict != verdict {
 			return domain.ReviewRun{}, fmt.Errorf("%w: review run %q already recorded verdict %q", ErrInvalid, runID, run.Verdict)

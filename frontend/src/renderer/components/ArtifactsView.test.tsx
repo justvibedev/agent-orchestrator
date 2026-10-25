@@ -13,7 +13,6 @@ const mocks = vi.hoisted(() => ({
 	navigate: vi.fn(),
 	post: vi.fn(),
 	get: vi.fn(),
-	capture: vi.fn(),
 	hideShellTopbar: true,
 }));
 
@@ -26,10 +25,6 @@ vi.mock("../hooks/useAgentReadinessQuery", () => ({ useAgentReadinessQuery: () =
 vi.mock("../lib/api-client", async (importOriginal) => ({
 	...await importOriginal<typeof import("../lib/api-client")>(),
 	apiClient: { POST: mocks.post, GET: mocks.get },
-}));
-vi.mock("../lib/telemetry", async (importOriginal) => ({
-	...await importOriginal<typeof import("../lib/telemetry")>(),
-	captureRendererEvent: mocks.capture,
 }));
 vi.mock("../lib/platform", async (importOriginal) => ({
 	...await importOriginal<typeof import("../lib/platform")>(),
@@ -113,7 +108,6 @@ describe("ArtifactsView", () => {
 		mocks.navigate.mockReset();
 		mocks.post.mockReset();
 		mocks.get.mockReset();
-		mocks.capture.mockReset();
 		useUiStore.setState({ settingsModal: null });
 		useUiStore.getState().clearGlobalToast();
 	});
@@ -233,8 +227,6 @@ describe("ArtifactsView", () => {
 		expect(mocks.post).toHaveBeenCalledWith("/api/v1/sessions", {
 			body: { kind: "worker", requestedOutput: "artifact", displayName: "New artifact", harness: "codex" },
 		});
-		expect(mocks.capture).not.toHaveBeenCalledWith("ao.renderer.artifact_create_requested", expect.anything());
-		expect(mocks.capture).toHaveBeenCalledWith("ao.renderer.artifact_create_succeeded", { scope: "standalone" });
 	});
 
 	it("starts a project artifact session with the project's worker agent", async () => {
@@ -251,7 +243,6 @@ describe("ArtifactsView", () => {
 		expect(mocks.post).toHaveBeenCalledWith("/api/v1/sessions", {
 			body: { kind: "worker", requestedOutput: "artifact", displayName: "New artifact", projectId: "px0", harness: "claude-code" },
 		});
-		expect(mocks.capture).toHaveBeenCalledWith("ao.renderer.artifact_create_succeeded", { scope: "project" });
 	});
 
 	it("shows the daemon error and stays on the screen when the start fails", async () => {
@@ -265,7 +256,6 @@ describe("ArtifactsView", () => {
 
 		await waitFor(() => expect(useUiStore.getState().globalToast).toMatchObject({ title: "Agent is not ready" }));
 		expect(mocks.navigate).not.toHaveBeenCalled();
-		expect(mocks.capture).toHaveBeenCalledWith("ao.renderer.artifact_create_failed", { scope: "standalone" });
 		expect(screen.getByRole("button", { name: "Create artifact" })).toBeEnabled();
 	});
 

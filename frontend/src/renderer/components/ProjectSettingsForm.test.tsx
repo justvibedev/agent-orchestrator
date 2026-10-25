@@ -45,9 +45,6 @@ vi.mock("../stores/ui-store", () => ({
 		}),
 }));
 
-vi.mock("../lib/orchestrator-replacement-telemetry", () => ({
-	captureOrchestratorReplacementFailure: captureOrchestratorReplacementFailureMock,
-}));
 
 vi.mock("../hooks/useSettings", () => ({
 	useSettings: () => ({ settings: { trackerIntakeEnabled: trackerIntakeGate.enabled }, isLoading: false, error: undefined }),

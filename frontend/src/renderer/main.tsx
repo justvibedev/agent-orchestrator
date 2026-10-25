@@ -9,41 +9,20 @@ import { queryClient } from "./lib/query-client";
 import { mergeUnreadNotification, unreadNotificationsQueryKey } from "./lib/notifications";
 import { playNotificationSound } from "./lib/notification-sound-player";
 import { createAppRouter } from "./router";
-import { TelemetryBoundary } from "./components/TelemetryBoundary";
+import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { CloudOnboardingGate } from "./components/CloudOnboardingGate";
 import { CloudNotificationRuntime } from "./components/CloudNotificationRuntime";
-import { TelemetryIdentityRuntime } from "./components/TelemetryIdentityRuntime";
-import { applyAnalyticsOptOut, applyRendererTelemetryPolicy, clearRendererTelemetryQueues, initTelemetry, isDeniedEvent } from "./lib/telemetry";
 import { aoBridge } from "./lib/bridge";
-import { startDaemonFailureTelemetry } from "./lib/daemon-telemetry";
-import { startUpdateTelemetry } from "./lib/update-telemetry";
-import { startSessionManagementTelemetry } from "./lib/session-management-telemetry";
 import { appI18n } from "./i18n";
 import { useLocaleStore } from "./stores/locale-store";
 import { useSoundNotificationsStore } from "./stores/sound-notifications-store";
-import { useTelemetryPolicyStore } from "./stores/telemetry-policy-store";
-import { useAnalyticsOptOutStore } from "./stores/analytics-opt-out-store";
 
 const router = createAppRouter(queryClient);
 
-// Main owns consent and only acknowledges opt-out after every live AO shell
-// confirms that its in-memory renderer queues were actually purged.
-aoBridge.telemetry.onClearQueues(clearRendererTelemetryQueues);
 // Main decides *when* a notification sound plays; the renderer only supplies
 // the speakers, since main has no audio output of its own.
 aoBridge.notifications.onPlaySound(() => {
 	playNotificationSound(() => aoBridge.notifications.reportSoundFailure());
-});
-aoBridge.telemetry.onPolicy((view) => applyRendererTelemetryPolicy(view.eventsEnabled && view.acknowledged && view.state === "applied"));
-
-// The analytics opt-out lives in main (shared with the daemon and mobile). Apply
-// it to this renderer's PostHog client at launch and whenever Settings flips it.
-void aoBridge.telemetry.getAnalyticsOptOut().then((optedOut) => {
-	if (optedOut) void applyAnalyticsOptOut(true);
-}).catch(() => undefined);
-aoBridge.telemetry.onAnalyticsOptOut((optedOut) => {
-	useAnalyticsOptOutStore.setState({ optedOut, loaded: true });
-	void applyAnalyticsOptOut(optedOut);
 });
 
 if (import.meta.env.DEV) {
@@ -87,22 +66,6 @@ if (import.meta.env.DEV) {
 	};
 }
 
-let sessionManagementTelemetryRetries = 0;
-const bootstrapSessionManagementTelemetry = () => {
-	void initTelemetry().then((enabled) => {
-		if (enabled) {
-			startSessionManagementTelemetry();
-			return;
-		}
-		if (!isDeniedEvent("ao.renderer.session_management_summary") && sessionManagementTelemetryRetries++ < 12) {
-			window.setTimeout(bootstrapSessionManagementTelemetry, 5_000);
-		}
-	});
-};
-bootstrapSessionManagementTelemetry();
-startDaemonFailureTelemetry();
-startUpdateTelemetry();
-
 declare module "@tanstack/react-router" {
 	interface Register {
 		router: typeof router;
@@ -110,7 +73,6 @@ declare module "@tanstack/react-router" {
 }
 
 async function renderApp(): Promise<void> {
-	void useTelemetryPolicyStore.getState().load();
 	// The persisted locale is cosmetic; do not leave a newly opened native
 	// window blank while its IPC read completes. The router's pending screen
 	// renders immediately, then i18n updates if the user chose another locale.
@@ -123,14 +85,13 @@ async function renderApp(): Promise<void> {
 	// switches and drag updates spend hundreds of milliseconds recording timings.
 	createRoot(document.getElementById("root") as HTMLElement).render(
 		<I18nextProvider i18n={appI18n}>
-			<TelemetryBoundary>
+			<AppErrorBoundary>
 				<QueryClientProvider client={queryClient}>
 					<CloudNotificationRuntime />
-					<TelemetryIdentityRuntime />
 					<RouterProvider router={router} />
 					<CloudOnboardingGate />
 				</QueryClientProvider>
-			</TelemetryBoundary>
+			</AppErrorBoundary>
 		</I18nextProvider>,
 	);
 }

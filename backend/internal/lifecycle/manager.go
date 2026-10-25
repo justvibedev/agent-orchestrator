@@ -15,7 +15,6 @@ import (
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
-	"github.com/aoagents/agent-orchestrator/backend/internal/reqid"
 	"github.com/aoagents/agent-orchestrator/backend/internal/sessionguard"
 )
 
@@ -156,11 +155,6 @@ func WithNotificationSink(sink notificationSink) Option {
 	return func(m *Manager) { m.notifications = sink }
 }
 
-// WithTelemetry wires lifecycle activity transitions to the shared telemetry sink.
-func WithTelemetry(sink ports.EventSink) Option {
-	return func(m *Manager) { m.telemetry = sink }
-}
-
 // WithDataDir supplies AO's data directory so ReconcileSessionOutputType can
 // derive a session's artifact directory when its stored value is empty (a
 // row created before that column existed).
@@ -242,11 +236,10 @@ type Manager struct {
 	// sessions rows created before session_output_type/artifact_dir existed.
 	dataDir string
 
-	mu        sync.Mutex
-	window    time.Duration
-	clock     func() time.Time
-	react     reactionState
-	telemetry ports.EventSink
+	mu     sync.Mutex
+	window time.Duration
+	clock  func() time.Time
+	react  reactionState
 	// flights tracks, per session, the in-flight tool executions and the
 	// pending permission dialog's identity (see toolFlight). Guarded by mu.
 	flights map[domain.SessionID]*toolFlight
@@ -983,7 +976,6 @@ retryProjection:
 		applyActivityMetadata(&rec.Metadata, s)
 	}
 	prevState := rec.Activity.State
-	prevAt := rec.Activity.LastActivityAt
 	act := domain.Activity{State: s.State, LastActivityAt: timeOr(s.Timestamp, now)}
 	sameState := sameActivity(rec.Activity, act)
 	// A same-state repeat is still a write when it is the FIRST signal for
@@ -1060,7 +1052,6 @@ retryProjection:
 	// Leaving the needs-input family is the user answering: the notification
 	// that pinged them has nothing left to resolve.
 	resolutions := needsInputResolutions(rec, next, now)
-	waitingEvents := m.waitingInputEvents(next, prevState, prevAt, now)
 	m.mu.Unlock()
 	if prevState != domain.ActivityIdle && next.Activity.State == domain.ActivityIdle {
 		m.operationGateMu.RLock()
@@ -1071,9 +1062,6 @@ retryProjection:
 		if ender, ok := gate.(interface{ SessionTurnEnded(domain.SessionRecord) }); ok {
 			ender.SessionTurnEnded(next)
 		}
-	}
-	for _, ev := range waitingEvents {
-		m.emitTelemetry(ctx, ev)
 	}
 	m.emitNotification(ctx, intent)
 	m.resolveNotifications(ctx, resolutions...)
@@ -1337,59 +1325,6 @@ func (m *Manager) applyToolPrecedenceLocked(id domain.SessionID, cur domain.Acti
 		}
 		return s
 	}
-}
-
-func (m *Manager) waitingInputEvents(next domain.SessionRecord, prevState domain.ActivityState, prevAt, now time.Time) []ports.TelemetryEvent {
-	if m.telemetry == nil {
-		return nil
-	}
-	projectID := next.ProjectID
-	sessionID := next.ID
-	var events []ports.TelemetryEvent
-	// Entry/exit is measured on the needs-input family boundary (waiting_input
-	// or blocked): the event names stay waiting_input_* for dashboard
-	// continuity, the payload state distinguishes the two, and an in-family
-	// transition emits neither event so dwell covers the whole pause.
-	if !prevState.NeedsInput() && next.Activity.State.NeedsInput() && !next.IsTerminated {
-		events = append(events, ports.TelemetryEvent{
-			Name:       "ao.session.waiting_input_entered",
-			Source:     "lifecycle",
-			OccurredAt: now.UTC(),
-			Level:      ports.TelemetryLevelInfo,
-			ProjectID:  &projectID,
-			SessionID:  &sessionID,
-			Payload: map[string]any{
-				"state": string(next.Activity.State),
-			},
-		})
-	}
-	if prevState.NeedsInput() && !next.Activity.State.NeedsInput() {
-		payload := map[string]any{
-			"state":     string(next.Activity.State),
-			"dwell_ms":  now.Sub(prevAt).Milliseconds(),
-			"exited_to": string(next.Activity.State),
-		}
-		events = append(events, ports.TelemetryEvent{
-			Name:       "ao.session.waiting_input_exited",
-			Source:     "lifecycle",
-			OccurredAt: now.UTC(),
-			Level:      ports.TelemetryLevelInfo,
-			ProjectID:  &projectID,
-			SessionID:  &sessionID,
-			Payload:    payload,
-		})
-	}
-	return events
-}
-
-func (m *Manager) emitTelemetry(ctx context.Context, ev ports.TelemetryEvent) {
-	if m.telemetry == nil {
-		return
-	}
-	if ev.RequestID == "" {
-		ev.RequestID = reqid.FromContext(ctx)
-	}
-	m.telemetry.Emit(ctx, ev)
 }
 
 func (m *Manager) emitNotification(ctx context.Context, intent *ports.NotificationIntent) {
@@ -1671,14 +1606,8 @@ func (m *Manager) changeControllerEpoch(
 	// would show as the new controller's current tool.
 	delete(m.steps, id)
 	resolutions := needsInputResolutions(previous, next, now)
-	waitingEvents := m.waitingInputEvents(
-		next, previous.Activity.State, previous.Activity.LastActivityAt, now,
-	)
 	m.mu.Unlock()
 
-	for _, ev := range waitingEvents {
-		m.emitTelemetry(ctx, ev)
-	}
 	m.resolveNotifications(ctx, resolutions...)
 	return true, nil
 }

@@ -38,7 +38,6 @@ vi.mock("./useSettings", () => ({ useSettings: () => ({ settings: { cloudControl
 vi.mock("../lib/account-remote-hosts", () => ({ listAccountRemoteHosts: async () => [mocks.self, mocks.other].map((host) => ({ ...host, token: "fixture-only" })) }));
 vi.mock("./useCloudCp", () => ({ useCloudCp: () => ({ ready: false, client: {}, baseUrl: "" }) }));
 vi.mock("./useCloudOrg", () => ({ useCloudOrg: () => ({ ready: false, org: undefined }) }));
-vi.mock("../lib/telemetry", () => ({ captureRendererEvent: vi.fn() }));
 
 import { useRemoteHosts } from "./useRemoteHosts";
 import { useRemoteWorkspaces, useWorkspaceQuery } from "./useWorkspaceQuery";

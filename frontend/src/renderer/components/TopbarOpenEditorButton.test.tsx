@@ -8,7 +8,6 @@ import { appShortcutBus } from "../test/app-shortcut-bus";
 import { TopbarOpenEditorButton } from "./TopbarOpenEditorButton";
 import { TooltipProvider } from "./ui/tooltip";
 
-vi.mock("../lib/telemetry", () => ({ captureRendererEvent: vi.fn() }));
 
 const openMock = vi.fn(async ({ targetId }: OpenSessionTargetInput) => {
 	if (targetId === "file-manager") return { id: "file-manager" as const, name: "Finder", kind: "file_manager" as const };

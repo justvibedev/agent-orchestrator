@@ -433,8 +433,6 @@ type Service struct {
 	idleUpdates map[Target]*idleUpdateRun
 	// idleCoordinator stops and resumes a harness's sessions around such a run.
 	idleCoordinator IdleUpdateCoordinator
-	// telemetry receives update and version-move events; nil drops them.
-	telemetry ports.EventSink
 	// updateLevels remembers the level each running update was started under.
 	updateLevels map[Target]UpdateWhileRunning
 	// updateObserver marks sessions an update left on the replaced release.
@@ -837,15 +835,9 @@ func (s *Service) StartAgentOperation(ctx context.Context, target Target, method
 		var active *HarnessActiveError
 		switch {
 		case errors.Is(err, errUpdateWhenIdle) && !plan.Unsupported:
-			s.emitHarnessUpdate(target, UpdateWhileRunningIdle, "waiting", 0)
 			// Wait for idle sessions without holding the harness meanwhile.
 			return s.startIdleUpdate(ctx, plan, baseline)
 		case errors.As(err, &active):
-			result := "refused_sessions"
-			if active.Starting {
-				result = "refused_starting"
-			}
-			s.emitHarnessUpdate(target, active.Level, result, active.Count())
 		}
 		if err != nil {
 			return Job{}, err
@@ -1460,7 +1452,6 @@ func (s *Service) finishAgentJob(job *Job, status Status, output, errorMessage, 
 	}
 	job.FinishedAt = &now
 	job.UpdatedAt = &now
-	level, wasUpdate := s.updateLevels[job.Target]
 	delete(s.updateLevels, job.Target)
 	delete(s.updateAdvisories, job.Target)
 	delete(s.updateAdvisoryCalls, job.Target)
@@ -1476,9 +1467,6 @@ func (s *Service) finishAgentJob(job *Job, status Status, output, errorMessage, 
 		job.Error = fmt.Sprintf("persist terminal operation state: %v", err)
 		s.mu.Unlock()
 		return
-	}
-	if wasUpdate {
-		s.emitHarnessUpdate(target, level, string(status), 0)
 	}
 	if status == StatusSucceeded && callback != nil {
 		callback(target)

@@ -837,18 +837,6 @@ type ShellTerminal struct {
 	PreviewCapabilityVerifier string
 }
 
-type TelemetryEvent struct {
-	ID          string
-	OccurredAt  time.Time
-	Name        string
-	Source      string
-	Level       string
-	ProjectID   sql.NullString
-	SessionID   sql.NullString
-	RequestID   string
-	PayloadJson string
-}
-
 type UsageBinding struct {
 	ID             int64
 	SessionID      domain.SessionID

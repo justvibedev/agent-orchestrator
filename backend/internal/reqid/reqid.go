@@ -1,10 +1,9 @@
 // Package reqid reads the HTTP request id off a context.
 //
-// Telemetry emitters deliberately detach from the request context
-// (context.Background) so a cancelled request cannot drop an event for work
-// that already happened. Reading the id at the emit site, before that detach,
-// is what keeps daemon-side events joinable to the HTTP request that caused
-// them.
+// Background work deliberately detaches from the request context
+// (context.Background) so a cancelled request cannot drop work that already
+// happened. Reading the id before that detach keeps daemon-side logs joinable
+// to the HTTP request that caused them.
 package reqid
 
 import (

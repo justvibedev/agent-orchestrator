@@ -128,7 +128,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { OrchestratorIcon } from "./icons";
 import { Badge } from "./ui/badge";
 import { cn } from "../lib/utils";
-import { recordManualWorkerOpen } from "../lib/session-management-telemetry";
 import { AwakeControl } from "./AwakeControl";
 import { SettingsSaveStatus, useSettingsPage } from "./SettingsDialog";
 import { useUiStore } from "../stores/ui-store";
@@ -900,7 +899,6 @@ export function Sidebar({
 	);
 
 	const openPinnedSession = useLatestCallback((target: WorkspaceSession) => {
-		if (target.kind === "worker") recordManualWorkerOpen(target.id, target.hostId);
 		if (target.hostId) void remoteNavigate(sessionNavigateTarget(target.workspaceId, target.id, target.hostId));
 		else selection.goSession(target.workspaceId, target.id);
 	});
@@ -1521,7 +1519,6 @@ const ProjectItem = memo(function ProjectItem({
 	// Stable row handlers: selection changes on every session switch, and a new
 	// handler would re-render every row (with its menus, tooltips, and dialogs).
 	const openSession = useLatestCallback((sessionId: string) => {
-		recordManualWorkerOpen(sessionId);
 		selection.goSession(workspace.id, sessionId);
 	});
 	const handleSessionKilled = useLatestCallback((killedSession: WorkspaceSession) => {
@@ -2049,7 +2046,6 @@ function ScratchpadSection({
 		[sessions],
 	);
 	const openSession = useLatestCallback((sessionId: string) => {
-		recordManualWorkerOpen(sessionId);
 		selection.goSession(STANDALONE_WORKSPACE_ID, sessionId);
 	});
 	const handleSessionKilled = useLatestCallback((killedSession: WorkspaceSession) => {

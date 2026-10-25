@@ -15,8 +15,6 @@ import { findHost } from "./hosts";
 import { notificationTarget } from "./notificationView";
 import { announcePairedDevice, configurePushHandler, ensureAndroidChannel, onManualPushRegistration, registerForPush, retryPendingUnpairs } from "./push";
 import { useApp } from "./store";
-import { MOBILE_EVENTS } from "./telemetry/events";
-import { mobileTelemetry } from "./telemetry/runtime";
 
 // Set the foreground presentation policy before any notification can arrive.
 configurePushHandler();
@@ -125,7 +123,6 @@ export function PushManager(): null {
 		const target = destination.startsWith("/review")
 			? "review"
 			: destination.startsWith("/session") ? "session" : "prs";
-		mobileTelemetry()?.capture(MOBILE_EVENTS.notificationOpened, { target, cold_start: coldStart });
 		// Best-effort mark-read so unread counts stay consistent with the dashboard.
 		if (source?.config && source.connection === "open" && data.notificationId) {
 			markNotificationRead(source.config, data.notificationId).catch(() => {});

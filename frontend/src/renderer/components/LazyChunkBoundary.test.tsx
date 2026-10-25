@@ -3,7 +3,6 @@ import { lazy, Suspense } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LazyChunkBoundary, LazyChunkErrorPanel } from "./LazyChunkBoundary";
 
-vi.mock("../lib/telemetry", () => ({ captureRendererException: vi.fn() }));
 
 describe("LazyChunkBoundary", () => {
 	afterEach(() => vi.restoreAllMocks());

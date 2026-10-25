@@ -223,10 +223,6 @@ cd agent-orchestrator
 
 サポートやコントリビューター同士の議論には [Discord](https://discord.com/invite/UZv7JjxbwG) に参加し、最新情報は [@useOrchestrator](https://x.com/useOrchestrator) をフォローしてください。[GitHub Issues](https://github.com/OrchestratorInc/agent-orchestrator/issues) から会話を始めることもできます。
 
-## 製品テレメトリ
-
-Orchestrator.inc はプロジェクトの内容を除いた利用状況と信頼性の指標を収集します。ただし、GitHub 上のプロジェクト所有者やログイン中のユーザー名から個人を特定できるため、匿名ではありません。テレメトリをオフにすると、これらの情報の送信も止まります。[詳細と設定](../docs/telemetry.md)。
-
 ## ライセンス
 
 Orchestrator.inc は [Apache License 2.0](../LICENSE) のもとで提供されています。

@@ -36,15 +36,6 @@ import type {
 	OpenSessionTargetResult,
 } from "./shared/editor-handoff";
 import type { LocalPathAction, LocalPathInspection, LocalPathResult } from "./shared/local-path";
-import type { TelemetryBootstrap } from "./shared/telemetry";
-import {
-	TELEMETRY_CLEAR_RENDERER_QUEUES_CHANNEL,
-	TELEMETRY_POLICY_CHANGED_CHANNEL,
-	TELEMETRY_RENDERER_QUEUES_CLEARED_CHANNEL,
-	type RendererTelemetryCaptureInput,
-	type RendererTelemetryQueuePurgeRequest,
-	type TelemetryPolicyView,
-} from "./shared/telemetry-policy";
 import type { UpdateSettings, UpdateStatus, UpdateInstallResult } from "./main/update-settings";
 import type { CloudAccount } from "./shared/cloud-account";
 import type { LocalLoginInput, LocalRegisterInput } from "./main/cloud-auth-local";
@@ -53,7 +44,6 @@ import type {
 	CloudCpProxyResponse,
 	CloudCpStreamEvent,
 } from "./main/cloud-cp-proxy";
-import type { UpdateOutcome } from "./shared/update-telemetry";
 import type { UiSettings } from "./main/ui-settings";
 import type { UpdateCheckOptions } from "./main/auto-updater";
 import type { FeatureBuild } from "./main/feature-builds";
@@ -157,30 +147,6 @@ ipcRenderer.on("app:openFolderPath", (_event, path: string) => {
 		bufferedOpenFolderPath = path;
 	}
 });
-
-let currentTelemetryPolicy: TelemetryPolicyView | null = null;
-const telemetryPolicyListeners = new Set<(view: TelemetryPolicyView) => void>();
-const rendererQueuePurgeListeners = new Set<() => void | Promise<void>>();
-ipcRenderer.on(TELEMETRY_POLICY_CHANGED_CHANNEL, (_event, view: TelemetryPolicyView) => {
-	currentTelemetryPolicy = view;
-	for (const listener of telemetryPolicyListeners) listener(view);
-});
-ipcRenderer.on(TELEMETRY_CLEAR_RENDERER_QUEUES_CHANNEL, (_event, request: unknown) => {
-	if (!isRendererQueuePurgeRequest(request)) return;
-	void Promise.allSettled([...rendererQueuePurgeListeners].map((listener) => Promise.resolve().then(listener)))
-		.then((results) => {
-			ipcRenderer.send(TELEMETRY_RENDERER_QUEUES_CLEARED_CHANNEL, {
-				requestId: request.requestId,
-				ok: results.length > 0 && results.every((result) => result.status === "fulfilled"),
-			});
-		});
-});
-
-function isRendererQueuePurgeRequest(value: unknown): value is RendererTelemetryQueuePurgeRequest {
-	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-	const request = value as Record<string, unknown>;
-	return Object.keys(request).length === 1 && typeof request.requestId === "string" && request.requestId.length <= 64;
-}
 
 const api = {
 	app: {
@@ -413,37 +379,6 @@ const api = {
 		inspect: (filePath: string) => ipcRenderer.invoke("localPath:inspect", filePath) as Promise<LocalPathInspection>,
 		perform: (filePath: string, action: LocalPathAction) =>
 			ipcRenderer.invoke("localPath:perform", filePath, action) as Promise<LocalPathResult>,
-	},
-	telemetry: {
-		getBootstrap: async () => {
-			const bootstrap = await ipcRenderer.invoke("telemetry:getBootstrap") as TelemetryBootstrap | null;
-			if (bootstrap && currentTelemetryPolicy) currentTelemetryPolicy = { ...currentTelemetryPolicy, eventsEnabled: bootstrap.eventsEnabled, consentGeneration: bootstrap.consentGeneration };
-			return bootstrap;
-		},
-		getAnalyticsOptOut: () => ipcRenderer.invoke("telemetry:getAnalyticsOptOut") as Promise<boolean>,
-		setAnalyticsOptOut: (optedOut: boolean) => ipcRenderer.invoke("telemetry:setAnalyticsOptOut", optedOut) as Promise<boolean>,
-		onAnalyticsOptOut: (listener: (optedOut: boolean) => void) => {
-			const wrapped = (_event: unknown, optedOut: boolean) => listener(optedOut);
-			ipcRenderer.on("telemetry:analyticsOptOutChanged", wrapped);
-			return () => {
-				ipcRenderer.off("telemetry:analyticsOptOutChanged", wrapped);
-			};
-		},
-		setCloudUser: (userId: string | null) => ipcRenderer.invoke("telemetry:setCloudUser", userId) as Promise<boolean | "unsupported">,
-		getGithubLogin: () => ipcRenderer.invoke("telemetry:getGithubLogin") as Promise<string | null>,
-		getPolicy: async () => {
-			const view = await ipcRenderer.invoke("telemetry:getPolicy") as TelemetryPolicyView;
-			currentTelemetryPolicy = view;
-			for (const listener of telemetryPolicyListeners) listener(view);
-			return view;
-		},
-		setEventsEnabled: (eventsEnabled: boolean) => ipcRenderer.invoke("telemetry:setEventsEnabled", { eventsEnabled, expectedGeneration: currentTelemetryPolicy?.consentGeneration ?? "" }) as Promise<TelemetryPolicyView>,
-		onPolicy: (listener: (view: TelemetryPolicyView) => void) => { telemetryPolicyListeners.add(listener); if (currentTelemetryPolicy) listener(currentTelemetryPolicy); return () => telemetryPolicyListeners.delete(listener); },
-		onClearQueues: (listener: () => void | Promise<void>) => { rendererQueuePurgeListeners.add(listener); return () => rendererQueuePurgeListeners.delete(listener); },
-		capture: (input: RendererTelemetryCaptureInput) => {
-			if (!currentTelemetryPolicy) return Promise.resolve(false);
-			return ipcRenderer.invoke("telemetry:capture", { ...input, consentGeneration: currentTelemetryPolicy.consentGeneration }) as Promise<boolean>;
-		},
 	},
 	browser: {
 		reconnectRuntime: () => ipcRenderer.invoke("browser:runtime:reconnect") as Promise<void>,
@@ -725,15 +660,6 @@ const api = {
 			ipcRenderer.on("updates:status", wrapped);
 			return () => {
 				ipcRenderer.off("updates:status", wrapped);
-			};
-		},
-		// Separate from onStatus: the main process suppresses the *status* for
-		// automatic failures but still reports the outcome here.
-		onTelemetry: (listener: (outcome: UpdateOutcome) => void) => {
-			const wrapped = (_event: Electron.IpcRendererEvent, outcome: UpdateOutcome) => listener(outcome);
-			ipcRenderer.on("updates:telemetry", wrapped);
-			return () => {
-				ipcRenderer.off("updates:telemetry", wrapped);
 			};
 		},
 	},

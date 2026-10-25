@@ -14,7 +14,6 @@ vi.mock("../lib/shell-context", () => ({
 vi.mock("../stores/ui-store", () => ({
 	useUiStore: (select: (state: { requestNewTask: typeof mocks.requestNewTask }) => unknown) => select({ requestNewTask: mocks.requestNewTask }),
 }));
-vi.mock("../lib/onboarding-telemetry", () => ({ useOnboardingStep: () => mocks.completeWelcome }));
 vi.mock("./WelcomePanel", () => ({ WelcomePanel: ({ children }: { children: ReactNode }) => <>{children}</> }));
 vi.mock("./GitHubOnboardingNotice", () => ({ GitHubOnboardingNotice: () => null }));
 vi.mock("./CreateProjectFlow", () => ({

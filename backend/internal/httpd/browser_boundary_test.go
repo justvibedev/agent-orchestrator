@@ -126,7 +126,7 @@ func TestBrowserBoundaryAuthorizedClients(t *testing.T) {
 			var handler http.Handler = NewRouterWithControl(config.Config{AllowedOrigins: []string{"app://renderer", "http://localhost:5173"}}, discardLogger(), mgr, APIDeps{ShellTerminals: shells}, ControlDeps{})
 			var base string
 			if tc.mobile {
-				mobile := NewMobileLAN(handler, "boundary-host", 0, discardLogger(), nil)
+				mobile := NewMobileLAN(handler, "boundary-host", 0, discardLogger())
 				mobile.SetPasswordHash(mobilebridge.HashPassword("test-password"))
 				port, err := mobile.StartLoopback(0)
 				if err != nil {
@@ -230,7 +230,7 @@ func TestBrowserBoundaryMobileCredentialsAndPreviewCookie(t *testing.T) {
 	state.setHash(mobilebridge.HashPassword("test-password"))
 	shells := &boundaryShells{}
 	router := NewRouterWithControl(config.Config{AllowedOrigins: []string{"app://renderer"}}, discardLogger(), nil, APIDeps{ShellTerminals: shells}, ControlDeps{})
-	handler := authMiddleware(state, newLockout(time.Now), nil)(router)
+	handler := authMiddleware(state, newLockout(time.Now))(router)
 	for _, tc := range []struct {
 		name, token, cookie, origin string
 		want                        int
@@ -368,7 +368,7 @@ func TestBrowserBoundaryPreviewCookieGrantsOnlyPreviewBytes(t *testing.T) {
 	state := &authState{}
 	state.setHash(mobilebridge.HashPassword("preview-password"))
 	router := newTestRouter(config.Config{}, discardLogger(), nil)
-	handler := authMiddleware(state, newLockout(time.Now), nil)(router)
+	handler := authMiddleware(state, newLockout(time.Now))(router)
 	for _, path := range []string{"/api/v1/sessions/s1/preview/files/asset.js", "/api/v1/shell-terminals", "/mux"} {
 		req := loopbackRequest(http.MethodGet, path, nil)
 		req.Header.Set("Origin", "null")

@@ -2,8 +2,6 @@ import createClient from "openapi-fetch";
 import type { components, paths } from "../../api/schema";
 import type { DaemonStatus } from "../../shared/daemon-status";
 import { daemonFailureMessage } from "./daemon-failure";
-import { captureRendererEvent } from "./telemetry";
-import { captureApiErrorToSentry } from "./sentry";
 
 function devApiBaseUrl(): string {
 	return typeof window === "undefined" ? "http://127.0.0.1:3001" : window.location.origin;
@@ -213,60 +211,9 @@ export function normalizeApiOperation(method: string, pathname: string): string 
 	return `${method.toUpperCase()} ${best?.normalized ?? fallbackNormalize(pathname)}`;
 }
 
-type ApiErrorCategory = "daemon_unavailable" | "network_error" | "http_4xx" | "http_5xx";
-
-// One event per (operation, category, status) per window: a daemon outage
-// makes every polling query fail at once and on every retry — the failure
-// signal matters, the storm does not.
-const API_ERROR_DEDUPE_MS = 30_000;
-// These codes are the successful or expected outcome of a probe: Codex is not
-// wired in this process, or a shell the user already closed. Other 401 and
-// 404 responses still report, including an expired GitHub token.
-const EXPECTED_API_ERROR_CODES = new Set([
-	"CODEX_ACCOUNT_MANAGEMENT_UNAVAILABLE",
-	"SHELL_TERMINAL_NOT_FOUND",
-]);
-
-// Conversation probes that 409 while the chat controller is not ready.
-// Exact normalized operations only, so a later 409 on another skills or
-// models route still reports.
-const EXPECTED_PROBE_CONFLICTS = new Set([
-	"POST /api/v1/sessions/:id/workspace/diffs",
-	"GET /api/v1/sessions/:id/conversation/config-options",
-	"GET /api/v1/sessions/:id/conversation/models",
-	"GET /api/v1/sessions/:id/conversation/skills",
-]);
-
-function expectedProbeConflict(operation: string, status?: number): boolean {
-	return status === 409 && EXPECTED_PROBE_CONFLICTS.has(operation);
-}
-const lastApiErrorAt = new Map<string, number>();
-
-function reportApiError(
-	operation: string,
-	category: ApiErrorCategory,
-	status?: number,
-	code?: string,
-	requestId?: string,
-): void {
-	const key = `${operation}|${category}|${status ?? ""}`;
-	const now = Date.now();
-	const last = lastApiErrorAt.get(key);
-	if (last !== undefined && now - last < API_ERROR_DEDUPE_MS) return;
-	lastApiErrorAt.set(key, now);
-	void captureRendererEvent("ao.renderer.api_error", {
-		operation,
-		error_category: category,
-		status,
-	});
-	captureApiErrorToSentry(operation, category, status, code, requestId);
-}
-
 async function runtimeFetch(input: Request): Promise<Response> {
-	const operation = normalizeApiOperation(input.method, new URL(input.url).pathname);
 	const baseUrl = runtimeApiBaseUrl;
 	if (baseUrl === null) {
-		if (daemonStatus.state !== "starting") reportApiError(operation, "daemon_unavailable", 503);
 		return new Response(JSON.stringify({ message: daemonFailureMessage(daemonStatus), code: daemonStatus.code }), {
 			status: 503,
 			headers: { "Content-Type": "application/json" },
@@ -305,37 +252,7 @@ async function runtimeFetch(input: Request): Promise<Response> {
 		});
 	};
 
-	let response: Response;
-	try {
-		response = await send();
-	} catch (error) {
-		// Caller-initiated aborts (unmounted components cancelling queries) are not failures.
-		if (!(error instanceof DOMException && error.name === "AbortError")) {
-			reportApiError(operation, "network_error");
-		}
-		throw error;
-	}
-	if (!response.ok) {
-		// Best-effort read the daemon error envelope's `code` (via a clone so the
-		// caller still gets an unconsumed body) to drive classification.
-		let code: string | undefined;
-		let requestId: string | undefined;
-		try {
-			const body = (await response.clone().json()) as Partial<components["schemas"]["APIError"]>;
-			if (typeof body?.code === "string" && body.code !== "") code = body.code;
-			if (typeof body?.requestId === "string" && body.requestId !== "") requestId = body.requestId;
-		} catch {
-			// Non-JSON or empty body: fall back to status-only classification.
-		}
-		if (!(code && EXPECTED_API_ERROR_CODES.has(code)) && !expectedProbeConflict(operation, response.status)) reportApiError(
-			operation,
-			response.status >= 500 ? "http_5xx" : "http_4xx",
-			response.status,
-			code,
-			requestId,
-		);
-	}
-	return response;
+	return send();
 }
 
 export const apiClient = createClient<paths>({

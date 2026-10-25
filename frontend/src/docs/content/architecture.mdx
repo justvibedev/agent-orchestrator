@@ -76,7 +76,7 @@ The daemon also exposes pull-request merge and comment-resolution actions plus r
 
 The primary daemon listener binds `127.0.0.1:3001` and is unauthenticated. It serves the desktop app and CLI and is never configurable to a public bind.
 
-Connect Mobile starts a second listener only when you enable it. The listener is protected by a bearer password and serves the mobile app API and terminal connection. It does not serve shutdown, telemetry, mobile-control, or browser-control routes.
+Connect Mobile starts a second listener only when you enable it. The listener is protected by a bearer password and serves the mobile app API and terminal connection. It does not serve shutdown, mobile-control, or browser-control routes.
 
 Direct connections use plain HTTP and are intended for trusted networks. A managed connector can provide an HTTPS endpoint to this authenticated listener for remote access. Current Tailscale pairing has additional limits described in the access guide. Only `GET /api/v1/identity` is public; the phone uses it to verify the computer and app version before sending the password. See [Connect Mobile](/configuration/remote-access).
 

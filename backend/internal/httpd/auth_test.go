@@ -16,7 +16,7 @@ func newAuthUnderTest(pw string, now func() time.Time) (http.Handler, *lockout) 
 	st.setHash(h)
 	lock := newLockout(now)
 	ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-	return authMiddleware(st, lock, nil)(ok), lock
+	return authMiddleware(st, lock)(ok), lock
 }
 
 func req(auth string) *http.Request {
@@ -41,7 +41,7 @@ func TestAccountTokenAuthenticatesWithoutReplacingPairingPassword(t *testing.T) 
 	state := &authState{}
 	state.setHash(mobilebridge.HashPassword("password"))
 	state.setAccountHash(mobilebridge.HashPassword("scoped-token"))
-	h := authMiddleware(state, newLockout(time.Now), nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+	h := authMiddleware(state, newLockout(time.Now))(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
 	for _, token := range []string{"password", "scoped-token"} {
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, req("Bearer "+token))
@@ -186,7 +186,7 @@ func TestRotatedPasswordCanRecoverFromStaleClientLockout(t *testing.T) {
 	state := &authState{}
 	state.setHash(mobilebridge.HashPassword("oldpass1"))
 	lock := newLockout(time.Now)
-	h := authMiddleware(state, lock, nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	h := authMiddleware(state, lock)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -215,7 +215,7 @@ func TestRetiredPasswordDoesNotResetLockout(t *testing.T) {
 	state.setHash(mobilebridge.HashPassword("oldpass1"))
 	state.setHash(mobilebridge.HashPassword("newpass1"))
 	lock := newLockout(time.Now)
-	h := authMiddleware(state, lock, nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	h := authMiddleware(state, lock)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	for range 5 {
@@ -237,7 +237,7 @@ func TestRetiredPasswordDoesNotResetLockout(t *testing.T) {
 func TestLANManagerPasswordRotationClearsPriorLockout(t *testing.T) {
 	m := NewMobileLAN(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-	}), "", 0, nil, nil)
+	}), "", 0, nil)
 	m.SetPasswordHash(mobilebridge.HashPassword("oldpass1"))
 	for range 5 {
 		w := httptest.NewRecorder()

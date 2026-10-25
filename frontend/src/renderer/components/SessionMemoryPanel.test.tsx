@@ -44,7 +44,6 @@ vi.mock("../lib/api-client", () => ({
 	apiErrorMessage: (_error: unknown, fallback: string) => fallback,
 }));
 
-vi.mock("../lib/telemetry", () => ({ captureRendererEvent: vi.fn() }));
 
 vi.mock("../lib/bridge", () => ({ aoBridge: { clipboard: { writeText: clipboardMock } } }));
 

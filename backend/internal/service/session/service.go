@@ -15,12 +15,9 @@ import (
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/httpd/apierr"
-	"github.com/aoagents/agent-orchestrator/backend/internal/observe/ownership"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
-	"github.com/aoagents/agent-orchestrator/backend/internal/reqid"
 	sessionmanager "github.com/aoagents/agent-orchestrator/backend/internal/session_manager"
 	"github.com/aoagents/agent-orchestrator/backend/internal/sessionartifacts"
-	"github.com/aoagents/agent-orchestrator/backend/internal/telemetrymeta"
 )
 
 const maxDisplayNameLen = 100
@@ -203,7 +200,6 @@ type Service struct {
 	tracker             ports.Tracker
 	clock               func() time.Time
 	dataDir             string
-	telemetry           ports.EventSink
 	logger              *slog.Logger
 	backgroundContext   context.Context
 	agentReadiness      ports.AgentReadinessProvider
@@ -230,12 +226,8 @@ type Service struct {
 	// deliver activity signals at all. Only capable harnesses are eligible for
 	// the no_signal downgrade: a hook-less harness staying silent forever is
 	// normal, not a broken pipeline. nil means "unknown": never downgrade.
-	signalCapable         func(domain.AgentHarness) bool
-	chatProviderPreserved func(domain.SessionID) bool
-	// githubIdentity optionally resolves the operator's authenticated GitHub
-	// account so the handle rides along with product telemetry. Nil disables it
-	// and the emitter degrades to anonymous.
-	githubIdentity         ports.ScopedIdentityResolver
+	signalCapable          func(domain.AgentHarness) bool
+	chatProviderPreserved  func(domain.SessionID) bool
 	titleRefinementSlots   chan struct{}
 	titleRefinementMu      sync.Mutex
 	titleRefinementCancels map[domain.SessionID]context.CancelFunc
@@ -282,7 +274,6 @@ type Deps struct {
 	Tracker   ports.Tracker
 	Clock     func() time.Time
 	DataDir   string
-	Telemetry ports.EventSink
 	Logger    *slog.Logger
 	// AgentReadiness coordinates advisory native harness checks before launch.
 	AgentReadiness ports.AgentReadinessProvider
@@ -294,9 +285,6 @@ type Deps struct {
 	// wiring passes activitydispatch.SupportsHarness. Left nil, no session is
 	// ever downgraded to no_signal.
 	SignalCapable func(domain.AgentHarness) bool
-	// GithubIdentity resolves the operator's authenticated GitHub account so the
-	// handle rides along with product telemetry.
-	GithubIdentity ports.ScopedIdentityResolver
 	// OutputTypeReconciler persists the durable OutputType column; daemon
 	// wiring passes the shared *lifecycle.Manager. Left nil, ClaimPR still
 	// succeeds but the pr OutputType only lands on the next artifact-output
@@ -313,7 +301,7 @@ func NewWithDeps(d Deps) *Service {
 	if backgroundContext == nil {
 		backgroundContext = context.Background()
 	}
-	s := &Service{manager: d.Manager, store: d.Store, prClaimer: d.PRClaimer, scm: d.SCM, tracker: d.Tracker, clock: d.Clock, dataDir: d.DataDir, signalCapable: d.SignalCapable, telemetry: d.Telemetry, logger: d.Logger, backgroundContext: backgroundContext, agentReadiness: d.AgentReadiness, githubIdentity: d.GithubIdentity, titleRefinementSlots: make(chan struct{}, delegatedTaskTitleConcurrency), titleRefinementCancels: map[domain.SessionID]context.CancelFunc{}, outputTypeReconciler: d.OutputTypeReconciler, artifactDeleter: d.ArtifactDeleter}
+	s := &Service{manager: d.Manager, store: d.Store, prClaimer: d.PRClaimer, scm: d.SCM, tracker: d.Tracker, clock: d.Clock, dataDir: d.DataDir, signalCapable: d.SignalCapable, logger: d.Logger, backgroundContext: backgroundContext, agentReadiness: d.AgentReadiness, titleRefinementSlots: make(chan struct{}, delegatedTaskTitleConcurrency), titleRefinementCancels: map[domain.SessionID]context.CancelFunc{}, outputTypeReconciler: d.OutputTypeReconciler, artifactDeleter: d.ArtifactDeleter}
 	if s.prClaimer == nil {
 		if w, ok := d.Store.(ports.PRClaimer); ok {
 			s.prClaimer = w
@@ -404,7 +392,7 @@ func (s *Service) spawn(ctx context.Context, cfg ports.SpawnConfig) (domain.Sess
 		}
 	}
 	cfg = s.withIssueContext(ctx, cfg, project)
-	rec, promptBytes, systemPromptBytes, err := s.spawnWithTelemetry(ctx, cfg, project)
+	rec, promptBytes, systemPromptBytes, err := s.spawnSession(ctx, cfg, project)
 	if err != nil {
 		s.invalidateAgentReadinessAfterLaunchFailure(cfg.Harness, err)
 		apiErr := toSpawnAPIError(err)
@@ -419,31 +407,16 @@ func (s *Service) spawn(ctx context.Context, cfg ports.SpawnConfig) (domain.Sess
 	return sess, promptBytes, systemPromptBytes, nil
 }
 
-// spawnWithTelemetry is the only path from the service into manager.Spawn, so
-// every created session emits ao.session.spawned or ao.session.spawn_failed
-// exactly once. Client-request replays return before reaching it.
-func (s *Service) spawnWithTelemetry(ctx context.Context, cfg ports.SpawnConfig, project domain.ProjectRecord) (domain.SessionRecord, int, int, error) {
+// spawnSession is the only path from the service into manager.Spawn.
+// Client-request replays return before reaching it.
+func (s *Service) spawnSession(ctx context.Context, cfg ports.SpawnConfig, project domain.ProjectRecord) (domain.SessionRecord, int, int, error) {
 	// CLI and orchestrator workers use this same naming policy as desktop tasks.
 	if !cfg.NameFromPrompt && cfg.Kind == domain.KindWorker && project.ID != "" &&
 		project.Kind.WithDefault() != domain.ProjectKindScratch && strings.TrimSpace(cfg.Branch) == "" && strings.TrimSpace(cfg.Prompt) != "" {
 		cfg.NameFromPrompt = true
 		cfg.KeepDisplayName = cfg.DisplayName != ""
 	}
-	start := s.now()
-	firstSession, err := s.isFirstSession(ctx)
-	if err != nil {
-		return domain.SessionRecord{}, 0, 0, fmt.Errorf("count sessions: %w", err)
-	}
-	rec, promptBytes, systemPromptBytes, err := s.manager.Spawn(ctx, cfg)
-	if err != nil {
-		s.emitSpawnFailed(ctx, cfg, err, s.now().Sub(start).Milliseconds())
-		return domain.SessionRecord{}, 0, 0, err
-	}
-	s.emitSpawned(ctx, rec, s.now().Sub(start).Milliseconds())
-	if firstSession {
-		s.emitFirstSessionSpawned(ctx, rec, project)
-	}
-	return rec, promptBytes, systemPromptBytes, nil
+	return s.manager.Spawn(ctx, cfg)
 }
 
 func (s *Service) invalidateAgentReadinessAfterLaunchFailure(harness domain.AgentHarness, err error) {
@@ -483,119 +456,6 @@ func (s *Service) requireProject(ctx context.Context, id domain.ProjectID) (doma
 		return domain.ProjectRecord{}, apierr.NotFound("PROJECT_NOT_FOUND", "Unknown project. Register it with `ao project add`")
 	}
 	return rec, nil
-}
-
-func (s *Service) isFirstSession(ctx context.Context) (bool, error) {
-	if s.store == nil {
-		return false, nil
-	}
-	rows, err := s.store.ListAllSessions(ctx)
-	if err != nil {
-		return false, err
-	}
-	for _, row := range rows {
-		if !row.IsTaskPreparation {
-			return false, nil
-		}
-	}
-	return true, nil
-}
-
-func (s *Service) emitSpawned(ctx context.Context, rec domain.SessionRecord, durationMs int64) {
-	if s.telemetry == nil {
-		return
-	}
-	projectID := rec.ProjectID
-	sessionID := rec.ID
-	payload := map[string]any{
-		"kind":        string(rec.Kind),
-		"harness":     string(rec.Harness),
-		"duration_ms": durationMs,
-	}
-	if actor, ok := s.githubActor(ctx); ok {
-		payload["github_actor"] = actor
-	}
-	s.telemetry.Emit(context.Background(), ports.TelemetryEvent{
-		Name:       "ao.session.spawned",
-		Source:     "session_service",
-		OccurredAt: s.now(),
-		Level:      ports.TelemetryLevelInfo,
-		ProjectID:  &projectID,
-		SessionID:  &sessionID,
-		RequestID:  reqid.FromContext(ctx),
-		Payload:    payload,
-	})
-}
-
-// githubActor returns the operator's GitHub login when the authenticated
-// account resolves to a human, and ("", false) for every failure mode (resolver
-// unset, no token, GET /user failure, offline, org or bot account, empty login)
-// so the event stays anonymous. Host is left empty because GitHub identity is
-// not host-scoped.
-func (s *Service) githubActor(ctx context.Context) (string, bool) {
-	if s.githubIdentity == nil {
-		return "", false
-	}
-	identity, err := s.githubIdentity.AuthenticatedIdentityForProvider(ctx, "github", "")
-	if err != nil || !identity.Human || identity.Login == "" {
-		return "", false
-	}
-	return identity.Login, true
-}
-
-func (s *Service) emitFirstSessionSpawned(ctx context.Context, rec domain.SessionRecord, project domain.ProjectRecord) {
-	if s.telemetry == nil {
-		return
-	}
-	projectID := rec.ProjectID
-	sessionID := rec.ID
-	payload := map[string]any{
-		"kind":    string(rec.Kind),
-		"harness": string(rec.Harness),
-	}
-	if !project.RegisteredAt.IsZero() {
-		payload["since_first_project_ms"] = s.now().Sub(project.RegisteredAt).Milliseconds()
-	}
-	s.telemetry.Emit(context.Background(), ports.TelemetryEvent{
-		Name:       "ao.onboarding.first_session_spawned",
-		Source:     "session_service",
-		OccurredAt: s.now(),
-		Level:      ports.TelemetryLevelInfo,
-		ProjectID:  &projectID,
-		SessionID:  &sessionID,
-		RequestID:  reqid.FromContext(ctx),
-		Payload:    payload,
-	})
-}
-
-func (s *Service) emitSpawnFailed(ctx context.Context, cfg ports.SpawnConfig, err error, durationMs int64) {
-	if s.telemetry == nil {
-		return
-	}
-	projectID := cfg.ProjectID
-	apiErr := toSpawnAPIError(err)
-	errorKind, errorCode := telemetrymeta.ErrorKindAndCode(apiErr)
-	payload := map[string]any{
-		"component":   "session_service",
-		"operation":   "spawn_session",
-		"kind":        string(cfg.Kind),
-		"harness":     string(cfg.Harness),
-		"duration_ms": durationMs,
-		"error_kind":  errorKind,
-		"fingerprint": telemetrymeta.Fingerprint("session_service", "spawn_session", string(cfg.Kind), string(cfg.Harness), errorKind, errorCode),
-	}
-	if errorCode != "" {
-		payload["error_code"] = errorCode
-	}
-	s.telemetry.Emit(context.Background(), ports.TelemetryEvent{
-		Name:       "ao.session.spawn_failed",
-		Source:     "session_service",
-		OccurredAt: s.now(),
-		Level:      ports.TelemetryLevelError,
-		ProjectID:  &projectID,
-		RequestID:  reqid.FromContext(ctx),
-		Payload:    payload,
-	})
 }
 
 // SpawnOrchestrator spawns an orchestrator session for a project. When clean is
@@ -1482,8 +1342,7 @@ func (s *Service) toSessionWithFacts(ctx context.Context, rec domain.SessionReco
 // toAPIError maps the session engine's sentinel errors to their REST API
 // equivalents; an unrecognized error passes through and surfaces as a 500.
 func toAPIError(err error) error {
-	original := ownership.Own(err, ownership.OwnerHTTP)
-	return ownership.Preserve(original, mapSessionError(original))
+	return mapSessionError(err)
 }
 
 func mapSessionError(err error) error {
@@ -1652,7 +1511,7 @@ func mapSessionError(err error) error {
 	}
 }
 
-// toSpawnAPIError maps spawn failures to structured API errors so telemetry and
+// toSpawnAPIError maps spawn failures to structured API errors so
 // clients never land in the unclassified internal bucket when a stage sentinel
 // is present. Known inner sentinels (branch state, agent binary, chat
 // preflight) still win via toAPIError. Already-mapped *apierr.Error values are

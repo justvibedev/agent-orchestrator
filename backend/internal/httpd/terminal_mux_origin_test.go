@@ -84,7 +84,7 @@ func TestMuxAuthorizedSharedAttachment(t *testing.T) {
 			endpoint := srv.URL
 			var lan *LANManager
 			if tc.mobile {
-				lan = NewMobileLAN(router, "mux-host", 0, discardLogger(), nil)
+				lan = NewMobileLAN(router, "mux-host", 0, discardLogger())
 				lan.SetPasswordHash(mobilebridge.HashPassword("paired-password"))
 				port, err := lan.StartLoopback(0)
 				if err != nil {

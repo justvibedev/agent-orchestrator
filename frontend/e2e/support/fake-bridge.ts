@@ -161,19 +161,6 @@ export async function installFakeBridge(page: Page, opts: FakeBridgeOptions = {}
 					open: async () => ({ id: "cursor" as const, name: "Cursor", kind: "editor" as const }),
 					openArtifacts: async () => ({ id: "file-manager" as const, name: "File Manager", kind: "file_manager" as const }),
 				},
-				telemetry: {
-					getBootstrap: async () => null,
-					getAnalyticsOptOut: async () => false,
-					setAnalyticsOptOut: async (optedOut: boolean) => optedOut,
-					onAnalyticsOptOut: () => () => undefined,
-					setCloudUser: async () => false,
-					getGithubLogin: async () => null,
-					getPolicy: async () => ({ eventsEnabled: false, consentGeneration: "e2e", updatedAt: new Date(0).toISOString(), acknowledged: false, consentRenewalRequired: false, state: "applied", environmentVeto: true, durabilitySupported: false, reason: "environment_veto" }),
-					setEventsEnabled: async () => ({ eventsEnabled: false, consentGeneration: "e2e", updatedAt: new Date(0).toISOString(), acknowledged: false, consentRenewalRequired: false, state: "applied", environmentVeto: true, durabilitySupported: false, reason: "environment_veto" }),
-					onPolicy: () => () => false,
-					onClearQueues: () => () => false,
-					capture: async () => false,
-				},
 				browser: {
 					reconnectRuntime: async () => undefined,
 					getRuntimeState: async () => ({ connected: false, connecting: false, rejected: false }),
@@ -340,7 +327,6 @@ export async function installFakeBridge(page: Page, opts: FakeBridgeOptions = {}
 							updateListeners.delete(listener);
 						};
 					},
-					onTelemetry: unsubscribe,
 				},
 				// UpdatesSection calls featureBuilds.getActive() immediately on mount; an
 				// omitted namespace would surface as a swallowed React Query error.
@@ -1051,19 +1037,6 @@ export async function installFakeAgent(page: Page, opts: FakeAgentOptions = {}):
 					open: async () => ({ id: "cursor" as const, name: "Cursor", kind: "editor" as const }),
 					openArtifacts: async () => ({ id: "file-manager" as const, name: "File Manager", kind: "file_manager" as const }),
 				},
-				telemetry: {
-					getBootstrap: async () => null,
-					getAnalyticsOptOut: async () => false,
-					setAnalyticsOptOut: async (optedOut: boolean) => optedOut,
-					onAnalyticsOptOut: () => () => undefined,
-					setCloudUser: async () => false,
-					getGithubLogin: async () => null,
-					getPolicy: async () => ({ eventsEnabled: false, consentGeneration: "e2e", updatedAt: new Date(0).toISOString(), acknowledged: false, consentRenewalRequired: false, state: "applied", environmentVeto: true, durabilitySupported: false, reason: "environment_veto" }),
-					setEventsEnabled: async () => ({ eventsEnabled: false, consentGeneration: "e2e", updatedAt: new Date(0).toISOString(), acknowledged: false, consentRenewalRequired: false, state: "applied", environmentVeto: true, durabilitySupported: false, reason: "environment_veto" }),
-					onPolicy: () => () => false,
-					onClearQueues: () => () => false,
-					capture: async () => false,
-				},
 				browser: {
 					reconnectRuntime: async () => undefined,
 					getRuntimeState: async () => ({ connected: false, connecting: false, rejected: false }),
@@ -1225,7 +1198,6 @@ export async function installFakeAgent(page: Page, opts: FakeAgentOptions = {}):
 					isPostUpdateRelaunch: async () => false,
 					relaunch: async () => undefined,
 					onStatus: unsubscribe,
-					onTelemetry: unsubscribe,
 				},
 				// UpdatesSection calls featureBuilds.getActive() immediately on mount; an
 				// omitted namespace would surface as a swallowed React Query error.

@@ -15,8 +15,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/go-chi/chi/v5/middleware"
-
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/workspace/gitworktree"
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/gitdefault"
@@ -159,16 +157,6 @@ type fakeProjectTeardowner struct {
 	projects []domain.ProjectID
 	err      error
 }
-
-type captureSink struct {
-	events []ports.TelemetryEvent
-}
-
-func (s *captureSink) Emit(_ context.Context, ev ports.TelemetryEvent) {
-	s.events = append(s.events, ev)
-}
-
-func (*captureSink) Close(context.Context) error { return nil }
 
 func (f *fakeProjectTeardowner) TeardownProject(_ context.Context, project domain.ProjectID) error {
 	f.projects = append(f.projects, project)
@@ -599,62 +587,6 @@ func TestManager_CloneCleansUpFailedAndEmptyCheckouts(t *testing.T) {
 	}
 	if temporary, err := filepath.Glob(filepath.Join(destinationParent, ".ao-clone-*")); err != nil || len(temporary) != 0 {
 		t.Fatalf("temporary clone directories = %#v, %v", temporary, err)
-	}
-}
-
-func TestManager_AddEmitsProjectAndFirstProjectTelemetry(t *testing.T) {
-	ctx := context.WithValue(context.Background(), middleware.RequestIDKey, "req-1")
-	store, err := sqlitetest.Open(t.TempDir())
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	sink := &captureSink{}
-	m := project.NewWithDeps(project.Deps{Store: store, Telemetry: sink})
-
-	if _, err := m.Add(ctx, project.AddInput{Path: gitRepo(t), ProjectID: ptr("ao")}); err != nil {
-		t.Fatalf("Add: %v", err)
-	}
-	if len(sink.events) != 2 {
-		t.Fatalf("events = %#v, want projects.created + first_project_added", sink.events)
-	}
-	if sink.events[0].Name != "ao.projects.created" || sink.events[1].Name != "ao.onboarding.first_project_added" {
-		t.Fatalf("event names = %#v", []string{sink.events[0].Name, sink.events[1].Name})
-	}
-	// The emit path detaches from the request context on purpose; the request id
-	// must still be carried so the rows join to the HTTP request that added the
-	// project.
-	for _, ev := range sink.events {
-		if ev.RequestID != "req-1" {
-			t.Fatalf("%s RequestID = %q, want req-1", ev.Name, ev.RequestID)
-		}
-	}
-}
-
-func TestManager_AddDoesNotRepeatFirstProjectTelemetry(t *testing.T) {
-	ctx := context.Background()
-	store, err := sqlitetest.Open(t.TempDir())
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	sink := &captureSink{}
-	m := project.NewWithDeps(project.Deps{Store: store, Telemetry: sink})
-
-	if _, err := m.Add(ctx, project.AddInput{Path: gitRepo(t), ProjectID: ptr("ao")}); err != nil {
-		t.Fatalf("Add first: %v", err)
-	}
-	if _, err := m.Add(ctx, project.AddInput{Path: gitRepo(t), ProjectID: ptr("ao2")}); err != nil {
-		t.Fatalf("Add second: %v", err)
-	}
-	var firstProjectCount int
-	for _, ev := range sink.events {
-		if ev.Name == "ao.onboarding.first_project_added" {
-			firstProjectCount++
-		}
-	}
-	if firstProjectCount != 1 {
-		t.Fatalf("first project telemetry count = %d, want 1", firstProjectCount)
 	}
 }
 

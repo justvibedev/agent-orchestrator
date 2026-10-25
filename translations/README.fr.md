@@ -223,10 +223,6 @@ Commencez par le [guide de développement](../docs/development.md) pour connaît
 
 Rejoignez [Discord](https://discord.com/invite/UZv7JjxbwG) pour obtenir de l'aide et échanger avec les contributeurs, suivez [@useOrchestrator](https://x.com/useOrchestrator) pour les nouveautés ou lancez une discussion dans les [GitHub Issues](https://github.com/OrchestratorInc/agent-orchestrator/issues).
 
-## Télémétrie produit
-
-Orchestrator.inc collecte des métriques d'usage et de fiabilité sans contenu des projets. Le propriétaire GitHub d'un projet et le nom d'utilisateur GitHub connecté peuvent toutefois identifier une personne; la télémétrie n'est donc pas anonyme. La désactiver arrête aussi l'envoi de ces identifiants. [Détails et réglages](../docs/telemetry.md).
-
 ## Licence
 
 Orchestrator.inc est disponible sous [licence Apache 2.0](../LICENSE).

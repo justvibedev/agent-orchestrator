@@ -22,8 +22,6 @@ import { haptics } from "./haptics";
 import { Button, SHEET_SCROLL_CONTENT, SheetHeader, SheetScreen } from "./ui";
 import { useTheme, useThemedStyles } from "./ThemeProvider";
 import { textSelectionColors } from "./textSelection";
-import { MOBILE_EVENTS } from "./telemetry/events";
-import { mobileTelemetry } from "./telemetry/runtime";
 import { iconSize, space, touchTarget, type } from "./tokens";
 
 // The typing fallback behind the QR scanner, also reused to edit a pairing.
@@ -87,7 +85,6 @@ export function ManualConnectSheet({ onConnected, editingHost, editingEndpointIn
 				saveHost,
 				setActiveHost,
 			}, machineName);
-			mobileTelemetry()?.capture(MOBILE_EVENTS.paired, { method: "manual" });
 			haptics.success();
 			onConnected();
 		} catch (e) {

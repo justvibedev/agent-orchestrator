@@ -225,19 +225,6 @@ if (typeof window !== "undefined") {
 				: { id: "file-manager", name: "Finder", kind: "file_manager" },
 			copyWorkspacePath: async () => undefined,
 		},
-		telemetry: {
-			getBootstrap: async () => null,
-			getAnalyticsOptOut: async () => false,
-			setAnalyticsOptOut: async (optedOut: boolean) => optedOut,
-			onAnalyticsOptOut: () => () => undefined,
-			setCloudUser: async () => false,
-			getGithubLogin: async () => null,
-			getPolicy: async () => ({ eventsEnabled: false, consentGeneration: "test", updatedAt: new Date(0).toISOString(), acknowledged: false, consentRenewalRequired: false, state: "applied", environmentVeto: true, durabilitySupported: false }),
-			setEventsEnabled: async () => ({ eventsEnabled: false, consentGeneration: "test", updatedAt: new Date(0).toISOString(), acknowledged: false, consentRenewalRequired: false, state: "applied", environmentVeto: true, durabilitySupported: false }),
-			onPolicy: () => () => false,
-			onClearQueues: () => () => false,
-			capture: async () => false,
-		},
 		browser: {
 			nativeCompositionEnabled: true,
 			reconnectRuntime: async () => undefined,
@@ -414,7 +401,6 @@ if (typeof window !== "undefined") {
 			isPostUpdateRelaunch: async () => false,
 			relaunch: async () => undefined,
 			onStatus: () => () => undefined,
-		onTelemetry: () => () => undefined,
 		},
 		featureBuilds: {
 			list: async () => [],

@@ -10,7 +10,6 @@ import { useCloudOrg } from "./useCloudOrg";
 import { mockWorkspaces } from "../lib/mock-data";
 import { usesPreviewWorkspaceData } from "../lib/preview-mode";
 import { toReviewerHarnessId } from "../lib/reviewer-harnesses";
-import { captureRendererEvent } from "../lib/telemetry";
 import { aoBridge } from "../lib/bridge";
 import { clientForHost } from "../lib/host-clients";
 import { useConnectedHosts } from "./useHostConnection";
@@ -171,10 +170,6 @@ function reportUnknownSessionField(field: "status" | "activity", value?: string)
 	const key = `${field}:${reason}`;
 	if (reportedUnknownSessionFields.has(key)) return;
 	reportedUnknownSessionFields.add(key);
-	void captureRendererEvent("ao.renderer.session_state_unknown", {
-		field,
-		reason,
-	});
 }
 
 function toLocalWorkspaceSession(

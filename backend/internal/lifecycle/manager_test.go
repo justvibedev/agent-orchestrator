@@ -12,8 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-chi/chi/v5/middleware"
-
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 )
@@ -266,16 +264,6 @@ func (l fixedLifecycleInputLease) AcquireSessionInput(domain.SessionID) (func(),
 	}
 	return func() {}, true
 }
-
-type telemetrySink struct {
-	events []ports.TelemetryEvent
-}
-
-func (s *telemetrySink) Emit(_ context.Context, ev ports.TelemetryEvent) {
-	s.events = append(s.events, ev)
-}
-
-func (*telemetrySink) Close(context.Context) error { return nil }
 
 func (f *fakeMessenger) Send(_ context.Context, id domain.SessionID, msg string) error {
 	if f.err != nil {
@@ -2118,37 +2106,6 @@ func TestMarkSpawned_StampsUTCActivity(t *testing.T) {
 	}
 }
 
-func TestActivity_WaitingInputEntryAndExitEmitTelemetry(t *testing.T) {
-	st := newFakeStore()
-	sink := &telemetrySink{}
-	m := New(st, nil, WithTelemetry(sink))
-	now := time.Unix(100, 0).UTC()
-	m.clock = func() time.Time { return now }
-	st.sessions["mer-1"] = domain.SessionRecord{
-		ID:        "mer-1",
-		ProjectID: "mer",
-		Activity:  domain.Activity{State: domain.ActivityIdle, LastActivityAt: now.Add(-time.Minute)},
-	}
-
-	if err := m.ApplyActivitySignal(ctx, "mer-1", ports.ActivitySignal{Valid: true, State: domain.ActivityWaitingInput, Timestamp: now}); err != nil {
-		t.Fatal(err)
-	}
-	now = now.Add(3 * time.Second)
-	if err := m.ApplyActivitySignal(ctx, "mer-1", ports.ActivitySignal{Valid: true, State: domain.ActivityActive, Timestamp: now}); err != nil {
-		t.Fatal(err)
-	}
-
-	if len(sink.events) != 2 {
-		t.Fatalf("events = %#v, want waiting_input entered/exited", sink.events)
-	}
-	if sink.events[0].Name != "ao.session.waiting_input_entered" || sink.events[1].Name != "ao.session.waiting_input_exited" {
-		t.Fatalf("event names = %#v", []string{sink.events[0].Name, sink.events[1].Name})
-	}
-	if got := sink.events[1].Payload["dwell_ms"]; got != int64(3000) {
-		t.Fatalf("dwell_ms = %#v, want 3000", got)
-	}
-}
-
 func TestPRObservation_CIFailingNudgesAgentWithLogs(t *testing.T) {
 	m, st, msg := newManager()
 	st.sessions["mer-1"] = working("mer-1")
@@ -3830,12 +3787,10 @@ func TestActivity_BlockedTransitionEmitsNotification(t *testing.T) {
 
 func TestActivity_WaitingInputToBlockedDoesNotReNotify(t *testing.T) {
 	// waiting_input -> blocked is an in-family escalation: the user was already
-	// pinged once for this pause, so no second notification and no telemetry
-	// entry/exit pair.
+	// pinged once for this pause, so no second notification.
 	st := newFakeStore()
 	sink := &fakeNotificationSink{}
-	tele := &telemetrySink{}
-	m := New(st, nil, WithNotificationSink(sink), WithTelemetry(tele))
+	m := New(st, nil, WithNotificationSink(sink))
 	now := time.Date(2026, 7, 2, 10, 0, 0, 0, time.UTC)
 	m.clock = func() time.Time { return now }
 	st.sessions["mer-1"] = domain.SessionRecord{ID: "mer-1", ProjectID: "mer", Activity: domain.Activity{State: domain.ActivityWaitingInput, LastActivityAt: now.Add(-time.Minute)}, FirstSignalAt: now.Add(-time.Minute)}
@@ -3845,40 +3800,6 @@ func TestActivity_WaitingInputToBlockedDoesNotReNotify(t *testing.T) {
 	}
 	if len(sink.intents) != 0 {
 		t.Fatalf("in-family escalation emitted notification: %+v", sink.intents)
-	}
-	if len(tele.events) != 0 {
-		t.Fatalf("in-family escalation emitted telemetry: %+v", tele.events)
-	}
-}
-
-func TestActivity_BlockedEntryAndExitEmitTelemetry(t *testing.T) {
-	st := newFakeStore()
-	sink := &telemetrySink{}
-	m := New(st, nil, WithTelemetry(sink))
-	now := time.Unix(100, 0).UTC()
-	m.clock = func() time.Time { return now }
-	st.sessions["mer-1"] = domain.SessionRecord{
-		ID:        "mer-1",
-		ProjectID: "mer",
-		Activity:  domain.Activity{State: domain.ActivityIdle, LastActivityAt: now.Add(-time.Minute)},
-	}
-
-	if err := m.ApplyActivitySignal(ctx, "mer-1", ports.ActivitySignal{Valid: true, State: domain.ActivityBlocked, Timestamp: now}); err != nil {
-		t.Fatal(err)
-	}
-	now = now.Add(2 * time.Second)
-	if err := m.ApplyActivitySignal(ctx, "mer-1", ports.ActivitySignal{Valid: true, State: domain.ActivityActive, Timestamp: now}); err != nil {
-		t.Fatal(err)
-	}
-
-	if len(sink.events) != 2 {
-		t.Fatalf("events = %#v, want entered/exited", sink.events)
-	}
-	if sink.events[0].Name != "ao.session.waiting_input_entered" || sink.events[1].Name != "ao.session.waiting_input_exited" {
-		t.Fatalf("event names = %#v (family events keep the waiting_input_* names)", []string{sink.events[0].Name, sink.events[1].Name})
-	}
-	if got := sink.events[0].Payload["state"]; got != "blocked" {
-		t.Fatalf("entered payload state = %#v, want blocked", got)
 	}
 }
 
@@ -4834,53 +4755,6 @@ func TestActivitySignalRetryPreservesCursorPermissionCorrelation(t *testing.T) {
 	}
 	if got := stateOf(st.fakeStore, "mer-1"); got != domain.ActivityActive {
 		t.Fatalf("state after approved tool and revision retry = %q, want active", got)
-	}
-}
-
-// TestEmitTelemetryStampsRequestID covers the shared lifecycle emit path: an
-// HTTP-driven activity signal must tag its events with the request id so the
-// lifecycle rows join to the request, while reaper/poller ticks (a plain
-// background context) must keep an empty request id.
-func TestEmitTelemetryStampsRequestID(t *testing.T) {
-	cases := []struct {
-		name string
-		ctx  context.Context
-		want string
-	}{
-		{
-			name: "request scoped",
-			ctx:  context.WithValue(context.Background(), middleware.RequestIDKey, "req-1"),
-			want: "req-1",
-		},
-		{name: "background context", ctx: context.Background(), want: ""},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			st := newFakeStore()
-			sink := &telemetrySink{}
-			m := New(st, nil, WithTelemetry(sink))
-			now := time.Unix(100, 0).UTC()
-			m.clock = func() time.Time { return now }
-			st.sessions["mer-1"] = domain.SessionRecord{
-				ID:        "mer-1",
-				ProjectID: "mer",
-				Activity:  domain.Activity{State: domain.ActivityIdle, LastActivityAt: now.Add(-time.Minute)},
-			}
-
-			signal := ports.ActivitySignal{Valid: true, State: domain.ActivityWaitingInput, Timestamp: now}
-			if err := m.ApplyActivitySignal(tc.ctx, "mer-1", signal); err != nil {
-				t.Fatal(err)
-			}
-			if len(sink.events) == 0 {
-				t.Fatal("no telemetry events emitted")
-			}
-			for _, ev := range sink.events {
-				if ev.RequestID != tc.want {
-					t.Fatalf("%s RequestID = %q, want %q", ev.Name, ev.RequestID, tc.want)
-				}
-			}
-		})
 	}
 }
 

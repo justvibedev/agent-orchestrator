@@ -23,7 +23,6 @@ vi.mock("../lib/api-client", () => ({
 	hasTrustedApiBaseUrl: hasTrustedApiBaseUrlMock,
 }));
 
-vi.mock("../lib/telemetry", () => ({ captureRendererEvent: captureRendererEventMock }));
 vi.mock("../lib/host-clients", () => ({ clientForHost: () => ({ GET: remoteGetMock }), connectedHosts: () => [], subscribeConnectedHosts: () => () => undefined }));
 
 vi.mock("./useCloudCp", () => ({
@@ -64,7 +63,6 @@ function respondWith(payload: {
 }
 
 beforeEach(() => {
-	captureRendererEventMock.mockClear();
 	getMock.mockReset();
 	hasTrustedApiBaseUrlMock.mockReset().mockReturnValue(true);
 	cloudState.ready = false;
@@ -96,7 +94,6 @@ describe("useWorkspaceQuery", () => {
 		await waitFor(() => expect(result.current.isSuccess).toBe(true));
 		expect(result.current.data?.[0].sessions[0]).toMatchObject({ status: "unknown", statusReadiness });
 		expect(result.current.data?.[0].sessions[0].activity).toBeUndefined();
-		expect(captureRendererEventMock).not.toHaveBeenCalled();
 	});
 
 	it("keeps each artifact's inline URL, which the chat frames an HTML artifact from", async () => {
@@ -236,14 +233,6 @@ describe("useWorkspaceQuery", () => {
 			branch: undefined,
 			autoInjectReview: true,
 			autoInjectCI: true,
-		});
-		expect(captureRendererEventMock).toHaveBeenCalledWith("ao.renderer.session_state_unknown", {
-			field: "status",
-			reason: "unrecognized",
-		});
-		expect(captureRendererEventMock).toHaveBeenCalledWith("ao.renderer.session_state_unknown", {
-			field: "activity",
-			reason: "missing",
 		});
 	});
 

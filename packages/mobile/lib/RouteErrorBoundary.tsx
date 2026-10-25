@@ -2,7 +2,6 @@ import { useNavigation, useRouter, type ErrorBoundaryProps } from "expo-router";
 import { useEffect, useLayoutEffect } from "react";
 import { StyleSheet, View } from "react-native";
 import { haptics } from "./haptics";
-import { captureMobileException } from "./sentry";
 import { Button, EmptyState } from "./ui";
 import { space } from "./tokens";
 import { backOr } from "./backNavigation";
@@ -81,12 +80,10 @@ export function SheetErrorBoundary({ error }: ErrorBoundaryProps) {
 }
 
 // Runs on every show, including after a Try again that threw again, so that tap
-// is never a silent no-op. Reported with the category and operation the desktop's
-// boundary ends up with (`telemetry.ts` maps its source to `render_crash`).
+// is never a silent no-op.
 function useReportOnShow(error: Error) {
 	useEffect(() => {
 		haptics.error();
-		captureMobileException(error, { category: "render_crash", operation: "react_render" });
 	}, [error]);
 }
 

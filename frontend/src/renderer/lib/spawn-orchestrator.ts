@@ -3,7 +3,6 @@ import { appI18n } from "../i18n";
 import { aoBridge } from "./bridge";
 import { resumeOnce } from "../hooks/useCanResumeAgent";
 import type { OrchestratorSpawnSource } from "./orchestrator-spawn-sources";
-import { captureRendererEvent } from "./telemetry";
 import { clientForSessionHost } from "./host-clients";
 import type { SessionMode } from "../types/conversation";
 
@@ -59,7 +58,7 @@ export function isChatPreflightError(error: unknown): error is OrchestratorSpawn
  *  re-spawns one on the canonical branch (reattaching the existing branch). */
 export async function spawnOrchestrator(
 	projectId: string,
-	source: OrchestratorSpawnSource,
+	_source: OrchestratorSpawnSource,
 	clean = false,
 	mode?: SessionMode,
 	approvalMode?: "default" | "accept-edits" | "auto" | "bypass-permissions",
@@ -83,10 +82,8 @@ export async function spawnOrchestrator(
 			);
 		}
 
-		void captureRendererEvent("ao.renderer.orchestrator_spawn_succeeded", { project_id: projectId, source });
 		return data.orchestrator.id;
 	} catch (err) {
-		void captureRendererEvent("ao.renderer.orchestrator_spawn_failed", { project_id: projectId, source });
 		throw err;
 	}
 }
