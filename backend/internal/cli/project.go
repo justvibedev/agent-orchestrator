@@ -117,6 +117,7 @@ type projectConfig struct {
 	PostCreate        []string             `json:"postCreate,omitempty"`
 	AgentRules        string               `json:"agentRules,omitempty"`
 	AgentRulesFile    string               `json:"agentRulesFile,omitempty"`
+	VerifyCommand     string               `json:"verifyCommand,omitempty"`
 	OrchestratorRules string               `json:"orchestratorRules,omitempty"`
 	AgentConfig       agentConfig          `json:"agentConfig,omitempty"`
 	Worker            roleOverride         `json:"worker,omitempty"`

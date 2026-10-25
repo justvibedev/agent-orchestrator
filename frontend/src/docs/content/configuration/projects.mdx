@@ -53,6 +53,7 @@ ao project rm <project-id>
 | `orchestrator` | Orchestrator harness and agent-config overrides. |
 | `agentRules` | Standing instructions for workers. |
 | `agentRulesFile` | Repository-relative instructions appended to worker instructions. |
+| `verifyCommand` | Optional single-line command (up to 500 characters) that worker instructions tell the worker to run, and pass, before pushing. Orchestrator never runs it. |
 | `orchestratorRules` | Standing instructions for orchestrators. |
 | `reviewers` | Harnesses used for Orchestrator review runs. |
 | `trackerIntake` | Opt-in, read-only issue intake that can start workers. Also requires `AO_TRACKER_INTAKE=on` in the daemon environment. |
@@ -115,6 +116,16 @@ The same command list runs on every platform. Use `sh` syntax on macOS/Linux and
 Cleanup steps use `preRemove`. They run in order after processes stop and before permanent worktree removal. They have no execution time limit unless you set one for a step (1 to 120 minutes); a step that runs out of time fails like any other. Daemon shutdown cancels them. A failed step preserves the worktree. Save a fix, then use **Retry cleanup** for terminated sessions. Dirty worktrees remain intact. Replacing an orchestrator is the exception: its cleanup gets 90 seconds, and Orchestrator removes the old worktree even if a step fails or runs out of time. Cleanup does not run on ordinary agent exit or app quit, and it excludes scratch workspaces.
 
 Use `agentRules` or `agentRulesFile` for worker instructions and `orchestratorRules` for supervision instructions. If both worker fields are set, Orchestrator combines the inline rules and file contents.
+
+A short pre-push self-review checklist works well in `agentRules` or `agentRulesFile`:
+
+```md
+Before you push:
+- Reread your full diff.
+- Run the relevant tests and the project checks, and note what you ran.
+- Make sure no unrelated files are changed.
+- State the tests run and any known risks in the PR description.
+```
 
 For example, these fields link local setup files, install dependencies, and load worker rules. This is a configuration fragment; keep any other existing fields when applying it:
 

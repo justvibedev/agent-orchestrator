@@ -38,6 +38,7 @@ type systemPromptConfig struct {
 	Project               promptProject
 	OrchestratorSessionID string
 	ProjectRules          string
+	VerifyCommand         string
 	OrchestratorRules     string
 	AdditionalSections    []string
 }
@@ -95,6 +96,9 @@ func buildSystemPromptText(cfg systemPromptConfig) string {
 		sections = append(sections, workerMultiPRPrompt(), workerContainerLabelPrompt(), workerGitIsolationPrompt())
 		if rules := strings.TrimSpace(cfg.ProjectRules); rules != "" {
 			sections = append(sections, "## Project Rules\n"+rules)
+		}
+		if cmd := strings.TrimSpace(cfg.VerifyCommand); cmd != "" {
+			sections = append(sections, "## Verification Before Push\nBefore pushing, run `"+cmd+"` in your workspace and make sure it passes. AO does not run it for you.")
 		}
 	default:
 		return ""
