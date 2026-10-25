@@ -978,10 +978,11 @@ func Run(buildVersion string) error {
 
 	// Terminal hooks pass the hook process gate: a Claude process other than
 	// the session's own must not replace its activity or transcript.
-	hookActivity := hookprocess.New(lcStack.LCM, store, runtimeAdapter, nil, log)
-	// Hook Stop/SessionEnd facts that clear the gate also drive the synthesized
-	// turn_ended/exited reports to the worker's orchestrator.
-	turnNotifier = turnnotify.New(turnnotify.Deps{Next: hookActivity, Sessions: store, Reports: reportSvc, Log: log})
+	// Hook Stop/SessionEnd facts also drive the synthesized turn_ended/exited
+	// reports. The observer sits inside the gate (gate -> observer -> lifecycle)
+	// so hooks the gate drops never reach it.
+	turnNotifier = turnnotify.New(turnnotify.Deps{Next: lcStack.LCM, Sessions: store, Reports: reportSvc, Log: log})
+	hookActivity := hookprocess.New(turnNotifier, store, runtimeAdapter, nil, log)
 	srv, err := httpd.NewWithDeps(cfg, log, termMgr, httpd.APIDeps{
 		Awake:              awakeSvc,
 		Projects:           projectSvc,
@@ -1015,7 +1016,7 @@ func Run(buildVersion string) error {
 		Settings:           settingsSvc,
 		CDC:                store,
 		Events:             cdcPipe.Broadcaster,
-		Activity:           turnNotifier,
+		Activity:           hookActivity,
 		NativeSessions:     nativeSessions,
 		UsageHooks:         usageCollector,
 		UsageSummary:       usagesvc.NewSummaryReader(store),

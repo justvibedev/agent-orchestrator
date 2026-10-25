@@ -16,6 +16,8 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/lifecycle"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 	"github.com/aoagents/agent-orchestrator/backend/internal/procmem"
+	reportsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/report"
+	"github.com/aoagents/agent-orchestrator/backend/internal/service/turnnotify"
 	"github.com/aoagents/agent-orchestrator/backend/internal/storage/sqlite/sqlitetest"
 )
 
@@ -313,5 +315,34 @@ func TestGateKeepsForeignStopsOutOfTheNativeCheckpointEvidence(t *testing.T) {
 	apply(20, ports.ActivitySignal{State: domain.ActivityIdle, Event: "stop"}, 10*time.Second)
 	if journal := evidence(); !journal.Invalid {
 		t.Fatalf("the terminal's own promptless Stop was accepted as a checkpoint: %+v", journal)
+	}
+}
+
+type recordingReports struct{ created []string }
+
+func (r *recordingReports) Create(_ context.Context, in reportsvc.CreateInput) (domain.ReportRecord, error) {
+	r.created = append(r.created, in.Message)
+	return domain.ReportRecord{}, nil
+}
+
+// A hook the gate drops (a nested claude ending) must not reach the turn
+// notifier, or the orchestrator would be told the worker exited.
+func TestGateDroppedHookDoesNotNotify(t *testing.T) {
+	h := newGateHarness()
+	rec := h.sessions["ao-1"]
+	rec.Kind = domain.KindWorker
+	h.sessions["ao-1"] = rec
+	reports := &recordingReports{}
+	observer := turnnotify.New(turnnotify.Deps{Next: h.next, Sessions: h.sessions, Reports: reports})
+	h.gate.next = observer
+	end := func(s *ports.ActivitySignal) { s.Event = "session-end" }
+	if !h.hook(t, 20) { // pins the terminal's Claude
+		t.Fatal("the terminal's Claude was dropped")
+	}
+	if h.hook(t, 40, end) || len(reports.created) != 0 {
+		t.Fatalf("dropped nested session-end notified: %v", reports.created)
+	}
+	if !h.hook(t, 20, end) || len(reports.created) != 1 {
+		t.Fatalf("terminal session-end notifications = %d, want 1", len(reports.created))
 	}
 }
