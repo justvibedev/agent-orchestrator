@@ -890,3 +890,20 @@ describe("ChatMarkdown streaming fade", () => {
 		expect(screen.getByRole("link")).toHaveTextContent("docs");
 	});
 });
+
+describe("local paths", () => {
+	it("makes prose and inline-code paths clickable but leaves fences and URLs alone", async () => {
+		const perform = vi.spyOn(aoBridge.localPath, "perform");
+		render(<ChatMarkdown text={"See /Users/me/a.txt and `~/b/c.md` or https://x.dev/a/b\n\n```\n/etc/hosts\n```"} />);
+		await userEvent.click(screen.getByText("/Users/me/a.txt"));
+		expect(perform).toHaveBeenCalledWith("/Users/me/a.txt", "open");
+		await userEvent.click(screen.getByText("~/b/c.md"));
+		expect(perform).toHaveBeenCalledWith("~/b/c.md", "open");
+		expect(screen.queryAllByRole("button", { name: /etc\/hosts/ })).toHaveLength(0);
+	});
+
+	it("does not offer local actions for remote-host chats", () => {
+		render(<ChatLinkProvider remoteHost><ChatMarkdown text="See /Users/me/a.txt" /></ChatLinkProvider>);
+		expect(screen.getByText("/Users/me/a.txt").closest("[role=button]")).toBeNull();
+	});
+});

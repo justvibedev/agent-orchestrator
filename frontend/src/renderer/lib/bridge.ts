@@ -107,6 +107,10 @@ export const aoBridge: AoBridge =
 			onStatus: () => () => undefined,
 		},
 		sideChats: { capture: async () => undefined },
+		localPath: {
+			inspect: async () => ({ ok: false, reason: "invalid" }),
+			perform: async () => ({ ok: false, reason: "failed" }),
+		},
 		editorHandoff: {
 			getState: async () => ({
 				targets: [],

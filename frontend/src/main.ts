@@ -49,6 +49,7 @@ import { readUpdateSettings, type UpdateSettings, type UpdateStatus } from "./ma
 import { readKeybindingOverrides, writeKeybindingOverrides } from "./main/keybinding-settings";
 import { readEditorSettings, writeEditorPreference } from "./main/editor-settings";
 import { createEditorHandoff } from "./main/editor-handoff";
+import { createLocalPathActions } from "./main/local-path-actions";
 import { discoverMacTerminalApps } from "./main/mac-terminal-apps";
 import { registerCliLinkIpc } from "./main/cli-link-ipc";
 import { launchCommand } from "./main/launch-command";
@@ -1326,6 +1327,16 @@ const editorHandoff = createEditorHandoff({
 	logError: (message, error) => console.error(message, error),
 });
 
+const localPathActions = createLocalPathActions({
+	platform: process.platform,
+	homeDir: os.homedir(),
+	stat: (target) => stat(target),
+	realPath: (target) => realpath(target),
+	revealPath: (target) => shell.showItemInFolder(target),
+	openPath: (target) => shell.openPath(target),
+	copyText: (text) => clipboard.writeText(text),
+});
+
 // How long to wait for the login shell to print its env before giving up. A
 // misconfigured rc that blocks (or a slow nvm/pyenv chain) must not hang startup;
 // the daemon then falls back to the static PATH floor.
@@ -2561,6 +2572,14 @@ ipcMain.handle("editorHandoff:openArtifacts", (event, input) => {
 ipcMain.handle("editorHandoff:copyWorkspacePath", (event, sessionId: string) => {
 	if (event.sender !== getShellWebContents()) throw new Error("Untrusted editor handoff request.");
 	return editorHandoff.copyWorkspacePath(typeof sessionId === "string" ? sessionId : "");
+});
+ipcMain.handle("localPath:inspect", (event, filePath: unknown) => {
+	if (event.sender !== getShellWebContents()) throw new Error("Untrusted local path request.");
+	return localPathActions.inspect(filePath);
+});
+ipcMain.handle("localPath:perform", (event, filePath: unknown, action: unknown) => {
+	if (event.sender !== getShellWebContents()) throw new Error("Untrusted local path request.");
+	return localPathActions.perform(filePath, action);
 });
 ipcMain.handle("app:getVersion", () => app.getVersion());
 ipcMain.handle("app:openExternal", async (_event, url: string) => {

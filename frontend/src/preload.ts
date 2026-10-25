@@ -35,6 +35,7 @@ import type {
 	OpenSessionTargetInput,
 	OpenSessionTargetResult,
 } from "./shared/editor-handoff";
+import type { LocalPathAction, LocalPathInspection, LocalPathResult } from "./shared/local-path";
 import type { TelemetryBootstrap } from "./shared/telemetry";
 import {
 	TELEMETRY_CLEAR_RENDERER_QUEUES_CHANNEL,
@@ -408,6 +409,11 @@ const api = {
 			ipcRenderer.invoke("editorHandoff:openArtifacts", input) as Promise<OpenSessionTargetResult>,
 		copyWorkspacePath: (sessionId: string) =>
 			ipcRenderer.invoke("editorHandoff:copyWorkspacePath", sessionId) as Promise<void>,
+	},
+	localPath: {
+		inspect: (filePath: string) => ipcRenderer.invoke("localPath:inspect", filePath) as Promise<LocalPathInspection>,
+		perform: (filePath: string, action: LocalPathAction) =>
+			ipcRenderer.invoke("localPath:perform", filePath, action) as Promise<LocalPathResult>,
 	},
 	telemetry: {
 		getBootstrap: async () => {
