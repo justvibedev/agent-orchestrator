@@ -119,6 +119,9 @@ type ReportRecord struct {
 	// SessionDisplayName is resolved at delivery time for presentation. It is
 	// intentionally not persisted with the durable report row.
 	SessionDisplayName string
+	// UnverifiedReason is resolved at delivery time, like SessionDisplayName, and
+	// is not persisted. Non-empty means a done report has no pushed PR behind it.
+	UnverifiedReason   string
 	State              ReportState
 	Note               string
 	Message            string

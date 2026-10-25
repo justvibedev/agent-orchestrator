@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"sort"
 	"time"
-	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -134,15 +133,9 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (domain.ReportR
 			availableAt = now
 		}
 	}
-	note := input.Note
-	if input.State == domain.ReportDone {
-		if reason := s.unverifiedDoneReason(ctx, session, input.Outputs); reason != "" {
-			note = annotateUnverified(note, reason)
-		}
-	}
 	rec := domain.ReportRecord{
 		ID: s.newID(), SessionID: session.ID, ProjectID: session.ProjectID,
-		State: input.State, Note: note, Message: input.Message, Outputs: input.Outputs,
+		State: input.State, Note: input.Note, Message: input.Message, Outputs: input.Outputs,
 		CreatedAt: now, DeliveryState: domain.ReportPending, AvailableAt: availableAt,
 		SettlementDeadline: settlementDeadline, RepeatCount: 1,
 	}
@@ -174,6 +167,20 @@ type prLister interface {
 
 type projectReader interface {
 	GetProject(context.Context, string) (domain.ProjectRecord, bool, error)
+}
+
+// UnverifiedDoneReason soft-verifies a done report at delivery time, after the
+// settlement window, so PR and push state the observers learn late has settled.
+// It returns "" for any non-done report or lookup failure.
+func (s *Service) UnverifiedDoneReason(ctx context.Context, r domain.ReportRecord) string {
+	if s == nil || s.store == nil || r.State != domain.ReportDone {
+		return ""
+	}
+	session, ok, err := s.store.GetSession(ctx, r.SessionID)
+	if err != nil || !ok {
+		return ""
+	}
+	return s.unverifiedDoneReason(ctx, session, r.Outputs)
 }
 
 // unverifiedDoneReason soft-checks a done report against already-tracked PR and
@@ -217,18 +224,4 @@ func (s *Service) unverifiedDoneReason(ctx context.Context, session domain.Sessi
 		return "" // no code changes, so there is nothing to put in a PR
 	}
 	return "no pull request recorded for this session"
-}
-
-// annotateUnverified appends the unverified marker, trimming the note so the
-// result still fits the report text limit.
-func annotateUnverified(note, reason string) string {
-	marker := "done (unverified: " + reason + ")"
-	room := domain.MaxReportTextCharacters - utf8.RuneCountInString(marker) - 2
-	if room < 0 {
-		return marker
-	}
-	if r := []rune(note); len(r) > room {
-		note = string(r[:room])
-	}
-	return note + "\n\n" + marker
 }
