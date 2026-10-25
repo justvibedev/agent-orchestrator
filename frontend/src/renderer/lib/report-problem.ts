@@ -23,7 +23,7 @@ const REDACTED_LOCAL_PATH = "[redacted-local-path]";
 const REDACTED_LOCAL_URL = "[redacted-local-url]";
 const REDACTED_SECRET = "[redacted-secret]";
 const DISCORD_SUPPORT_URL = "https://discord.gg/WjKNa7EbB8";
-const GITHUB_NEW_ISSUE_URL = "https://github.com/Untrivial-ai/agent-orchestrator/issues/new";
+const GITHUB_NEW_ISSUE_URL = "https://github.com/justvibedev/agent-orchestrator/issues/new";
 const SUPPORT_EMAIL = "prasad@untrivial.ai";
 const SUPPORT_CC_EMAIL = "prateek@untrivial.ai";
 

@@ -3,7 +3,6 @@ type QuitEvent = { preventDefault(): void };
 export function createDesktopQuitController(options: {
 	platform: NodeJS.Platform;
 	hasTray(): boolean;
-	isUpdateRestartRequested(): boolean;
 	hasWindow(): boolean;
 	closeWindow(): void;
 	hideDock(): void;
@@ -17,8 +16,7 @@ export function createDesktopQuitController(options: {
 			if (
 				options.platform !== "darwin" ||
 				!options.hasTray() ||
-				quitCompletelyRequested ||
-				options.isUpdateRestartRequested()
+				quitCompletelyRequested
 			) return false;
 
 			event.preventDefault();

@@ -45,7 +45,6 @@ import {
 	type TelemetryPolicyView,
 } from "./shared/telemetry-policy";
 import type { MigrationState } from "./main/app-state";
-import type { UpdateSettings, UpdateStatus, UpdateInstallResult } from "./main/update-settings";
 import type { CloudAccount } from "./shared/cloud-account";
 import type { LocalLoginInput, LocalRegisterInput } from "./main/cloud-auth-local";
 import type {
@@ -53,10 +52,7 @@ import type {
 	CloudCpProxyResponse,
 	CloudCpStreamEvent,
 } from "./main/cloud-cp-proxy";
-import type { UpdateOutcome } from "./shared/update-telemetry";
 import type { UiSettings } from "./main/ui-settings";
-import type { UpdateCheckOptions } from "./main/auto-updater";
-import type { FeatureBuild } from "./main/feature-builds";
 import type {
 	BrowserAnnotationActionInput,
 	BrowserAnnotationCancelPayload,
@@ -694,12 +690,6 @@ const api = {
 		unlink: (confirmReplacement: boolean, expectedTarget?: string | null) =>
 			ipcRenderer.invoke("cliLink:unlink", confirmReplacement, expectedTarget) as Promise<import("./shared/cli-link").CliLinkResult>,
 	},
-	updateSettings: {
-		get: () => ipcRenderer.invoke("updateSettings:get") as Promise<UpdateSettings>,
-		set: (settings: UpdateSettings) => ipcRenderer.invoke("updateSettings:set", settings) as Promise<void>,
-		setMacDifferentialUpdates: (enabled: boolean) =>
-			ipcRenderer.invoke("updateSettings:setMacDifferentialUpdates", enabled) as Promise<void>,
-	},
 	uiSettings: {
 		get: () => ipcRenderer.invoke("uiSettings:get") as Promise<UiSettings>,
 		set: (settings: Partial<UiSettings>) => ipcRenderer.invoke("uiSettings:set", settings) as Promise<UiSettings>,
@@ -709,37 +699,6 @@ const api = {
 		set: (overrides: KeybindingOverrides) =>
 			ipcRenderer.invoke("keybindings:set", overrides) as Promise<KeybindingOverrides>,
 		setRecording: (active: boolean) => ipcRenderer.invoke("keybindings:setRecording", active) as Promise<void>,
-	},
-	updates: {
-		getStatus: () => ipcRenderer.invoke("updates:getStatus") as Promise<UpdateStatus>,
-		check: (options?: UpdateCheckOptions) => ipcRenderer.invoke("updates:check", options) as Promise<void>,
-		returnHome: (requestId?: string) => ipcRenderer.invoke("updates:returnHome", requestId) as Promise<void>,
-		download: (requestId?: string) => ipcRenderer.invoke("updates:download", requestId) as Promise<void>,
-		install: (confirmedVersion?: string) => ipcRenderer.invoke("updates:install", confirmedVersion) as Promise<UpdateInstallResult>,
-		// True only when this boot is a genuine post-update relaunch; lets the
-		// startup loader swap "Connecting" copy for "Updating / Restarting".
-		isPostUpdateRelaunch: () => ipcRenderer.invoke("updates:isPostUpdateRelaunch") as Promise<boolean>,
-		relaunch: () => ipcRenderer.invoke("updates:relaunch") as Promise<void>,
-		onStatus: (listener: (status: UpdateStatus) => void) => {
-			const wrapped = (_event: Electron.IpcRendererEvent, status: UpdateStatus) => listener(status);
-			ipcRenderer.on("updates:status", wrapped);
-			return () => {
-				ipcRenderer.off("updates:status", wrapped);
-			};
-		},
-		// Separate from onStatus: the main process suppresses the *status* for
-		// automatic failures but still reports the outcome here.
-		onTelemetry: (listener: (outcome: UpdateOutcome) => void) => {
-			const wrapped = (_event: Electron.IpcRendererEvent, outcome: UpdateOutcome) => listener(outcome);
-			ipcRenderer.on("updates:telemetry", wrapped);
-			return () => {
-				ipcRenderer.off("updates:telemetry", wrapped);
-			};
-		},
-	},
-	featureBuilds: {
-		list: () => ipcRenderer.invoke("featureBuilds:list") as Promise<FeatureBuild[]>,
-		getActive: () => ipcRenderer.invoke("featureBuilds:getActive") as Promise<{ pr: number } | null>,
 	},
 	// Saved AO daemons, shared with the CLI's ~/.ao/remotes.json. Everything the
 	// renderer receives back is password-free (see main/remotes-ipc.ts); the

@@ -28,27 +28,16 @@ vi.mock("./settings/DefaultCloudSandboxRow", () => ({
 }));
 
 const {
-	getUpdate,
-	setUpdate,
 	getUiSettings,
 	setUiSettings,
-	updGetStatus,
-	updCheck,
-	updReturnHome,
-	updDownload,
-	updInstall,
-	updOnStatus,
 	getVersion,
 	getDaemonStatus,
 	navigateMock,
 	writeText,
 	openExternal,
-	featListBuilds,
-	featGetActive,
 	getKeybindings,
 	setKeybindings,
 	setKeybindingRecording,
-	setMacDifferentialUpdates,
 	getTelemetryPolicy,
 	setTelemetryEvents,
 	onTelemetryPolicy,
@@ -57,27 +46,16 @@ const {
 	isMacPlatform,
 	isWindowsPlatform,
 } = vi.hoisted(() => ({
-	getUpdate: vi.fn(),
-	setUpdate: vi.fn(),
 	getUiSettings: vi.fn(),
 	setUiSettings: vi.fn(),
-	updGetStatus: vi.fn(),
-	updReturnHome: vi.fn(),
-	updCheck: vi.fn(),
-	updDownload: vi.fn(),
-	updInstall: vi.fn(),
-	updOnStatus: vi.fn(),
 	getVersion: vi.fn(),
 	getDaemonStatus: vi.fn(),
 	navigateMock: vi.fn(),
 	writeText: vi.fn(),
 	openExternal: vi.fn(),
-	featListBuilds: vi.fn(),
-	featGetActive: vi.fn(),
 	getKeybindings: vi.fn(),
 	setKeybindings: vi.fn(),
 	setKeybindingRecording: vi.fn(),
-	setMacDifferentialUpdates: vi.fn().mockResolvedValue(undefined),
 	// install the per-test policy response. Preserve the bridge's Promise
 	// contract for that initial read as well.
 	getTelemetryPolicy: vi.fn().mockResolvedValue(undefined),
@@ -114,26 +92,12 @@ vi.mock("../lib/bridge", () => ({
 			link: vi.fn(async () => ({ ok: false as const, code: "unsupported" as const, message: "unavailable" })),
 			unlink: vi.fn(async () => ({ ok: false as const, code: "unsupported" as const, message: "unavailable" })),
 		},
-		updateSettings: {
-			get: getUpdate,
-			set: setUpdate,
-			setMacDifferentialUpdates,
-		},
 		uiSettings: { get: getUiSettings, set: setUiSettings },
 		keybindings: {
 			get: getKeybindings,
 			set: setKeybindings,
 			setRecording: setKeybindingRecording,
 		},
-		updates: {
-			getStatus: updGetStatus,
-			check: updCheck,
-			returnHome: updReturnHome,
-			download: updDownload,
-			install: updInstall,
-			onStatus: updOnStatus,
-		},
-		featureBuilds: { list: featListBuilds, getActive: featGetActive },
 		telemetry: { getPolicy: getTelemetryPolicy, setEventsEnabled: setTelemetryEvents, onPolicy: onTelemetryPolicy, getBootstrap: vi.fn(), capture: vi.fn(), getAnalyticsOptOut, setAnalyticsOptOut },
 	},
 }));
@@ -157,27 +121,16 @@ function renderForm(section: GlobalSettingsSection = "all", focusAgentId?: strin
 beforeEach(async () => {
 	harnessSettingsSectionMock.mockReset();
 	for (const m of [
-		getUpdate,
-		setUpdate,
 		getUiSettings,
 		setUiSettings,
-		updGetStatus,
-		updCheck,
-		updReturnHome,
-		updDownload,
-		updInstall,
-		updOnStatus,
 		navigateMock,
 		writeText,
 		openExternal,
 		getVersion,
 		getDaemonStatus,
-		featListBuilds,
-		featGetActive,
 		getKeybindings,
 		setKeybindings,
 		setKeybindingRecording,
-		setMacDifferentialUpdates,
 		getTelemetryPolicy,
 		setTelemetryEvents,
 		onTelemetryPolicy,
@@ -189,8 +142,6 @@ beforeEach(async () => {
 		m.mockReset();
 	}
 	isWindowsPlatform.mockReturnValue(true);
-	getUpdate.mockResolvedValue({ enabled: true, channel: "latest", nightlyAck: false, feature: null });
-	setUpdate.mockResolvedValue(undefined);
 	getUiSettings.mockResolvedValue({ locale: "en", soundNotificationsEnabled: true, terminalShell: { kind: "auto" } });
 	setUiSettings.mockImplementation(async (settings: { locale?: string; soundNotificationsEnabled?: boolean; terminalShell?: { kind: string; path?: string } }) => ({
 		locale: "en",
@@ -198,22 +149,13 @@ beforeEach(async () => {
 		terminalShell: { kind: "auto" },
 		...settings,
 	}));
-	updGetStatus.mockResolvedValue({ state: "idle" });
-	updCheck.mockResolvedValue(undefined);
-	updReturnHome.mockResolvedValue(undefined);
-	updDownload.mockResolvedValue(undefined);
-	updInstall.mockResolvedValue(undefined);
-	updOnStatus.mockReturnValue(() => undefined);
 	getVersion.mockResolvedValue("1.4.0");
 	getDaemonStatus.mockResolvedValue({ state: "ready" });
 	writeText.mockResolvedValue(undefined);
 	openExternal.mockResolvedValue(undefined);
-	featListBuilds.mockResolvedValue([]);
-	featGetActive.mockResolvedValue(null);
 	getKeybindings.mockResolvedValue({});
 	setKeybindings.mockImplementation(async (overrides) => overrides);
 	setKeybindingRecording.mockResolvedValue(undefined);
-	setMacDifferentialUpdates.mockResolvedValue(undefined);
 	getTelemetryPolicy.mockResolvedValue({ eventsEnabled: false, consentGeneration: "generation-off", updatedAt: "2026-08-28T10:15:30.000Z", acknowledged: true, consentRenewalRequired: false, state: "applied", environmentVeto: false, durabilitySupported: true });
 	setTelemetryEvents.mockResolvedValue({ eventsEnabled: true, consentGeneration: "generation-on", updatedAt: "2026-08-28T10:15:31.000Z", acknowledged: true, consentRenewalRequired: false, state: "applied", environmentVeto: false, durabilitySupported: true });
 	onTelemetryPolicy.mockReturnValue(() => undefined);
@@ -284,17 +226,13 @@ describe("GlobalSettingsForm", () => {
 		expect(await screen.findByLabelText("Settings")).toBeInTheDocument();
 		expect(screen.getByText("Appearance")).toBeInTheDocument();
 		expect(screen.getByText("Language")).toBeInTheDocument();
-		// UpdatesSection is lazy-loaded and can take longer than the default async query timeout.
-		// Its sections are "Version" and "Preferences" ("Updates" is the page title).
-		expect(await screen.findByRole("heading", { name: "Version" }, { timeout: 5_000 })).toBeInTheDocument();
-		expect(screen.getByRole("heading", { name: "Preferences" })).toBeInTheDocument();
 		expect(screen.getByText("Advanced")).toBeInTheDocument();
 		expect(screen.getByText("Report a problem")).toBeInTheDocument();
 		// Report form is inline — no dialog, fields directly present.
 		expect(screen.getByLabelText("Title")).toBeInTheDocument();
 	});
 
-	it("persists developer mode and reveals feature builds", async () => {
+	it("persists developer mode", async () => {
 		const user = userEvent.setup();
 		renderForm();
 		const toggle = await screen.findByRole("switch", { name: "Developer mode" });
@@ -302,9 +240,6 @@ describe("GlobalSettingsForm", () => {
 
 		await user.click(toggle);
 		expect(window.localStorage.getItem("ao.developerMode")).toBe("true");
-		expect(setMacDifferentialUpdates).toHaveBeenCalledWith(true);
-		await user.click(await screen.findByLabelText("Updates channel", {}, { timeout: 5_000 }));
-		expect(await screen.findByRole("menuitem", { name: "Feature Releases" })).toBeInTheDocument();
 	});
 
 	// Admins pick the org's cloud sandbox without turning on Developer Mode or
@@ -356,18 +291,6 @@ describe("GlobalSettingsForm", () => {
 		await user.click(remoteHosts);
 		expect(window.localStorage.getItem("ao.remoteHosts")).toBe("true");
 		expect(useUiStore.getState().remoteHosts).toBe(true);
-	});
-
-	it("shows the available feature builds after choosing Feature Releases", async () => {
-		const user = userEvent.setup();
-		featListBuilds.mockResolvedValue([]);
-		useUiStore.getState().setDeveloperMode(true);
-		renderForm();
-
-		await user.click(await screen.findByLabelText("Updates channel", {}, { timeout: 5_000 }));
-		await user.click(await screen.findByRole("menuitem", { name: "Feature Releases" }));
-		expect(await screen.findByText("No live feature releases.")).toBeInTheDocument();
-		expect(featListBuilds).toHaveBeenCalled();
 	});
 
 	it("switches settings labels to Simplified Chinese and persists locale", async () => {
@@ -524,283 +447,6 @@ describe("GlobalSettingsForm", () => {
 		expect(screen.queryByRole("dialog", { name: "Report a problem" })).not.toBeInTheDocument();
 	});
 
-	it("shows the nightly warning when the nightly channel is loaded", async () => {
-		getUpdate.mockResolvedValue({ enabled: true, channel: "nightly", nightlyAck: true, feature: null });
-		renderForm();
-		expect(await screen.findByText(/Nightly updates daily and may be unstable or cause data loss/i)).toBeInTheDocument();
-		expect(screen.queryByRole("button", { name: "Save changes" })).not.toBeInTheDocument();
-	});
-
-	it("auto-saves the updates channel while automatic updates are disabled", async () => {
-		renderForm();
-		await userEvent.click(await screen.findByRole("switch", { name: "Automatic updates" }));
-		await waitFor(() =>
-			expect(setUpdate).toHaveBeenCalledWith(expect.objectContaining({ enabled: false, channel: "latest" })),
-		);
-		await screen.findByLabelText("Updates channel");
-		await userEvent.click(screen.getByLabelText("Updates channel"));
-		await userEvent.click(await screen.findByRole("menuitem", { name: "Nightly (Pre-release)" }));
-		await waitFor(() =>
-			expect(setUpdate).toHaveBeenCalledWith(
-				expect.objectContaining({ channel: "nightly", enabled: false, nightlyAck: true, feature: null }),
-			),
-		);
-		// The installed build stays the stable one: no nightly stamp under the version.
-		expect(screen.getByTestId("app-version")).toHaveTextContent("v1.4.0");
-		expect(screen.queryByText(/^1\.4\.0-nightly/)).toBeNull();
-		expect(await screen.findByText(/Nightly updates daily and may be unstable or cause data loss/i)).toBeInTheDocument();
-	});
-
-	it("checks the newly selected channel and explains how to switch after an update", async () => {
-		let emit: (s: { state: string; version?: string; requestId?: string }) => void = () => undefined;
-		updOnStatus.mockImplementation((cb: (s: unknown) => void) => {
-			emit = cb as typeof emit;
-			return () => undefined;
-		});
-		renderForm();
-		await userEvent.click(await screen.findByLabelText("Updates channel"));
-		await userEvent.click(await screen.findByRole("menuitem", { name: "Nightly (Pre-release)" }));
-
-		await waitFor(() =>
-			expect(updCheck).toHaveBeenCalledWith(
-				expect.objectContaining({
-					settings: expect.objectContaining({ channel: "nightly" }),
-					requestId: expect.stringMatching(/^channel-update-/),
-				}),
-			),
-		);
-		const requestId = updCheck.mock.calls.at(-1)?.[0]?.requestId;
-		expect(requestId).toMatch(/^channel-update-/);
-		act(() => emit({ state: "available", version: "1.5.0-nightly.202608271200", requestId }));
-		expect(await screen.findByText("Update and restart to switch to Nightly."))
-			.toBeInTheDocument();
-	});
-
-	it("auto-saves when automatic updates are toggled", async () => {
-		renderForm();
-		await userEvent.click(await screen.findByRole("switch", { name: "Automatic updates" }));
-		await waitFor(() =>
-			expect(setUpdate).toHaveBeenCalledWith(expect.objectContaining({ enabled: false, channel: "latest" })),
-		);
-		expect(screen.getByLabelText("Updates channel")).toBeInTheDocument();
-	});
-
-	it("hides the nightly warning on the stable channel", async () => {
-		renderForm();
-		await screen.findByRole("heading", { name: "Version" });
-		expect(screen.queryByText(/Nightly updates daily and may be unstable or cause data loss/i)).not.toBeInTheDocument();
-	});
-
-	it("shows the current app version", async () => {
-		renderForm();
-		await waitFor(() => expect(screen.getByTestId("app-version")).toHaveTextContent("v1.4.0"));
-	});
-
-	it("shows the installed Nightly build separately from the selected update feed", async () => {
-		getVersion.mockResolvedValue("1.4.0-nightly.202608271030");
-		renderForm();
-		// The channel badge is gone (it repeated the channel picker); an installed
-		// nightly is identified by its full stamp under the base version.
-		await waitFor(() => expect(screen.getByTestId("app-version")).toHaveTextContent("v1.4.0"));
-		expect(await screen.findByText("1.4.0-nightly.202608271030")).toBeInTheDocument();
-	});
-
-	it("shows a repeated timeout once and keeps manual retry available", async () => {
-		const message = "Update check timed out. Check your connection and try again.";
-		updGetStatus.mockResolvedValue({ state: "error", message, checkError: message });
-		renderForm("updates");
-		await screen.findByText(message);
-		expect(screen.getAllByText(message)).toHaveLength(1);
-		const retry = screen.getByRole("button", { name: "Check for updates" });
-		expect(retry).toBeEnabled();
-		await userEvent.click(retry);
-		expect(updCheck).toHaveBeenCalledTimes(1);
-	});
-
-	it("preserves a check failure beside a staged update", async () => {
-		const message = "Update check timed out. Check your connection and try again.";
-		updGetStatus.mockResolvedValue({ state: "downloaded", version: "2.0.0", checkError: message });
-		renderForm("updates");
-		expect(await screen.findByText(message)).toBeVisible();
-		expect(screen.getAllByText(message)).toHaveLength(1);
-		expect(screen.getByRole("button", { name: "Restart & install" })).toBeEnabled();
-	});
-
-	it("preserves a different check failure beside an install error", async () => {
-		updGetStatus.mockResolvedValue({ state: "error", message: "Installation failed", checkError: "Update check timed out" });
-		renderForm("updates");
-		expect(await screen.findByText("Installation failed")).toBeVisible();
-		expect(screen.getByText("Update check timed out")).toBeVisible();
-	});
-
-	it("shows an explicit idle update state and triggers a manual check", async () => {
-		renderForm();
-		await waitFor(() => expect(screen.getByTestId("app-version")).toHaveTextContent("v1.4.0"));
-		expect(screen.getByText("Updates haven't been checked yet.")).toBeInTheDocument();
-		await userEvent.click(screen.getByRole("button", { name: "Check for updates" }));
-		expect(updCheck).toHaveBeenCalled();
-	});
-
-	it("shows immediate animated feedback while a manual check is pending", async () => {
-		let finishCheck: () => void = () => undefined;
-		updCheck.mockReturnValue(
-			new Promise<void>((resolve) => {
-				finishCheck = resolve;
-			}),
-		);
-		renderForm();
-		const button = await screen.findByRole("button", { name: "Check for updates" });
-
-		await userEvent.click(button);
-
-		expect(button).toBeDisabled();
-		expect(button).toHaveTextContent("Checking for updates…");
-		expect(button.querySelector("svg")).toHaveClass("animate-spin");
-		const statusLine = screen.getByTestId("update-status-line");
-		expect(statusLine).not.toHaveTextContent("Checking for updates…");
-		expect(statusLine.querySelector("svg")).toBeNull();
-		// The slot keeps one description line while the button owns the feedback.
-		expect(statusLine).toHaveClass("min-h-4");
-
-		act(() => finishCheck());
-		await waitFor(() => expect(button).toBeEnabled(), { timeout: 1_500 });
-	});
-
-	it("stops manual loading when the updater completes before the check invocation settles", async () => {
-		let emit: (status: { state: string; checkedAt?: number; requestId?: string }) => void = () => undefined;
-		updOnStatus.mockImplementation((listener: (status: unknown) => void) => {
-			emit = listener as typeof emit;
-			return () => undefined;
-		});
-		updCheck.mockReturnValue(new Promise<void>(() => undefined));
-		renderForm();
-		const button = await screen.findByRole("button", { name: "Check for updates" });
-
-		await userEvent.click(button);
-		const requestId = updCheck.mock.calls[0]?.[0]?.requestId;
-		expect(requestId).toMatch(/^manual-update-/);
-		act(() => emit({ state: "not-available", checkedAt: Date.now() }));
-		expect(screen.getByTestId("update-status-line")).not.toHaveTextContent("Checking for updates…");
-		expect(button).toBeDisabled();
-
-		act(() => emit({ state: "not-available", checkedAt: Date.now(), requestId }));
-
-		await waitFor(() => expect(screen.getByTestId("update-status-line")).toHaveTextContent("You're on the latest version."), { timeout: 1_500 });
-		expect(button).toBeEnabled();
-	});
-
-	it("stops manual loading when a completed check is immediately followed by the restored staged update", async () => {
-		let emit: (status: { state: string; version?: string; requestId?: string }) => void = () => undefined;
-		updOnStatus.mockImplementation((listener: (status: unknown) => void) => {
-			emit = listener as typeof emit;
-			return () => undefined;
-		});
-		updCheck.mockReturnValue(new Promise<void>(() => undefined));
-		renderForm();
-		const button = await screen.findByRole("button", { name: "Check for updates" });
-
-		await userEvent.click(button);
-		const requestId = updCheck.mock.calls[0]?.[0]?.requestId;
-		expect(requestId).toMatch(/^manual-update-/);
-
-		act(() => {
-			emit({ state: "error", requestId });
-			emit({ state: "downloaded", version: "1.2.3", requestId: "earlier-download" });
-		});
-
-		await waitFor(
-			() => expect(screen.getByTestId("update-status-line")).toHaveTextContent("Downloaded. Restart to finish updating."),
-			{ timeout: 1_500 },
-		);
-		expect(screen.getByRole("button", { name: "Restart & install" })).toBeInTheDocument();
-		// The check control stays available alongside the restart action. Hiding it
-		// once something was staged left a user whose staged build would not
-		// install with a single dead button and no way to re-check.
-		const recheck = await screen.findByRole("button", { name: "Check for updates" }, { timeout: 2_000 });
-		expect(recheck).toBeEnabled();
-	});
-
-	it("accepts a check click while a background check is already running", async () => {
-		// Regression: gating the button on any "checking" status swallowed the
-		// first click whenever Settings was opened during a background check --
-		// as often as every 15 minutes on nightly -- which is what made the button
-		// look like it needed a double-click. The main process serializes updater
-		// operations, so a click during a background check simply queues.
-		updGetStatus.mockResolvedValue({ state: "checking" });
-		updCheck.mockResolvedValue(undefined);
-		renderForm();
-
-		const button = await screen.findByRole("button", { name: "Checking for updates…" });
-		expect(button).toBeEnabled();
-		await userEvent.click(button);
-
-		expect(updCheck).toHaveBeenCalledTimes(1);
-		expect(updCheck.mock.calls[0]?.[0]?.requestId).toMatch(/^manual-update-/);
-	});
-
-	it("shows when the updater last completed a check", async () => {
-		const checkedAt = new Date("2026-08-19T12:51:00.000Z").getTime();
-		updGetStatus.mockResolvedValue({ state: "not-available", checkedAt });
-		renderForm();
-
-		const formatted = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "medium" }).format(checkedAt);
-		expect(await screen.findByTestId("update-checked-at")).toHaveTextContent(formatted);
-		expect(screen.getByTestId("update-status-line")).toHaveTextContent("You're on the latest version.");
-	});
-
-	it("offers an Update button when an update is available and downloads it", async () => {
-		let emit: (s: { state: string; version?: string; requestId?: string }) => void = () => undefined;
-		updOnStatus.mockImplementation((cb: (s: unknown) => void) => {
-			emit = cb as typeof emit;
-			return () => undefined;
-		});
-		renderForm();
-		await screen.findByRole("button", { name: "Check for updates" });
-		act(() => emit({ state: "available", version: "1.2.3" }));
-		const updateBtn = await screen.findByRole("button", { name: "Update to v1.2.3" });
-		await userEvent.click(updateBtn);
-		expect(updDownload).toHaveBeenCalled();
-	});
-
-	it("offers Restart & install once downloaded and asks before quitting", async () => {
-		let emit: (s: { state: string; version?: string; requestId?: string }) => void = () => undefined;
-		updOnStatus.mockImplementation((cb: (s: unknown) => void) => {
-			emit = cb as typeof emit;
-			return () => undefined;
-		});
-		renderForm();
-		await screen.findByRole("button", { name: "Check for updates" });
-		act(() => emit({ state: "downloaded", version: "1.2.3" }));
-		const installBtn = await screen.findByRole("button", { name: "Restart & install" });
-		await userEvent.click(installBtn);
-
-		// Installing quits the app, which costs a turn on any chat session running
-		// a daemon-owned driver, so the click opens the confirmation instead of
-		// tearing the app down on one click.
-		expect(updInstall).not.toHaveBeenCalled();
-		expect(useUiStore.getState().updateInstallPromptOpen).toBe(true);
-	});
-
-	it("shows a non-error restart nudge when automatic checks keep failing on the network", async () => {
-		updGetStatus.mockResolvedValue({ state: "not-available", staleCheckNudge: true });
-		renderForm();
-		const nudge = await screen.findByText(
-			"Updates haven't been able to check for a while — restarting the app usually fixes this.",
-		);
-		expect(nudge).toBeInTheDocument();
-		// The nudge is a warning, not an error, and the normal status still shows.
-		expect(screen.getByText("You're on the latest version.")).toBeInTheDocument();
-	});
-
-	it("shows localized restart guidance for a net:: error status", async () => {
-		updGetStatus.mockResolvedValue({ state: "error", message: "net::ERR_FAILED", netError: true });
-		renderForm();
-		const guidance = await screen.findByText(
-			"Couldn't reach the update server — the app's network connection appears stuck. Restarting the app usually fixes this.",
-		);
-		expect(guidance).toBeInTheDocument();
-	});
-
 	it("opens feedback from settings and copies redacted report drafts", async () => {
 		const user = userEvent.setup();
 		const open = vi.spyOn(window, "open").mockReturnValue(null);
@@ -841,7 +487,7 @@ describe("GlobalSettingsForm", () => {
 		expect(copied).not.toContain("## Type");
 		expect(copied).not.toContain("Generated locally by AO");
 		expect(openExternal).toHaveBeenCalledWith(
-			expect.stringContaining("https://github.com/Untrivial-ai/agent-orchestrator/issues/new"),
+			expect.stringContaining("https://github.com/justvibedev/agent-orchestrator/issues/new"),
 		);
 		expect(open).not.toHaveBeenCalled();
 		expect(screen.getByLabelText("Title")).toHaveValue("");
@@ -911,70 +557,4 @@ describe("GlobalSettingsForm", () => {
 		expect(screen.queryByLabelText("Report preview")).not.toBeInTheDocument();
 	});
 
-	it("surfaces a Return action for a persisted feature pin", async () => {
-		// A pin persists in settings but is not yet running; updates are on the stable channel.
-		getUpdate.mockResolvedValue({ enabled: true, channel: "latest", nightlyAck: false, feature: { pr: 2270 } });
-		featGetActive.mockResolvedValue(null);
-		renderForm();
-		// The concealed pin is announced even though the channel option/picker are hidden.
-		expect(await screen.findByText("PR #2270 is pinned but not yet installed.")).toBeInTheDocument();
-		// The fall-home copy must be truthful: automatic updates keep tracking the pin,
-		// they do NOT silently return the user home on the next check.
-		expect(
-			screen.getByText(
-			/Automatic updates, if enabled, keep tracking PR #2270 until you return home or the build retires\./i,
-			),
-		).toBeInTheDocument();
-		await userEvent.click(screen.getByLabelText("Updates channel"));
-		await userEvent.keyboard("{Escape}");
-		// Return delegates to the single updater-serialized returnHome operation.
-		await userEvent.click(screen.getByRole("button", { name: "Return to Stable" }));
-		await waitFor(() => expect(updReturnHome).toHaveBeenCalledWith(expect.any(String)));
-		expect(updCheck).not.toHaveBeenCalled();
-	});
-
-	it("returns to Stable, then auto-progresses check -> download -> install", async () => {
-		getUpdate.mockResolvedValue({ enabled: true, channel: "latest", nightlyAck: false, feature: { pr: 2270 } });
-		featGetActive.mockResolvedValue({ pr: 2270 });
-		let emit: (s: { state: string; version?: string; requestId?: string }) => void = () => undefined;
-		updOnStatus.mockImplementation((cb: (s: unknown) => void) => {
-			emit = cb as typeof emit;
-			return () => undefined;
-		});
-		renderForm();
-
-		const returnBtn = await screen.findByRole("button", { name: "Return to Stable" }, { timeout: 5_000 });
-		await userEvent.click(returnBtn);
-
-		await waitFor(() => expect(updReturnHome).toHaveBeenCalledWith(expect.any(String)));
-		const requestId = updReturnHome.mock.calls[0]?.[0] as string;
-
-		act(() => emit({ state: "available", version: "1.3.0", requestId }));
-		await waitFor(() => expect(updDownload).toHaveBeenCalledWith(requestId));
-		act(() => emit({ state: "downloaded", version: "1.3.0", requestId }));
-		await waitFor(() => expect(updInstall).toHaveBeenCalled());
-	});
-});
-
-it("keeps running version separate while live download progress becomes install readiness without remounting", async () => {
-	let emit!: (status: import("../../main/update-settings").UpdateStatus) => void;
-	updOnStatus.mockImplementation((listener) => { emit = listener; return () => undefined; });
-	renderForm("updates");
-	await screen.findByTestId("app-version");
-	// Assert detailed progress in the status row, independently of the action label.
-	const statusLine = within(screen.getByTestId("update-status-line"));
-	act(() => emit({ state: "downloading", version: "2.0.0" }));
-	expect(statusLine.getByText("Starting download…")).toBeVisible();
-	expect(screen.queryByRole("button", { name: "Update to v2.0.0" })).toBeNull();
-	act(() => emit({ state: "downloading", version: "2.0.0", percent: 42, transferred: 42_000_000, total: 100_000_000 }));
-	expect(statusLine.getByText("Downloading… 42%")).toBeVisible();
-	expect(screen.getByText("42.0 / 100.0 MB")).toBeVisible();
-	expect(screen.getByText("Updating to v2.0.0")).toBeVisible();
-	expect(screen.getByTestId("app-version")).toHaveTextContent("v1.4.0");
-	act(() => emit({ state: "preparing", version: "2.0.0", percent: 100, staged: { version: "2.0.0", stagedAt: 10, escalated: false, ready: false } }));
-	expect(statusLine.getByText("Preparing update…")).toBeVisible();
-	expect(screen.queryByRole("button", { name: "Restart & install" })).toBeNull();
-	act(() => emit({ state: "downloaded", version: "2.0.0" }));
-	expect(screen.getByRole("button", { name: "Restart & install" })).toBeEnabled();
-	expect(screen.getByTestId("app-version")).toHaveTextContent("v1.4.0");
 });

@@ -282,11 +282,7 @@ export function setReleaseChannelContext(channel: ReleaseChannel): void {
  * channel reports "unknown" rather than delaying the first heartbeat.
  */
 async function readUpdateSettingsForTelemetry(): Promise<{ channel?: unknown; feature?: unknown } | null> {
-	try {
-		return (await aoBridge.updateSettings.get()) as { channel?: unknown; feature?: unknown };
-	} catch {
-		return null;
-	}
+	return null;
 }
 
 export function withTelemetryContext(properties: TelemetryProperties): TelemetryProperties {

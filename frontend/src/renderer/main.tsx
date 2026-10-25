@@ -16,7 +16,6 @@ import { TelemetryIdentityRuntime } from "./components/TelemetryIdentityRuntime"
 import { applyAnalyticsOptOut, applyRendererTelemetryPolicy, clearRendererTelemetryQueues, initTelemetry, isDeniedEvent } from "./lib/telemetry";
 import { aoBridge } from "./lib/bridge";
 import { startDaemonFailureTelemetry } from "./lib/daemon-telemetry";
-import { startUpdateTelemetry } from "./lib/update-telemetry";
 import { startSessionManagementTelemetry } from "./lib/session-management-telemetry";
 import { appI18n } from "./i18n";
 import { useLocaleStore } from "./stores/locale-store";
@@ -101,7 +100,6 @@ const bootstrapSessionManagementTelemetry = () => {
 };
 bootstrapSessionManagementTelemetry();
 startDaemonFailureTelemetry();
-startUpdateTelemetry();
 
 declare module "@tanstack/react-router" {
 	interface Register {

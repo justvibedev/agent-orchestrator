@@ -1,4 +1,4 @@
-import { Activity, BadgeCheck, Bot, CircleHelp, CreditCard, Globe2, Keyboard, RefreshCw, Server, Settings2, Smartphone, type LucideIcon } from "lucide-react";
+import { Activity, BadgeCheck, Bot, CircleHelp, CreditCard, Globe2, Keyboard, Server, Settings2, Smartphone, type LucideIcon } from "lucide-react";
 import { lazy, type ReactNode } from "react";
 import type { TFunction } from "i18next";
 import type { GlobalSettingsSection, HarnessDiagnosticsRequest } from "../../stores/ui-store";
@@ -23,10 +23,6 @@ const MemoryDiagnostics = lazy(async () => {
 	return { default: module.MemoryDiagnostics };
 });
 
-const UpdatesSection = lazy(async () => {
-	const module = await import("./UpdatesSection");
-	return { default: module.UpdatesSection };
-});
 
 type CatalogContext = {
 	cloudEnabled: boolean;
@@ -145,12 +141,6 @@ const globalSettingsCatalog: SettingsCatalogItem[] = [
 				<MemoryDiagnostics />
 			</SettingsSection>
 		),
-	},
-	{
-		id: "updates",
-		icon: RefreshCw,
-		label: (t) => t("settings.updates"),
-		render: (_t, titleHidden) => <UpdatesSection titleHidden={titleHidden} />,
 	},
 	{
 		id: "help",
