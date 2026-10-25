@@ -17,7 +17,10 @@ import (
 // The packaged Electron renderer is served from app://renderer specifically
 // so it has a distinct, unforgeable origin this allowlist can name.
 //
-// Native requests without Origin or browser fetch metadata pass through.
+// Native requests without Origin or browser fetch metadata pass through. That
+// alone does NOT exclude a DNS-rebound page: its same-origin GETs carry neither
+// header (browsers only send fetch metadata to trustworthy URLs), so
+// hostAllowlistMiddleware, which runs first, refuses any non-loopback Host.
 // Requests bearing an Origin outside the allowlist are
 // rejected with 403 before any handler runs: merely omitting CORS headers
 // would hide the response but NOT the side effect — a hostile page can issue

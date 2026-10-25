@@ -30,7 +30,7 @@ func TestLANControlBlockMarksRequestContext(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/cues/cue-a/invoke", nil))
+	handler.ServeHTTP(recorder, loopbackRequest(http.MethodPost, "/api/v1/cues/cue-a/invoke", nil))
 	if recorder.Code != http.StatusNoContent || !seenLAN {
 		t.Fatalf("status=%d seenLAN=%v", recorder.Code, seenLAN)
 	}
@@ -47,7 +47,7 @@ func TestMobileLANRejectsReassignedAddressWithSamePassword(t *testing.T) {
 	m := NewMobileLAN(inner, "h_B", 0, nil, nil)
 	m.SetPasswordHash(mobilebridge.HashPassword("same-secret"))
 	request := func(expectedHostID, password string) *httptest.ResponseRecorder {
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/orchestrators/delegate", nil)
+		req := loopbackRequest(http.MethodPost, "/api/v1/orchestrators/delegate", nil)
 		req.Header.Set("Authorization", "Bearer "+password)
 		if expectedHostID != "" {
 			req.Header.Set("X-AO-Expected-Host-ID", expectedHostID)

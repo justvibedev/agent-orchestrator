@@ -87,7 +87,7 @@ func TestAttachmentUploadRouteUsesExtendedTimeout(t *testing.T) {
 		APIDeps{Sessions: svc},
 		ControlDeps{},
 	)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/sessions/ao-1/attachments", bytes.NewBufferString(`{"attachments":[{"mimeType":"text/plain","data":"YQ=="}]}`))
+	req := loopbackRequest(http.MethodPost, "/api/v1/sessions/ao-1/attachments", bytes.NewBufferString(`{"attachments":[{"mimeType":"text/plain","data":"YQ=="}]}`))
 	req.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, req)
@@ -113,7 +113,7 @@ func TestManagedPreviewAppProxyHasNoRequestTimeout(t *testing.T) {
 		}{}},
 		ControlDeps{},
 	)
-	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/v1/sessions/ao-1/preview/app/_next/webpack-hmr", nil))
+	router.ServeHTTP(httptest.NewRecorder(), loopbackRequest(http.MethodGet, "/api/v1/sessions/ao-1/preview/app/_next/webpack-hmr", nil))
 	if budget := svc.recordBudget(t); budget != 0 {
 		t.Fatalf("managed preview budget = %s, want no deadline", budget)
 	}
@@ -129,7 +129,7 @@ func TestAgentBrowserProxyHasNoRequestTimeout(t *testing.T) {
 		APIDeps{Sessions: svc},
 		ControlDeps{},
 	)
-	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/v1/sessions/ao-1/agent-browser/ws/cdp", nil))
+	router.ServeHTTP(httptest.NewRecorder(), loopbackRequest(http.MethodGet, "/api/v1/sessions/ao-1/agent-browser/ws/cdp", nil))
 	if budget := svc.recordBudget(t); budget != 0 {
 		t.Fatalf("agent browser budget = %s, want no deadline", budget)
 	}
@@ -154,7 +154,7 @@ func TestAttachmentCapableSendUsesExtendedTimeoutOnlyForUploads(t *testing.T) {
 		{name: "attachment", body: `{"message":"hello","attachment":{"mimeType":"text/plain","data":"YQ=="}}`, upload: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/sessions/ao-1/send", bytes.NewBufferString(tc.body))
+			req := loopbackRequest(http.MethodPost, "/api/v1/sessions/ao-1/send", bytes.NewBufferString(tc.body))
 			req.Header.Set("Content-Type", "application/json")
 			if tc.upload {
 				req.Header.Set(attachmentUploadHeader, "1")
@@ -202,7 +202,7 @@ func TestCloneRoutesUseExtendedTimeout(t *testing.T) {
 		ControlDeps{},
 	)
 	for _, path := range []string{"/api/v1/projects/clone", "/api/v1/projects/clone/prepare"} {
-		req := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(`{"remoteUrl":"https://github.com/acme/repo","destinationParent":"/tmp"}`))
+		req := loopbackRequest(http.MethodPost, path, bytes.NewBufferString(`{"remoteUrl":"https://github.com/acme/repo","destinationParent":"/tmp"}`))
 		req.Header.Set("Content-Type", "application/json")
 		router.ServeHTTP(httptest.NewRecorder(), req)
 		select {
@@ -232,7 +232,7 @@ func TestSpawnRouteBudgetCoversSetupOnlyOnceExtended(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			svc := &timeoutProbeSessionService{spawnSetup: tc.setup, spawnRuns: 350 * time.Millisecond, spawnLive: make(chan bool, 1)}
 			router := NewRouterWithControl(config.Config{RequestTimeout: configuredTimeout}, discardLogger(), nil, APIDeps{Sessions: svc}, ControlDeps{})
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", bytes.NewBufferString(`{"projectId":"p1","kind":"worker","harness":"claude-code"}`))
+			req := loopbackRequest(http.MethodPost, "/api/v1/sessions", bytes.NewBufferString(`{"projectId":"p1","kind":"worker","harness":"claude-code"}`))
 			req.Header.Set("Content-Type", "application/json")
 			response := httptest.NewRecorder()
 			router.ServeHTTP(response, req)
@@ -258,7 +258,7 @@ func TestSetupRoutesAreTheOnesThatRunSetup(t *testing.T) {
 	router.Post("/api/v1/sessions/{sessionId}/send", record)
 	router.Get("/api/v1/sessions", record)
 	for _, call := range [][2]string{{"POST", "/api/v1/sessions"}, {"POST", "/api/v1/orchestrators"}, {"POST", "/api/v1/sessions/s1/restore"}, {"POST", "/api/v1/sessions/s1/send"}, {"GET", "/api/v1/sessions"}} {
-		router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(call[0], call[1], nil))
+		router.ServeHTTP(httptest.NewRecorder(), loopbackRequest(call[0], call[1], nil))
 	}
 	want := map[string]bool{"POST /api/v1/sessions": true, "POST /api/v1/orchestrators": true, "POST /api/v1/sessions/s1/restore": true, "POST /api/v1/sessions/s1/send": false, "GET /api/v1/sessions": false}
 	for call, setup := range want {

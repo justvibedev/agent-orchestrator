@@ -106,7 +106,7 @@ func TestEditQueuedTurnRouteRefusals(t *testing.T) {
 			router := httpd.NewRouterWithControl(config.Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, httpd.APIDeps{
 				Sessions: newFakeSessionService(), Conversations: svc,
 			}, httpd.ControlDeps{})
-			request := httptest.NewRequest(http.MethodPost, "/api/v1/sessions/p1-1/conversation/turns/turn-queued/queue/edit", bytes.NewBufferString(`{"text":"update"}`))
+			request := loopbackRequest(http.MethodPost, "/api/v1/sessions/p1-1/conversation/turns/turn-queued/queue/edit", bytes.NewBufferString(`{"text":"update"}`))
 			response := httptest.NewRecorder()
 			router.ServeHTTP(response, request)
 			assertErrorCode(t, response.Body.Bytes(), response.Code, tc.status, tc.code)

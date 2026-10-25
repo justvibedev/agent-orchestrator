@@ -104,7 +104,7 @@ func TestPromptSuggestionRouteDoesNotReportCanceledRequestReads(t *testing.T) {
 		svc := &promptSuggestionStub{fakeChatService: &fakeChatService{}, err: err}
 		router := httpd.NewRouterWithControl(config.Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil,
 			httpd.APIDeps{Conversations: svc}, httpd.ControlDeps{})
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/sessions/ao-1/conversation/prompt-suggestion", strings.NewReader(`{"turnId":"turn-7"}`)).WithContext(ctx)
+		req := loopbackRequest(http.MethodPost, "/api/v1/sessions/ao-1/conversation/prompt-suggestion", strings.NewReader(`{"turnId":"turn-7"}`)).WithContext(ctx)
 		response := httptest.NewRecorder()
 		router.ServeHTTP(response, req)
 		cancel()

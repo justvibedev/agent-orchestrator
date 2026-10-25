@@ -28,7 +28,7 @@ func serveConversations(svc controllers.ConversationService, req *http.Request) 
 
 func providerSwitchRouteRequest(t *testing.T, svc controllers.ConversationService, method, path, body string) (int, []byte) {
 	t.Helper()
-	rec := serveConversations(svc, httptest.NewRequest(method, path, bytes.NewBufferString(body)))
+	rec := serveConversations(svc, loopbackRequest(method, path, bytes.NewBufferString(body)))
 	return rec.Code, rec.Body.Bytes()
 }
 
@@ -133,7 +133,7 @@ func TestSessionHistoryRoutePagesAndValidates(t *testing.T) {
 
 func TestProviderSwitchRouteSendsTheMessageAfterTheSwitch(t *testing.T) {
 	route := func(svc *fakeConversationService, body string) *httptest.ResponseRecorder {
-		return serveConversations(svc, httptest.NewRequest(http.MethodPost, "/sessions/p1-1/provider-switch", bytes.NewBufferString(body)))
+		return serveConversations(svc, loopbackRequest(http.MethodPost, "/sessions/p1-1/provider-switch", bytes.NewBufferString(body)))
 	}
 	withMessage := `{"targetHarness":"codex","message":{"text":"Recall the word.","clientMessageId":"m1"}}`
 
@@ -170,7 +170,7 @@ func TestProviderSwitchRouteSendsTheMessageAfterTheSwitch(t *testing.T) {
 	svc = &fakeConversationService{}
 	gone, cancel := context.WithCancel(context.Background())
 	cancel()
-	serveConversations(svc, httptest.NewRequest(http.MethodPost, "/sessions/p1-1/provider-switch", bytes.NewBufferString(withMessage)).WithContext(gone))
+	serveConversations(svc, loopbackRequest(http.MethodPost, "/sessions/p1-1/provider-switch", bytes.NewBufferString(withMessage)).WithContext(gone))
 	if svc.switchRequest.TargetHarness != domain.HarnessCodex || svc.sent.ClientMessageID != "m1" || svc.sendCtxErr != nil || svc.switchCtxErr != nil {
 		t.Fatalf("after the client left: sent %+v with context error %v, want it sent", svc.sent, svc.sendCtxErr)
 	}

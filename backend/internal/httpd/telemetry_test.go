@@ -28,7 +28,7 @@ func TestCLIInvokedRouteEmitsTelemetryForUserCommands(t *testing.T) {
 	postInvoked := func(command, commandPath string) {
 		t.Helper()
 		body := `{"command":"` + command + `","commandPath":"` + commandPath + `"}`
-		req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/internal/telemetry/cli-invoked", strings.NewReader(body))
+		req := loopbackRequest(http.MethodPost, "http://127.0.0.1/internal/telemetry/cli-invoked", strings.NewReader(body))
 		req.Host = "127.0.0.1:3001"
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
@@ -97,7 +97,7 @@ func TestCLIInvokedRouteDropsRoutineInternalSuccessTelemetry(t *testing.T) {
 		`{"command":"hooks","commandPath":"ao hooks claude-code post-tool-use","actorType":"user"}`,
 		`{"command":"pty-host","commandPath":"ao pty-host","actorType":"system"}`,
 	} {
-		req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/internal/telemetry/cli-invoked", strings.NewReader(body))
+		req := loopbackRequest(http.MethodPost, "http://127.0.0.1/internal/telemetry/cli-invoked", strings.NewReader(body))
 		req.Host = "127.0.0.1:3001"
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
@@ -116,7 +116,7 @@ func TestCLIInvokedRouteDropsUnknownLegacyCommandPaths(t *testing.T) {
 	sink := &captureSink{}
 	r := NewRouterWithControl(config.Config{DataDir: t.TempDir()}, discardLogger(), nil, APIDeps{Telemetry: sink}, ControlDeps{})
 
-	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/internal/telemetry/cli-invoked", strings.NewReader(`{"command":"surprise","commandPath":"ao surprise"}`))
+	req := loopbackRequest(http.MethodPost, "http://127.0.0.1/internal/telemetry/cli-invoked", strings.NewReader(`{"command":"surprise","commandPath":"ao surprise"}`))
 	req.Host = "127.0.0.1:3001"
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -135,7 +135,7 @@ func TestCLIInvokedRouteSeparatesAgentAndSystemInvocationsFromActiveUsers(t *tes
 
 	postInvoked := func(body string) {
 		t.Helper()
-		req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/internal/telemetry/cli-invoked", strings.NewReader(body))
+		req := loopbackRequest(http.MethodPost, "http://127.0.0.1/internal/telemetry/cli-invoked", strings.NewReader(body))
 		req.Host = "127.0.0.1:3001"
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
@@ -176,7 +176,7 @@ func TestCLIInvokedRouteDedupeIncludesActorType(t *testing.T) {
 
 	postInvoked := func(body string) {
 		t.Helper()
-		req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/internal/telemetry/cli-invoked", strings.NewReader(body))
+		req := loopbackRequest(http.MethodPost, "http://127.0.0.1/internal/telemetry/cli-invoked", strings.NewReader(body))
 		req.Host = "127.0.0.1:3001"
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
@@ -208,7 +208,7 @@ func TestCLIInvokedRouteRequiresLoopback(t *testing.T) {
 	sink := &captureSink{}
 	r := NewRouterWithControl(config.Config{DataDir: t.TempDir()}, discardLogger(), nil, APIDeps{Telemetry: sink}, ControlDeps{})
 
-	req := httptest.NewRequest(http.MethodPost, "http://evil.example/internal/telemetry/cli-invoked", strings.NewReader(`{"command":"status","commandPath":"ao status"}`))
+	req := loopbackRequest(http.MethodPost, "http://evil.example/internal/telemetry/cli-invoked", strings.NewReader(`{"command":"status","commandPath":"ao status"}`))
 	req.Host = "evil.example"
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
@@ -226,7 +226,7 @@ func TestCLIUsageErrorRouteEmitsTelemetry(t *testing.T) {
 	r := chi.NewRouter()
 	mountTelemetry(r, config.Config{DataDir: t.TempDir()}, sink)
 
-	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/internal/telemetry/cli-usage-error", strings.NewReader(`{"command":"status","commandPath":"ao status","error":"too many args"}`))
+	req := loopbackRequest(http.MethodPost, "http://127.0.0.1/internal/telemetry/cli-usage-error", strings.NewReader(`{"command":"status","commandPath":"ao status","error":"too many args"}`))
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
@@ -288,7 +288,7 @@ func TestCLIUsageErrorRouteHashesInvalidCommandsBeforeRemoteExport(t *testing.T)
 	mountTelemetry(r, config.Config{DataDir: t.TempDir()}, sink)
 
 	const rawCommand = "Review https://example.com/private; ping @security"
-	req := httptest.NewRequest(
+	req := loopbackRequest(
 		http.MethodPost,
 		"http://127.0.0.1/internal/telemetry/cli-usage-error",
 		strings.NewReader(`{"command":"`+rawCommand+`","commandPath":"ao `+rawCommand+`","error":"too many args"}`),
@@ -330,7 +330,7 @@ func TestCLIInvokedRoutePersistsDailyReservationsAcrossRouterRestart(t *testing.
 	postInvoked := func(r http.Handler, command, commandPath string) {
 		t.Helper()
 		body := `{"command":"` + command + `","commandPath":"` + commandPath + `"}`
-		req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/internal/telemetry/cli-invoked", strings.NewReader(body))
+		req := loopbackRequest(http.MethodPost, "http://127.0.0.1/internal/telemetry/cli-invoked", strings.NewReader(body))
 		req.Host = "127.0.0.1:3001"
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
@@ -368,7 +368,7 @@ func TestRecoverTelemetryEmitsPanicEvent(t *testing.T) {
 		panic("boom")
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/panic", nil)
+	req := loopbackRequest(http.MethodGet, "http://127.0.0.1/panic", nil)
 	req.Host = "127.0.0.1:3001"
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)

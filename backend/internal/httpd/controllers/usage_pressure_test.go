@@ -24,7 +24,7 @@ func getPressure(t *testing.T, c *UsageController) *httptest.ResponseRecorder {
 	r := chi.NewRouter()
 	c.Register(r)
 	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/usage/memory/pressure", nil))
+	r.ServeHTTP(rec, loopbackRequest(http.MethodGet, "/usage/memory/pressure", nil))
 	return rec
 }
 

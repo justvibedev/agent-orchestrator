@@ -58,7 +58,7 @@ func (f *fakeBridge) SetBrowserRemoteAccess(on bool) (MobileStatusResponse, erro
 
 func TestMobileBrowserRemoteAccess(t *testing.T) {
 	c := &MobileController{Bridge: &fakeBridge{}}
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/mobile/browser-control", strings.NewReader(`{"enabled":true}`))
+	req := loopbackRequest(http.MethodPost, "/api/v1/mobile/browser-control", strings.NewReader(`{"enabled":true}`))
 	rr := httptest.NewRecorder()
 	c.BrowserRemoteAccess(rr, req)
 	if rr.Code != http.StatusOK {
@@ -225,7 +225,7 @@ func TestMobileEnableRollsBackListenerWhenSaveFails(t *testing.T) {
 func TestMobileEnableReturnsPassword(t *testing.T) {
 	c := &MobileController{Bridge: &fakeBridge{}}
 	w := httptest.NewRecorder()
-	c.Enable(w, httptest.NewRequest(http.MethodPost, "/api/v1/mobile/enable", nil))
+	c.Enable(w, loopbackRequest(http.MethodPost, "/api/v1/mobile/enable", nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf("got %d", w.Code)
 	}

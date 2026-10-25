@@ -33,7 +33,7 @@ func TestSettingsChatHibernationRequiresBoolean(t *testing.T) {
 	c := &SettingsController{Svc: svc}
 	for _, body := range []string{`{}`, `{"enabled":null}`, `{"enabled":"true"}`} {
 		w := httptest.NewRecorder()
-		c.setChatHibernation(w, httptest.NewRequest(http.MethodPatch, "/api/v1/settings/chat-hibernation", strings.NewReader(body)))
+		c.setChatHibernation(w, loopbackRequest(http.MethodPatch, "/api/v1/settings/chat-hibernation", strings.NewReader(body)))
 		if w.Code != http.StatusBadRequest || svc.calls != 0 {
 			t.Fatalf("body=%s status=%d calls=%d", body, w.Code, svc.calls)
 		}
@@ -44,7 +44,7 @@ func TestSettingsChatHibernationRequiresBoolean(t *testing.T) {
 			body = `{"enabled":true}`
 		}
 		w := httptest.NewRecorder()
-		c.setChatHibernation(w, httptest.NewRequest(http.MethodPatch, "/api/v1/settings/chat-hibernation", strings.NewReader(body)))
+		c.setChatHibernation(w, loopbackRequest(http.MethodPatch, "/api/v1/settings/chat-hibernation", strings.NewReader(body)))
 		var got SettingsResponse
 		if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || w.Code != http.StatusOK || got.ChatHibernationEnabled != enabled {
 			t.Fatalf("body=%s status=%d response=%+v err=%v", body, w.Code, got, err)
@@ -68,13 +68,13 @@ func TestSettingsVersionRefreshRequiresBoolean(t *testing.T) {
 	c := &SettingsController{Svc: svc}
 	for _, body := range []string{`{}`, `{"enabled":null}`, `{"enabled":"false"}`} {
 		w := httptest.NewRecorder()
-		c.setVersionRefresh(w, httptest.NewRequest(http.MethodPatch, "/api/v1/settings/version-refresh", strings.NewReader(body)))
+		c.setVersionRefresh(w, loopbackRequest(http.MethodPatch, "/api/v1/settings/version-refresh", strings.NewReader(body)))
 		if w.Code != http.StatusBadRequest || svc.calls != 0 {
 			t.Fatalf("body=%s status=%d calls=%d", body, w.Code, svc.calls)
 		}
 	}
 	w := httptest.NewRecorder()
-	c.setVersionRefresh(w, httptest.NewRequest(http.MethodPatch, "/api/v1/settings/version-refresh", strings.NewReader(`{"enabled":false}`)))
+	c.setVersionRefresh(w, loopbackRequest(http.MethodPatch, "/api/v1/settings/version-refresh", strings.NewReader(`{"enabled":false}`)))
 	var got SettingsResponse
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || w.Code != http.StatusOK || got.VersionRefresh || svc.refresh {
 		t.Fatalf("status=%d response=%+v err=%v", w.Code, got, err)

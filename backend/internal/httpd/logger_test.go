@@ -11,7 +11,7 @@ import (
 func TestNewRouterAllowsNilLogger(t *testing.T) {
 	router := newTestRouter(config.Config{}, nil, nil)
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	req := loopbackRequest(http.MethodGet, "/healthz", nil)
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/healthz status = %d, want 200", rec.Code)
