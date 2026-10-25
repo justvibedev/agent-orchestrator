@@ -420,7 +420,9 @@ func (c *Coordinator) claim(ctx context.Context, projectID domain.ProjectID) (Pr
 		if lookupErr == nil && found {
 			reports[i].SessionDisplayName = strings.TrimSpace(session.DisplayName)
 		}
-		if c.verify != nil && reports[i].State == domain.ReportDone {
+		// A claim sweeps every pending report, so one may be claimed before its
+		// settlement deadline; its observer state is not settled yet, so skip it.
+		if c.verify != nil && reports[i].State == domain.ReportDone && !c.now().Before(reports[i].SettlementDeadline) {
 			reports[i].UnverifiedReason = c.verify(ctx, reports[i])
 		}
 	}

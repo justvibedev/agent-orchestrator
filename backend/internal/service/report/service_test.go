@@ -241,6 +241,7 @@ func TestDoneVerifiedAtDeliveryNotCreate(t *testing.T) {
 	store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeChat}}
 	done := reportAt("r1", "s1", now, now.Add(-time.Second), "x")
 	done.State = domain.ReportDone
+	done.SettlementDeadline = now.Add(-time.Second)
 	store.add(done)
 	c := NewCoordinator(CoordinatorDeps{Store: store, Delivery: &coordinatorDelivery{}, Now: func() time.Time { return now }, Verify: svc.UnverifiedDoneReason})
 	batch, err := c.PreparePiggyback(context.Background(), "orch")
@@ -253,5 +254,32 @@ func TestDoneVerifiedAtDeliveryNotCreate(t *testing.T) {
 	_ = created
 	if got := (PreparedBatch{Reports: []domain.ReportRecord{{State: domain.ReportDone, Note: "x", UnverifiedReason: "no pull request recorded for this session"}}}).Render(); !strings.Contains(got, "\ndone (unverified: no pull request recorded for this session)") {
 		t.Fatalf("render = %q", got)
+	}
+}
+
+func TestDoneClaimedBeforeSettlementIsNotVerified(t *testing.T) {
+	v := &verifyStore{
+		fakeStore: fakeStore{ok: true, session: domain.SessionRecord{ID: "s1", ProjectID: "p", Kind: domain.KindWorker, BranchState: &domain.SessionBranchState{Commits: 1}}},
+		project:   domain.ProjectRecord{ID: "p", RepoOriginURL: "u"},
+		projectOK: true,
+	}
+	now := time.Now()
+	store := newCoordinatorStore(now)
+	store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeChat}}
+	done := reportAt("done", "s1", now, now.Add(domain.ReportSettlementWindow), "x")
+	done.State = domain.ReportDone
+	done.SettlementDeadline = now.Add(domain.ReportSettlementWindow)
+	stuck := reportAt("stuck", "s2", now, now, "help")
+	stuck.State = domain.ReportStuck
+	store.add(done, stuck)
+	c := NewCoordinator(CoordinatorDeps{Store: store, Delivery: &coordinatorDelivery{}, Now: func() time.Time { return now }, Verify: New(Deps{Store: v}).UnverifiedDoneReason})
+	batch, err := c.PreparePiggyback(context.Background(), "orch")
+	if err != nil || len(batch.Reports) != 2 {
+		t.Fatalf("prepare = %#v, err = %v", batch, err)
+	}
+	for _, r := range batch.Reports {
+		if r.UnverifiedReason != "" {
+			t.Fatalf("unsettled report %s annotated: %q", r.ID, r.UnverifiedReason)
+		}
 	}
 }
