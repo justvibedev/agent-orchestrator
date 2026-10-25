@@ -20,7 +20,7 @@ func newAuthUnderTest(pw string, now func() time.Time) (http.Handler, *lockout) 
 }
 
 func req(auth string) *http.Request {
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/sessions", nil)
+	r := loopbackRequest(http.MethodGet, "/api/v1/sessions", nil)
 	r.RemoteAddr = "192.168.1.50:5555"
 	if auth != "" {
 		r.Header.Set("Authorization", auth)
@@ -29,7 +29,7 @@ func req(auth string) *http.Request {
 }
 
 func reqFrom(remoteAddr, auth string) *http.Request {
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/sessions", nil)
+	r := loopbackRequest(http.MethodGet, "/api/v1/sessions", nil)
 	r.RemoteAddr = remoteAddr
 	if auth != "" {
 		r.Header.Set("Authorization", auth)
@@ -262,7 +262,7 @@ func TestLANManagerPasswordRotationClearsPriorLockout(t *testing.T) {
 // reqPathCookie builds a request to an arbitrary path, optionally carrying the
 // Bearer header and/or the preview auth cookie, for the preview-cookie tests.
 func reqPathCookie(method, path, auth, cookie string) *http.Request {
-	r := httptest.NewRequest(method, path, nil)
+	r := loopbackRequest(method, path, nil)
 	r.RemoteAddr = "192.168.1.50:5555"
 	if auth != "" {
 		r.Header.Set("Authorization", auth)
@@ -408,7 +408,7 @@ func TestAuthLockoutIsPerSource(t *testing.T) {
 // reqTo builds a request to an arbitrary path so the identity exemption can be
 // probed alongside the normal authenticated surface.
 func reqTo(method, path, auth string) *http.Request {
-	r := httptest.NewRequest(method, path, nil)
+	r := loopbackRequest(method, path, nil)
 	r.RemoteAddr = "192.168.1.50:5555"
 	if auth != "" {
 		r.Header.Set("Authorization", auth)

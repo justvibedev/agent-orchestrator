@@ -14,7 +14,7 @@ func TestPresenceMiddlewareTouchesTracker(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/sessions", nil)
+	req := loopbackRequest(http.MethodGet, "/api/v1/sessions", nil)
 	req.Header.Set(InstallIDHeader, "inst-1")
 	h.ServeHTTP(httptest.NewRecorder(), req)
 
@@ -30,7 +30,7 @@ func TestPresenceMiddlewareIgnoresMissingHeader(t *testing.T) {
 	}))
 
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/sessions", nil))
+	h.ServeHTTP(rec, loopbackRequest(http.MethodGet, "/api/v1/sessions", nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 — a missing header must not fail the request", rec.Code)
@@ -45,7 +45,7 @@ func TestPresenceMiddlewareNilTrackerIsPassthrough(t *testing.T) {
 		w.WriteHeader(http.StatusTeapot)
 	}))
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/sessions", nil))
+	h.ServeHTTP(rec, loopbackRequest(http.MethodGet, "/api/v1/sessions", nil))
 	if rec.Code != http.StatusTeapot {
 		t.Fatalf("status = %d, want the inner handler to run", rec.Code)
 	}

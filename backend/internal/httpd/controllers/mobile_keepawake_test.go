@@ -129,7 +129,7 @@ func TestMobileKeepAwakeRoute(t *testing.T) {
 	c := &MobileController{Bridge: &fakeBridge{}}
 
 	w := httptest.NewRecorder()
-	c.KeepAwake(w, httptest.NewRequest(http.MethodPost, "/api/v1/mobile/keep-awake", bytes.NewBufferString(`{"enabled":true}`)))
+	c.KeepAwake(w, loopbackRequest(http.MethodPost, "/api/v1/mobile/keep-awake", bytes.NewBufferString(`{"enabled":true}`)))
 	if w.Code != http.StatusOK {
 		t.Fatalf("got %d", w.Code)
 	}
@@ -142,7 +142,7 @@ func TestMobileKeepAwakeRoute(t *testing.T) {
 	}
 
 	w = httptest.NewRecorder()
-	c.KeepAwake(w, httptest.NewRequest(http.MethodPost, "/api/v1/mobile/keep-awake", bytes.NewBufferString(`not json`)))
+	c.KeepAwake(w, loopbackRequest(http.MethodPost, "/api/v1/mobile/keep-awake", bytes.NewBufferString(`not json`)))
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("invalid body: got %d", w.Code)
 	}
@@ -263,7 +263,7 @@ func TestLidOffPreservesOrdinaryWake(t *testing.T) {
 func TestLidRequestRejectsUnavailableBridge(t *testing.T) {
 	c := &MobileController{Bridge: &fakeBridge{}}
 	w := httptest.NewRecorder()
-	c.KeepAwake(w, httptest.NewRequest(http.MethodPost, "/api/v1/mobile/keep-awake", bytes.NewBufferString(`{"enabled":true,"lidClosed":true}`)))
+	c.KeepAwake(w, loopbackRequest(http.MethodPost, "/api/v1/mobile/keep-awake", bytes.NewBufferString(`{"enabled":true,"lidClosed":true}`)))
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("status %d", w.Code)
 	}
@@ -372,7 +372,7 @@ func TestLidFailureDoesNotFailOrdinaryWake(t *testing.T) {
 		}
 		c := &MobileController{Bridge: b}
 		w := httptest.NewRecorder()
-		c.KeepAwake(w, httptest.NewRequest(http.MethodPost, "/api/v1/mobile/keep-awake", bytes.NewBufferString(`{"enabled":true}`)))
+		c.KeepAwake(w, loopbackRequest(http.MethodPost, "/api/v1/mobile/keep-awake", bytes.NewBufferString(`{"enabled":true}`)))
 		if w.Code != http.StatusOK {
 			t.Fatalf("ordinary wake failed: %d %s", w.Code, w.Body.String())
 		}

@@ -191,7 +191,7 @@ func TestCodexAccountOriginBoundaryBlocksPreviewAndAllowsRenderers(t *testing.T)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(tt.method, tt.path, nil)
+			req := loopbackRequest(tt.method, tt.path, nil)
 			if tt.origin != "" {
 				req.Header.Set("Origin", tt.origin)
 			}
@@ -265,7 +265,7 @@ func TestRenderDocumentNavigationBoundary(t *testing.T) {
 		{"GET", "/api/v1/sessions/s1/renders/r1", "http://evil.localhost", 403},
 	} {
 		for _, site := range []string{"cross-site", "none"} {
-			r := httptest.NewRequest(tc.method, tc.path, nil)
+			r := loopbackRequest(tc.method, tc.path, nil)
 			r.Header.Set("Sec-Fetch-Site", site)
 			if tc.origin != "" {
 				r.Header.Set("Origin", tc.origin)

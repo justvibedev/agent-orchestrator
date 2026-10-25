@@ -52,17 +52,17 @@ func TestSideChatHTTPForwardsReferencesAndKeepsSummariesSafe(t *testing.T) {
 	svc := &sideHTTPService{Service: chatsvc.New(chatsvc.Options{})}
 	handler := sideHTTPRouter(svc)
 	create := httptest.NewRecorder()
-	handler.ServeHTTP(create, httptest.NewRequest(http.MethodPost, "/api/v1/sessions/session/conversation/side-chats", strings.NewReader(`{"idempotencyKey":"create","forceNew":true,"reference":{"conversationId":"main","messageId":"source","revision":3,"text":"selected"}}`)))
+	handler.ServeHTTP(create, loopbackRequest(http.MethodPost, "/api/v1/sessions/session/conversation/side-chats", strings.NewReader(`{"idempotencyKey":"create","forceNew":true,"reference":{"conversationId":"main","messageId":"source","revision":3,"text":"selected"}}`)))
 	if create.Code != http.StatusCreated || !svc.created.ForceNew || svc.created.Reference == nil || svc.created.Reference.MessageID != "source" {
 		t.Fatalf("create: %d %s %+v", create.Code, create.Body.String(), svc.created)
 	}
 	send := httptest.NewRecorder()
-	handler.ServeHTTP(send, httptest.NewRequest(http.MethodPost, "/api/v1/sessions/session/conversation/side-chats/side/messages", strings.NewReader(`{"text":"What is this?","clientMessageId":"receipt","references":[{"conversationId":"main","messageId":"source","revision":3,"text":"selected"}]}`)))
+	handler.ServeHTTP(send, loopbackRequest(http.MethodPost, "/api/v1/sessions/session/conversation/side-chats/side/messages", strings.NewReader(`{"text":"What is this?","clientMessageId":"receipt","references":[{"conversationId":"main","messageId":"source","revision":3,"text":"selected"}]}`)))
 	if send.Code != http.StatusAccepted || svc.sent.Text != "What is this?" || len(svc.sent.Excerpts) != 1 || svc.sent.Excerpts[0].Revision != 3 {
 		t.Fatalf("send: %d %s %+v", send.Code, send.Body.String(), svc.sent)
 	}
 	list := httptest.NewRecorder()
-	handler.ServeHTTP(list, httptest.NewRequest(http.MethodGet, "/api/v1/sessions/session/conversation/side-chats", nil))
+	handler.ServeHTTP(list, loopbackRequest(http.MethodGet, "/api/v1/sessions/session/conversation/side-chats", nil))
 	if list.Code != http.StatusOK {
 		t.Fatal(list.Code, list.Body.String())
 	}
@@ -82,7 +82,7 @@ func TestSideChatHTTPRejectsLANWithoutCallingLocalService(t *testing.T) {
 		{"POST", "/api/v1/sessions/session/conversation/side-chats/side/messages", `{"text":"hello","clientMessageId":"receipt"}`},
 		{"GET", "/api/v1/side-chats/launch/state?appRunId=launch", ""},
 	} {
-		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+		req := loopbackRequest(tc.method, tc.path, strings.NewReader(tc.body))
 		req = req.WithContext(requestscope.WithLAN(req.Context()))
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, req)
@@ -97,7 +97,7 @@ func TestSideChatHTTPRejectsLANWithoutCallingLocalService(t *testing.T) {
 func TestSideChatHTTPMapsUnavailableOwnershipToConflict(t *testing.T) {
 	svc := &sideHTTPService{Service: chatsvc.New(chatsvc.Options{})}
 	response := httptest.NewRecorder()
-	sideHTTPRouter(svc).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/sessions/session/conversation/side-chats/wrong", nil))
+	sideHTTPRouter(svc).ServeHTTP(response, loopbackRequest(http.MethodGet, "/api/v1/sessions/session/conversation/side-chats/wrong", nil))
 	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "CHAT_SIDE_UNAVAILABLE") {
 		t.Fatal(response.Code, response.Body.String())
 	}

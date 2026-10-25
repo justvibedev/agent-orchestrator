@@ -47,7 +47,7 @@ func TestGitHubStatusReportsConnectionAndLogin(t *testing.T) {
 		router := chi.NewRouter()
 		(&GitHubController{Svc: loginGitHubPATService{login: tc.login}}).Register(router)
 		recorder := httptest.NewRecorder()
-		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/github/status", nil))
+		router.ServeHTTP(recorder, loopbackRequest(http.MethodGet, "/github/status", nil))
 		if recorder.Code != http.StatusOK || strings.TrimSpace(recorder.Body.String()) != tc.want {
 			t.Errorf("%s: status=%d body=%s, want %s", name, recorder.Code, recorder.Body.String(), tc.want)
 		}
@@ -60,7 +60,7 @@ func TestGitHubListReposReportsInvalidCredentials(t *testing.T) {
 	controller.Register(router)
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/github/repos", nil)
+	request := loopbackRequest(http.MethodGet, "/github/repos", nil)
 	router.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusUnauthorized {

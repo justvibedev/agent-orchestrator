@@ -39,7 +39,7 @@ func TestRequestLoggerRecords5xxCause(t *testing.T) {
 			}))
 
 			rec := httptest.NewRecorder()
-			handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/sessions/x/kill", nil))
+			handler.ServeHTTP(rec, loopbackRequest(http.MethodPost, "/api/v1/sessions/x/kill", nil))
 
 			got := buf.String()
 			if tc.absent {
@@ -96,7 +96,7 @@ func TestRequestLoggerIncludesBrowserFailureMetadata(t *testing.T) {
 	}))
 
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/browser/commands", nil))
+	handler.ServeHTTP(rec, loopbackRequest(http.MethodPost, "/api/v1/browser/commands", nil))
 
 	if len(sink.events) != 1 {
 		t.Fatalf("telemetry events = %#v, want one event", sink.events)
@@ -121,7 +121,7 @@ func TestRequestLoggerPreservesObservedDisconnectedStateOnTimeout(t *testing.T) 
 	}))
 
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/browser/commands", nil))
+	handler.ServeHTTP(rec, loopbackRequest(http.MethodPost, "/api/v1/browser/commands", nil))
 	if len(sink.events) != 1 {
 		t.Fatalf("telemetry events = %#v, want one event", sink.events)
 	}
@@ -145,11 +145,11 @@ func TestRequestLoggerSkipsExpectedCodexUnavailableAndCapturesReal500Once(t *tes
 		envelope.WriteError(w, r, errors.New("boom"))
 	}))
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/unavailable", nil))
+	handler.ServeHTTP(rec, loopbackRequest(http.MethodGet, "/unavailable", nil))
 	if len(sink.events) != 0 || captures != 0 {
 		t.Fatalf("unavailable events=%d captures=%d, want none", len(sink.events), captures)
 	}
-	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/real", nil))
+	handler.ServeHTTP(httptest.NewRecorder(), loopbackRequest(http.MethodGet, "/real", nil))
 	if len(sink.events) != 1 || sink.events[0].Name != "ao.http.5xx" || captures != 1 {
 		t.Fatalf("real failure events=%#v captures=%d, want one PostHog event and one Sentry capture", sink.events, captures)
 	}

@@ -3433,7 +3433,7 @@ func TestSessionsAPI_ManagedPreviewWritesCompressedModulesInLargePieces(t *testi
 	router := httpd.NewRouterWithControl(config.Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, httpd.APIDeps{
 		Sessions: svc, PreviewServer: managed, SessionCapabilities: allowSessionCapability{},
 	}, httpd.ControlDeps{})
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/sessions/ao-1/preview/app/mod.js", nil)
+	request := loopbackRequest(http.MethodGet, "/api/v1/sessions/ao-1/preview/app/mod.js", nil)
 	request.Header.Set("Accept-Encoding", "gzip")
 	recorder := &countingRecorder{ResponseRecorder: httptest.NewRecorder()}
 	router.ServeHTTP(recorder, request)

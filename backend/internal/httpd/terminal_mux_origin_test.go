@@ -149,14 +149,14 @@ func TestMuxCannotForgeBrowserTrust(t *testing.T) {
 		{"Sec-Fetch-Site": {"cross-site"}}, {"Origin": {""}}, {"Origin": {"app://renderer", "http://localhost"}},
 		{"Origin": {"http://localhost"}, "Authorization": {"Bearer guessed"}}, {"Origin": {"null"}, "Cookie": {"ao_conn=paired-password"}},
 	} {
-		r := httptest.NewRequest(http.MethodGet, "/mux", nil)
+		r := loopbackRequest(http.MethodGet, "/mux", nil)
 		r.Header = headers
 		if terminalMuxRequestAllowed(r, exactAllowedOrigins([]string{"app://renderer"})) {
 			t.Fatalf("accepted forged headers=%v", headers)
 		}
 	}
 	for _, host := range []string{"ao-preview.mfxs2mi.localhost:3001", "ao-preview-artifact.mfxs2mi.localhost:3001", "ao-inline-artifact.mfxs2mi.localhost:3001"} {
-		r := httptest.NewRequest(http.MethodGet, "/mux", nil)
+		r := loopbackRequest(http.MethodGet, "/mux", nil)
 		r.Host = host
 		r.Header.Set("Origin", "app://renderer")
 		if terminalMuxRequestAllowed(r, exactAllowedOrigins([]string{"app://renderer"})) {

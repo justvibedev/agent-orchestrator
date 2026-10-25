@@ -76,7 +76,7 @@ func newTestRouterWithMobile(t *testing.T) chi.Router {
 // loopback route is reachable and NOT Host-gated.
 func TestMobileStatusRouteServedOnLoopbackRouter(t *testing.T) {
 	r := newTestRouterWithMobile(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/mobile/status", nil)
+	req := loopbackRequest(http.MethodGet, "/api/v1/mobile/status", nil)
 	// A non-loopback Host used to force a 403; it must no longer matter here,
 	// because Host-based gating is not how the phone is blocked.
 	req.Host = "192.168.1.9:3011"

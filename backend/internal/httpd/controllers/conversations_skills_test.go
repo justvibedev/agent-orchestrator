@@ -19,7 +19,7 @@ func skillsRequest(t *testing.T, svc controllers.ConversationService) (int, []by
 	(&controllers.ConversationsController{Svc: svc}).Register(r)
 
 	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/sessions/p1-1/conversation/skills", nil))
+	r.ServeHTTP(rec, loopbackRequest(http.MethodGet, "/sessions/p1-1/conversation/skills", nil))
 	return rec.Code, rec.Body.Bytes()
 }
 

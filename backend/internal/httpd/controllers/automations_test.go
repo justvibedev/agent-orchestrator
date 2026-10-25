@@ -53,7 +53,7 @@ func automationTestRouter(service AutomationService) http.Handler {
 func TestAutomationsCreateReturnsDefinition(t *testing.T) {
 	service := &fakeAutomationService{}
 	body := `{"projectId":"demo","displayName":"Morning","prompt":"Review","kind":"worker","cron":"0 9 * * *","timezone":"Asia/Calcutta"}`
-	req := httptest.NewRequest(http.MethodPost, "/automations", strings.NewReader(body))
+	req := loopbackRequest(http.MethodPost, "/automations", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	automationTestRouter(service).ServeHTTP(rec, req)
 	if rec.Code != http.StatusCreated {
@@ -70,7 +70,7 @@ func TestAutomationsCreateReturnsDefinition(t *testing.T) {
 
 func TestAutomationsDeleteReturnsNoContent(t *testing.T) {
 	service := &fakeAutomationService{}
-	req := httptest.NewRequest(http.MethodDelete, "/automations/automation-1", nil)
+	req := loopbackRequest(http.MethodDelete, "/automations/automation-1", nil)
 	rec := httptest.NewRecorder()
 	automationTestRouter(service).ServeHTTP(rec, req)
 	if rec.Code != http.StatusNoContent || service.deleted != "automation-1" {

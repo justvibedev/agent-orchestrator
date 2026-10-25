@@ -23,7 +23,7 @@ func configOptionsRequest(
 	r := chi.NewRouter()
 	(&controllers.ConversationsController{Svc: svc}).Register(r)
 	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, httptest.NewRequest(
+	r.ServeHTTP(rec, loopbackRequest(
 		method,
 		"/sessions/p1-1/conversation/config-options/model",
 		bytes.NewBufferString(body),
@@ -49,7 +49,7 @@ func TestConfigOptionsRoutePreservesProviderCatalog(t *testing.T) {
 	r := chi.NewRouter()
 	(&controllers.ConversationsController{Svc: svc}).Register(r)
 	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, httptest.NewRequest(
+	r.ServeHTTP(rec, loopbackRequest(
 		http.MethodGet, "/sessions/p1-1/conversation/config-options", nil,
 	))
 	if rec.Code != http.StatusOK {
@@ -108,7 +108,7 @@ func TestConfigOptionsPermissionModeWire(t *testing.T) {
 			path += "/mode"
 		}
 		rec := httptest.NewRecorder()
-		r.ServeHTTP(rec, httptest.NewRequest(method, path, bytes.NewBufferString(`{"value":"auto"}`)))
+		r.ServeHTTP(rec, loopbackRequest(method, path, bytes.NewBufferString(`{"value":"auto"}`)))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("%s: %d %s", method, rec.Code, rec.Body.String())
 		}

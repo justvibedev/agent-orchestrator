@@ -213,7 +213,7 @@ func TestBrowserBoundaryCannotForgeNativeOrMobileTrust(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			shells := &boundaryShells{}
 			router := NewRouterWithControl(config.Config{AllowedOrigins: []string{"app://renderer"}}, discardLogger(), nil, APIDeps{ShellTerminals: shells}, ControlDeps{})
-			req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:3001/api/v1/shell-terminals", nil)
+			req := loopbackRequest(http.MethodPost, "http://127.0.0.1:3001/api/v1/shell-terminals", nil)
 			req.Header = tc.headers
 			req.Host = "rebound.attacker.example:3001"
 			w := httptest.NewRecorder()
@@ -242,7 +242,7 @@ func TestBrowserBoundaryMobileCredentialsAndPreviewCookie(t *testing.T) {
 		{"authenticated hostile browser", "test-password", "", "http://hostile.localhost", 403},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/shell-terminals", nil)
+			req := loopbackRequest(http.MethodPost, "/api/v1/shell-terminals", nil)
 			req.Header.Set("Origin", tc.origin)
 			if tc.token != "" {
 				req.Header.Set("Authorization", "Bearer "+tc.token)
@@ -261,7 +261,7 @@ func TestBrowserBoundaryMobileCredentialsAndPreviewCookie(t *testing.T) {
 		t.Fatalf("shells=%d want=1", shells.opened.Load())
 	}
 	state.setHash(mobilebridge.HashPassword("rotated"))
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/shell-terminals", nil)
+	req := loopbackRequest(http.MethodPost, "/api/v1/shell-terminals", nil)
 	req.Header.Set("Authorization", "Bearer test-password")
 	req.Header.Set("Origin", "http://localhost")
 	w := httptest.NewRecorder()
@@ -275,7 +275,7 @@ func TestBrowserBoundaryPreviewHostsCannotDispatchAPI(t *testing.T) {
 	for _, host := range []string{"ao-preview.mfxs2mi.localhost:3001", "ao-preview-artifact.mfxs2mi.localhost:3001", "ao-inline-artifact.mfxs2mi.localhost:3001"} {
 		router := newTestRouter(config.Config{AllowedOrigins: []string{"app://renderer"}}, discardLogger(), nil)
 		for _, path := range []string{"/api/v1/shell-terminals", "/mux"} {
-			req := httptest.NewRequest(http.MethodGet, "http://"+host+path, nil)
+			req := loopbackRequest(http.MethodGet, "http://"+host+path, nil)
 			req.Header.Set("Origin", "http://"+host)
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
@@ -370,7 +370,7 @@ func TestBrowserBoundaryPreviewCookieGrantsOnlyPreviewBytes(t *testing.T) {
 	router := newTestRouter(config.Config{}, discardLogger(), nil)
 	handler := authMiddleware(state, newLockout(time.Now), nil)(router)
 	for _, path := range []string{"/api/v1/sessions/s1/preview/files/asset.js", "/api/v1/shell-terminals", "/mux"} {
-		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req := loopbackRequest(http.MethodGet, path, nil)
 		req.Header.Set("Origin", "null")
 		req.Header.Set("Sec-Fetch-Site", "cross-site")
 		req.AddCookie(&http.Cookie{Name: authCookieName, Value: "preview-password"})

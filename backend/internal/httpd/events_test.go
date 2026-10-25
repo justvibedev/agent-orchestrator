@@ -148,7 +148,7 @@ func TestEventsStreamRejectsInvalidAfter(t *testing.T) {
 		CDC:    &fakeEventSource{live: &fakeEventSubscriber{}},
 		Events: &fakeEventSubscriber{},
 	}, ControlDeps{})
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/events?after=nope", nil)
+	req := loopbackRequest(http.MethodGet, "/api/v1/events?after=nope", nil)
 	rec := httptest.NewRecorder()
 
 	router.ServeHTTP(rec, req)

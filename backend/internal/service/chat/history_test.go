@@ -2525,7 +2525,7 @@ func TestMissingEditTurnReplaysOriginalHTTPStatusAfterRestart(t *testing.T) {
 		router := httpd.NewRouterWithControl(config.Config{}, slog.New(slog.DiscardHandler), nil,
 			httpd.APIDeps{Conversations: svc}, httpd.ControlDeps{})
 		request := httptest.NewRequest(http.MethodPost,
-			"/api/v1/sessions/"+string(testSession)+"/conversation/turns/missing/edit",
+			"http://127.0.0.1:3001/api/v1/sessions/"+string(testSession)+"/conversation/turns/missing/edit",
 			strings.NewReader(`{"text":"replacement","clientMessageId":"missing-turn-replay"}`))
 		request.Header.Set("Content-Type", "application/json")
 		response := httptest.NewRecorder()

@@ -59,7 +59,7 @@ func TestAwakeStartupFailureDisablesOnlyOptionalService(t *testing.T) {
 				{"/healthz", http.StatusOK}, {"/readyz", http.StatusOK}, {"/api/v1/awake", http.StatusNotImplemented},
 			} {
 				w := httptest.NewRecorder()
-				router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, probe.path, nil))
+				router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "http://127.0.0.1:3001"+probe.path, nil))
 				if w.Code != probe.status {
 					t.Fatalf("%s status = %d, want %d", probe.path, w.Code, probe.status)
 				}

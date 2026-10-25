@@ -31,7 +31,7 @@ func TestAwakeRejectsMalformedRequestsBeforeMutation(t *testing.T) {
 			svc := &awakeHTTPStub{}
 			c := AwakeController{Svc: svc}
 			w := httptest.NewRecorder()
-			c.Start(w, httptest.NewRequest(http.MethodPost, "/api/v1/awake/sessions", strings.NewReader(body)))
+			c.Start(w, loopbackRequest(http.MethodPost, "/api/v1/awake/sessions", strings.NewReader(body)))
 			if w.Code != 400 || svc.starts != 0 {
 				t.Fatalf("status=%d mutations=%d", w.Code, svc.starts)
 			}
@@ -45,13 +45,13 @@ func TestAwakeHTTPValidationAndRuntimeErrors(t *testing.T) {
 	}{{nil, 200}, {awakesvc.ErrValidation, 400}, {errors.New("journal unavailable"), 500}} {
 		svc := &awakeHTTPStub{err: tc.err}
 		w := httptest.NewRecorder()
-		(&AwakeController{Svc: svc}).Start(w, httptest.NewRequest(http.MethodPost, "/api/v1/awake/sessions", strings.NewReader(`{"mode":"indefinite"}`)))
+		(&AwakeController{Svc: svc}).Start(w, loopbackRequest(http.MethodPost, "/api/v1/awake/sessions", strings.NewReader(`{"mode":"indefinite"}`)))
 		if w.Code != tc.status || svc.starts != 1 {
 			t.Fatalf("status=%d mutations=%d", w.Code, svc.starts)
 		}
 	}
 	w := httptest.NewRecorder()
-	(&AwakeController{}).Status(w, httptest.NewRequest(http.MethodGet, "/api/v1/awake", nil))
+	(&AwakeController{}).Status(w, loopbackRequest(http.MethodGet, "/api/v1/awake", nil))
 	if w.Code != 501 {
 		t.Fatalf("missing service status=%d", w.Code)
 	}
@@ -65,7 +65,7 @@ func TestAwakeLowPowerAuthorizationResult(t *testing.T) {
 	}{{nil, http.StatusOK}, {errors.New("authorization canceled"), http.StatusInternalServerError}} {
 		svc := &awakeHTTPStub{err: tc.err}
 		w := httptest.NewRecorder()
-		(&AwakeController{Svc: svc}).AuthorizeLowPower(w, httptest.NewRequest(http.MethodPost, "/api/v1/awake/low-power/authorize", nil))
+		(&AwakeController{Svc: svc}).AuthorizeLowPower(w, loopbackRequest(http.MethodPost, "/api/v1/awake/low-power/authorize", nil))
 		if w.Code != tc.status || svc.starts != 1 {
 			t.Fatalf("status=%d calls=%d", w.Code, svc.starts)
 		}
@@ -80,7 +80,7 @@ func TestAwakeLowPowerRevocationResult(t *testing.T) {
 	}{{nil, http.StatusOK}, {awakesvc.ErrValidation, http.StatusBadRequest}, {errors.New("revocation canceled"), http.StatusInternalServerError}} {
 		svc := &awakeHTTPStub{err: tc.err}
 		w := httptest.NewRecorder()
-		(&AwakeController{Svc: svc}).RevokeLowPower(w, httptest.NewRequest(http.MethodPost, "/api/v1/awake/low-power/revoke", nil))
+		(&AwakeController{Svc: svc}).RevokeLowPower(w, loopbackRequest(http.MethodPost, "/api/v1/awake/low-power/revoke", nil))
 		if w.Code != tc.status || svc.starts != 1 {
 			t.Fatalf("status=%d calls=%d", w.Code, svc.starts)
 		}

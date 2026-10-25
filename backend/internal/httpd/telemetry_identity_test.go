@@ -22,7 +22,7 @@ func TestTelemetryIdentityRoutes(t *testing.T) {
 	r := NewRouterWithControl(config.Config{DataDir: dir}, discardLogger(), nil, APIDeps{TelemetryIdentity: ident}, ControlDeps{})
 
 	post := func(host, origin, body string) int {
-		req := httptest.NewRequest(http.MethodPost, "http://"+host+"/internal/telemetry/identity", strings.NewReader(body))
+		req := loopbackRequest(http.MethodPost, "http://"+host+"/internal/telemetry/identity", strings.NewReader(body))
 		req.Host = host
 		if origin != "" {
 			req.Header.Set("Origin", origin)
@@ -32,7 +32,7 @@ func TestTelemetryIdentityRoutes(t *testing.T) {
 		return rec.Code
 	}
 	get := func() map[string]any {
-		req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:3001/api/v1/telemetry/identity", nil)
+		req := loopbackRequest(http.MethodGet, "http://127.0.0.1:3001/api/v1/telemetry/identity", nil)
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
@@ -94,14 +94,14 @@ func TestTelemetryIdentityRouteSuppressesPhoneAfterFailedRotation(t *testing.T) 
 	}
 	r := NewRouterWithControl(config.Config{DataDir: dir}, discardLogger(), nil, APIDeps{TelemetryIdentity: ident}, ControlDeps{})
 	post := func(body string) int {
-		req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:3001/internal/telemetry/identity", strings.NewReader(body))
+		req := loopbackRequest(http.MethodPost, "http://127.0.0.1:3001/internal/telemetry/identity", strings.NewReader(body))
 		req.Host = "127.0.0.1:3001"
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)
 		return rec.Code
 	}
 	get := func() map[string]any {
-		req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:3001/api/v1/telemetry/identity", nil)
+		req := loopbackRequest(http.MethodGet, "http://127.0.0.1:3001/api/v1/telemetry/identity", nil)
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)
 		var out map[string]any
@@ -156,7 +156,7 @@ func TestTelemetryIdentityRouteRejectsAnOlderSequence(t *testing.T) {
 	r := NewRouterWithControl(config.Config{DataDir: dir}, discardLogger(), nil, APIDeps{TelemetryIdentity: ident}, ControlDeps{})
 	var lastBody string
 	post := func(body string) int {
-		req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:3001/internal/telemetry/identity", strings.NewReader(body))
+		req := loopbackRequest(http.MethodPost, "http://127.0.0.1:3001/internal/telemetry/identity", strings.NewReader(body))
 		req.Host = "127.0.0.1:3001"
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)

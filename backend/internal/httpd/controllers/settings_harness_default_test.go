@@ -38,7 +38,7 @@ func TestSettingsHarnessDefaultPatchRequiresDisabledModels(t *testing.T) {
 		router := chi.NewRouter()
 		router.Patch("/api/v1/settings/harness-defaults/{agent}", c.setHarnessDefault)
 		w := httptest.NewRecorder()
-		router.ServeHTTP(w, httptest.NewRequest(http.MethodPatch, "/api/v1/settings/harness-defaults/"+agent, strings.NewReader(body)))
+		router.ServeHTTP(w, loopbackRequest(http.MethodPatch, "/api/v1/settings/harness-defaults/"+agent, strings.NewReader(body)))
 		return w.Code
 	}
 	for _, body := range []string{`{}`, `{"model":"gpt-5","effort":"low"}`} {
