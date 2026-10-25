@@ -445,3 +445,39 @@ func TestCoordinatorTransientFailureBacksOffWithoutBlockingOthers(t *testing.T) 
 		t.Fatalf("failed batch available_at = %v, want after now (backoff)", due)
 	}
 }
+
+func TestCoordinatorBackoffCountsFailuresNotBusyDeferrals(t *testing.T) {
+	now := time.Date(2026, 10, 25, 11, 0, 0, 0, time.UTC)
+	store := newCoordinatorStore(now)
+	store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeChat}}
+	rep := reportAt("need", "worker", now, now, "decision")
+	rep.State = domain.ReportNeedsInput
+	store.add(rep)
+	delivery := &coordinatorDelivery{submitErr: ErrOrchestratorBusy}
+	c := NewCoordinator(CoordinatorDeps{Store: store, Delivery: delivery, Now: func() time.Time { return now }, RetryDelay: time.Second})
+	for i := 0; i < 12; i++ {
+		now = now.Add(OrchestratorBusyRetry)
+		if _, err := c.RunDue(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	delivery.submitErr = fmt.Errorf("hiccup")
+	want := []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second, 32 * time.Second, 64 * time.Second, 128 * time.Second, 256 * time.Second, ExhaustedDeliveryRetry, ExhaustedDeliveryRetry}
+	for i, w := range want {
+		now = now.Add(2 * time.Hour)
+		before := now
+		if _, err := c.RunDue(context.Background()); err == nil {
+			t.Fatalf("failure %d: expected error", i+1)
+		}
+		if got := store.reports[0].AvailableAt.Sub(before); got != w {
+			t.Fatalf("failure %d delay = %v, want %v", i+1, got, w)
+		}
+	}
+	if got := c.backoffDelay(8); got != 128*time.Second {
+		t.Fatalf("delay(8) = %v", got)
+	}
+	big := NewCoordinator(CoordinatorDeps{Store: store, Delivery: delivery, RetryDelay: 5 * time.Second})
+	if got := big.backoffDelay(9); got != MaxDeliveryBackoff {
+		t.Fatalf("capped delay = %v, want %v", got, MaxDeliveryBackoff)
+	}
+}

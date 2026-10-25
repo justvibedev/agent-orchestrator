@@ -89,6 +89,8 @@ type Coordinator struct {
 	logged  map[string]time.Time
 	statusM sync.Mutex
 	parked  map[domain.ProjectID]time.Time
+	// failures counts consecutive delivery failures per batch.
+	failures map[string]int
 }
 
 type hold struct {
@@ -123,7 +125,7 @@ func NewCoordinator(d CoordinatorDeps) *Coordinator {
 	return &Coordinator{
 		store: d.Store, delivery: d.Delivery, now: d.Now, newToken: d.NewToken, retryDelay: d.RetryDelay,
 		wake: make(chan struct{}, 1), log: d.Logger,
-		holds: map[domain.ProjectID]hold{}, logged: map[string]time.Time{}, parked: map[domain.ProjectID]time.Time{},
+		holds: map[domain.ProjectID]hold{}, logged: map[string]time.Time{}, parked: map[domain.ProjectID]time.Time{}, failures: map[string]int{},
 	}
 }
 
@@ -303,27 +305,36 @@ func (c *Coordinator) logRateLimited(key, msg string, err error) {
 // backoff defers a claimed batch with exponential delay based on its attempts
 // so a failing batch never stays the earliest-due work.
 func (c *Coordinator) backoff(ctx context.Context, batch PreparedBatch, cause error) error {
-	attempts := int64(1)
-	for _, r := range batch.Reports {
-		if r.DeliveryAttempts > attempts {
-			attempts = r.DeliveryAttempts
-		}
-	}
-	delay := ExhaustedDeliveryRetry
-	if attempts < int64(MaxDeliveryAttempts) {
-		delay = c.retryDelay
-		for i := int64(1); i < attempts && delay < MaxDeliveryBackoff; i++ {
-			delay *= 2
-		}
-		if delay > MaxDeliveryBackoff {
-			delay = MaxDeliveryBackoff
-		}
-	}
-	_, deferErr := c.store.DeferReportBatch(ctx, batch.ProjectID, batch.Token, c.now().UTC().Add(delay), cause.Error())
+	// Count failures only: delivery_attempts also counts busy and coalesced
+	// deferrals, which are not failures.
+	c.statusM.Lock()
+	c.failures[batch.IdempotencyKey()]++
+	failures := c.failures[batch.IdempotencyKey()]
+	c.statusM.Unlock()
+	_, deferErr := c.store.DeferReportBatch(ctx, batch.ProjectID, batch.Token, c.now().UTC().Add(c.backoffDelay(failures)), cause.Error())
 	if deferErr != nil {
 		return errors.Join(cause, deferErr)
 	}
 	return cause
+}
+
+// backoffDelay is retryDelay doubled per consecutive failure, capped at
+// MaxDeliveryBackoff, and ExhaustedDeliveryRetry after MaxDeliveryAttempts.
+func (c *Coordinator) backoffDelay(failures int) time.Duration {
+	if failures >= MaxDeliveryAttempts {
+		return ExhaustedDeliveryRetry
+	}
+	delay := c.retryDelay
+	for i := 1; i < failures && delay < MaxDeliveryBackoff; i++ {
+		delay *= 2
+	}
+	return min(delay, MaxDeliveryBackoff)
+}
+
+func (c *Coordinator) clearFailures(batch PreparedBatch) {
+	c.statusM.Lock()
+	delete(c.failures, batch.IdempotencyKey())
+	c.statusM.Unlock()
 }
 
 func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.ProjectID) error {
@@ -367,6 +378,7 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 		}
 		return c.backoff(ctx, batch, err)
 	}
+	c.clearFailures(batch)
 	_, err = c.store.AcknowledgeReportBatch(ctx, batch.ProjectID, batch.Token, c.now().UTC())
 	return err
 }
