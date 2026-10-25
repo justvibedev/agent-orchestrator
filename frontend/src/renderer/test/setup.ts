@@ -203,7 +203,7 @@ if (typeof window !== "undefined") {
 		sideChats: { capture: async () => undefined },
 		localPath: {
 			inspect: async (filePath: string) => ({ ok: true, path: filePath, kind: "file", canOpen: true }),
-			perform: async (_filePath: string, action: string) => ({ ok: true, performed: action }),
+			perform: async (_filePath: string, action: "reveal" | "open" | "copy") => ({ ok: true, performed: action }),
 		},
 	editorHandoff: {
 			getState: async () => ({

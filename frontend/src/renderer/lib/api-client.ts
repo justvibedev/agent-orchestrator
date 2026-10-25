@@ -1,5 +1,5 @@
 import createClient from "openapi-fetch";
-import type { components, paths } from "../../api/schema";
+import type { paths } from "../../api/schema";
 import type { DaemonStatus } from "../../shared/daemon-status";
 import { daemonFailureMessage } from "./daemon-failure";
 

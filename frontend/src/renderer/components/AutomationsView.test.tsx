@@ -54,7 +54,7 @@ function renderView(ui: ReactNode = <AutomationsView />) {
 }
 
 describe("AutomationsView", () => {
-	beforeEach(() => { mocks.automations = []; mocks.runsError = null; mocks.hideShellTopbar = false; mocks.create.mockReset(); mocks.update.mockReset(); mocks.capture.mockReset(); });
+	beforeEach(() => { mocks.automations = []; mocks.runsError = null; mocks.hideShellTopbar = false; mocks.create.mockReset(); mocks.update.mockReset(); });
 
 	it("shows a discoverable empty state and create action", () => {
 		renderView();

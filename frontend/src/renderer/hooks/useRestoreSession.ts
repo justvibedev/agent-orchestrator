@@ -8,7 +8,6 @@ import { createRendererCloudCpClient } from "./useCloudCp";
 import { settingsQueryKey, type Settings } from "./useSettings";
 import { cloudSessionsQueryKey, workspaceQueryKey, workspaceQueryKeyForHost } from "./useWorkspaceQuery";
 import { useTerminalResetStore } from "../stores/terminal-reset-store";
-import type { WorkspaceSummary } from "../types/workspace";
 
 export type RestoreSessionResult =
 	{ status: "success" } | { status: "not_resumable"; message: string } | { status: "error"; message: string };

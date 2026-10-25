@@ -140,7 +140,7 @@ function ShellOutlet({ startingChat }: { startingChat: ReactNode }) {
 	);
 }
 
-function captureSessionViewCrash(error: Error) {
+function captureSessionViewCrash(_error: Error) {
 }
 
 /**
@@ -600,7 +600,7 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 		async (
 			workspace: WorkspaceSummary,
 			input: CreateProjectConfigInput,
-			source: "project_add" | "project_clone",
+			_source: "project_add" | "project_clone",
 		) => {
 		// Safety: a hung spawn must never wedge the board behind the
 		// provisioning gate. If it outlives this budget, release the gate and
@@ -780,7 +780,7 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 			trackerIntake?: components["schemas"]["TrackerIntakeConfig"];
 			signal?: AbortSignal;
 		}) => {
-			const reportFailure = (code: string | undefined) => {
+			const reportFailure = (_code: string | undefined) => {
 			};
 			const status = await refreshDaemonStatus();
 			if (status.state !== "ready" || !status.port) {
@@ -981,7 +981,7 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 				setOrchestratorReplacementError,
 				mode,
 				approvalMode,
-				onError: (error) => {
+				onError: (_error) => {
 				},
 			});
 		},

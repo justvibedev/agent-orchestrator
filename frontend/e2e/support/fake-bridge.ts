@@ -321,6 +321,10 @@ export async function installFakeBridge(page: Page, opts: FakeBridgeOptions = {}
 					},
 					onSessionChanged: unsubscribe,
 				},
+				localPath: {
+					inspect: async () => ({ ok: false, reason: "not_found" }),
+					perform: async () => ({ ok: false, reason: "not_found" }),
+				},
 				cloudCp: {
 					request: async () => ({ status: 401, headers: {}, body: "" }),
 					openStream: async () => ({ streamId: "stream_test" }),
@@ -1156,6 +1160,10 @@ export async function installFakeAgent(page: Page, opts: FakeAgentOptions = {}):
 						throw new Error("local auth is unavailable in e2e");
 					},
 					onSessionChanged: unsubscribe,
+				},
+				localPath: {
+					inspect: async () => ({ ok: false, reason: "not_found" }),
+					perform: async () => ({ ok: false, reason: "not_found" }),
 				},
 				cloudCp: {
 					request: async () => ({ status: 401, headers: {}, body: "" }),

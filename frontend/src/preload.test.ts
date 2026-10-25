@@ -1,6 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CLOSE_SHELL_TERMINAL_SHORTCUT_CHANNEL, APP_SHORTCUT_CHANNEL, KEYBOARD_SHORTCUTS_HELP_CHANNEL, NEXT_SESSION_SHORTCUT_CHANNEL, NEXT_TAB_SHORTCUT_CHANNEL, NEW_SESSION_SHORTCUT_CHANNEL, NEW_SHELL_TERMINAL_SHORTCUT_CHANNEL, OPEN_SETTINGS_SHORTCUT_CHANNEL, PREVIOUS_SESSION_SHORTCUT_CHANNEL, PREVIOUS_TAB_SHORTCUT_CHANNEL, SET_CLOSE_SHELL_TERMINAL_SHORTCUT_ENABLED_CHANNEL } from "./shared/shortcuts";
-import { SET_CHAT_DRAFT_RISK_CHANNEL } from "./shared/chat-draft-risk";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AoBridge } from "./preload";
 
 const electronMocks = vi.hoisted(() => {
@@ -30,11 +28,6 @@ vi.mock("electron", () => ({
 }));
 
 await import("./preload");
-
-// Captured once, before any test's beforeEach clears the listeners map: this
-// is the always-on buffering listener preload.ts registers at module load,
-// not the per-call listener onOpenFolderPath registers when invoked.
-const openFolderPathBufferListener = electronMocks.listeners.get("app:openFolderPath");
 
 function exposedBridge(): AoBridge {
 	const call = electronMocks.exposeInMainWorld.mock.calls.find(([key]) => key === "ao");

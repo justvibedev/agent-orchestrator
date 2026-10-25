@@ -1,6 +1,6 @@
 import path from "node:path";
 import type { Stats } from "node:fs";
-import type { LocalPathAction, LocalPathInspection, LocalPathResult } from "../shared/local-path";
+import type { LocalPathInspection, LocalPathResult } from "../shared/local-path";
 
 const MAX_PATH_LENGTH = 4096;
 // Open is an allowlist: only inert document, media, text and archive-free data files.
