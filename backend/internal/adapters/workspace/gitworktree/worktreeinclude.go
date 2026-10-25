@@ -58,6 +58,9 @@ func (w *Workspace) seedWorktreeInclude(ctx context.Context, sourceRoot, destina
 		if !assetPathWithin(sourceRoot, source) || !assetPathWithin(destinationRoot, destination) {
 			continue
 		}
+		if !destinationParentsSafe(destinationRoot, destination) {
+			continue
+		}
 		if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
 			return err
 		}
@@ -77,6 +80,16 @@ func seedWorktreeIncludeEntry(ctx context.Context, sourceRoot, source, destinati
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
+		return err
+	}
+	// Never overwrite what the worktree already has (tracked on the session
+	// branch but untracked in the main checkout): merge into a real directory,
+	// skip anything else.
+	if existing, err := os.Lstat(destination); err == nil {
+		if !(info.IsDir() && existing.IsDir()) {
+			return nil
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	if info.IsDir() {
@@ -148,4 +161,26 @@ func coveredByIgnored(entry string, ignored []string) bool {
 		}
 	}
 	return false
+}
+
+// destinationParentsSafe reports whether every existing parent of destination
+// below root is a real directory. assetPathWithin is lexical, so a tracked
+// symlinked parent would otherwise let writes land outside the worktree.
+func destinationParentsSafe(root, destination string) bool {
+	rel, err := filepath.Rel(root, filepath.Dir(destination))
+	if err != nil || rel == "." {
+		return err == nil
+	}
+	current := root
+	for _, part := range strings.Split(rel, string(filepath.Separator)) {
+		current = filepath.Join(current, part)
+		info, err := os.Lstat(current)
+		if errors.Is(err, os.ErrNotExist) {
+			return true // MkdirAll will create the rest as real directories
+		}
+		if err != nil || !info.IsDir() {
+			return false
+		}
+	}
+	return true
 }
