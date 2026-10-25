@@ -85,7 +85,7 @@ func Build() ([]byte, error) {
 		*(&openapi31.Tag{Name: "events"}).WithDescription(
 			"Server-sent CDC event stream with durable replay"),
 		*(&openapi31.Tag{Name: "import"}).WithDescription(
-			"Legacy AO project import (availability probe and run)"),
+			"Project import onboarding (folder validation and Git preparation)"),
 		*(&openapi31.Tag{Name: "dev"}).WithDescription(
 			"Developer-only maintenance operations"),
 		*(&openapi31.Tag{Name: "mobile"}).WithDescription(
