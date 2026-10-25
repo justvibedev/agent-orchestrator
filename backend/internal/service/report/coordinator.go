@@ -79,6 +79,7 @@ type Coordinator struct {
 	now        func() time.Time
 	newToken   func() string
 	retryDelay time.Duration
+	verify     func(context.Context, domain.ReportRecord) string
 	wake       chan struct{}
 	rewake     atomic.Bool
 	mu         sync.Mutex
@@ -106,6 +107,9 @@ type CoordinatorDeps struct {
 	NewToken   func() string
 	RetryDelay time.Duration
 	Logger     *slog.Logger
+	// Verify optionally soft-checks a claimed done report at delivery time. A
+	// non-empty result annotates the delivered report; it never blocks delivery.
+	Verify func(context.Context, domain.ReportRecord) string
 }
 
 // NewCoordinator constructs an idle report delivery coordinator.
@@ -123,7 +127,7 @@ func NewCoordinator(d CoordinatorDeps) *Coordinator {
 		d.Logger = slog.New(slog.DiscardHandler)
 	}
 	return &Coordinator{
-		store: d.Store, delivery: d.Delivery, now: d.Now, newToken: d.NewToken, retryDelay: d.RetryDelay,
+		store: d.Store, delivery: d.Delivery, now: d.Now, newToken: d.NewToken, retryDelay: d.RetryDelay, verify: d.Verify,
 		wake: make(chan struct{}, 1), log: d.Logger,
 		holds: map[domain.ProjectID]hold{}, logged: map[string]time.Time{}, parked: map[domain.ProjectID]time.Time{}, failures: map[string]int{},
 	}
@@ -416,6 +420,11 @@ func (c *Coordinator) claim(ctx context.Context, projectID domain.ProjectID) (Pr
 		if lookupErr == nil && found {
 			reports[i].SessionDisplayName = strings.TrimSpace(session.DisplayName)
 		}
+		// A claim sweeps every pending report, so one may be claimed before its
+		// settlement deadline; its observer state is not settled yet, so skip it.
+		if c.verify != nil && reports[i].State == domain.ReportDone && !c.now().Before(reports[i].SettlementDeadline) {
+			reports[i].UnverifiedReason = c.verify(ctx, reports[i])
+		}
 	}
 	batchID := ""
 	if len(reports) > 0 {
@@ -514,6 +523,9 @@ func (b PreparedBatch) Render() string {
 		if text != "" {
 			out.WriteString("\n")
 			out.WriteString(text)
+		}
+		if report.UnverifiedReason != "" {
+			fmt.Fprintf(&out, "\ndone (unverified: %s)", report.UnverifiedReason)
 		}
 		for _, output := range report.Outputs {
 			fmt.Fprintf(&out, "\n%s: %s", output.Kind, output.Reference)

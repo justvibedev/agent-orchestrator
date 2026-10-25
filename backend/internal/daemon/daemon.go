@@ -653,6 +653,7 @@ func Run(buildVersion string) error {
 		Store:    store,
 		Delivery: reportSemanticDelivery{chat: chatSvc, sessions: reportSessions, store: store},
 		Logger:   log,
+		Verify:   reportSvc.UnverifiedDoneReason,
 	})
 	chatSvc.SetReportCoordinator(reportCoordinator)
 	reportDeliveryDone := reportCoordinator.Start(ctx)
