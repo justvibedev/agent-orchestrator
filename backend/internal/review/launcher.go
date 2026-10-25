@@ -85,7 +85,10 @@ type LaunchSpec struct {
 	TargetSHA              string
 	ReviewQueue            []ports.ReviewTask
 	ReviewIndex            int
-	InterfaceMode          domain.ReviewerInterfaceMode
+	// TaskContext is the worker's stored task/issue text, already sanitized and
+	// truncated. It is untrusted background for the reviewer, never instructions.
+	TaskContext   string
+	InterfaceMode domain.ReviewerInterfaceMode
 	// DeferInitialMessage starts the reviewer without dispatching its review
 	// prompt. The engine uses this while replacing a live reviewer so the old
 	// process can be stopped before the replacement receives executable work.
