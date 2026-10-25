@@ -236,6 +236,22 @@ func TestBuildSystemPrompt_WorkerRequiresDurableReports(t *testing.T) {
 	}
 }
 
+func TestBuildSystemPrompt_WorkerVerifyCommand(t *testing.T) {
+	cfg := systemPromptConfig{Role: sessionPromptRoleWorker, VerifyCommand: "  npm run lint  "}
+	got := buildSystemPromptText(cfg)
+	if !strings.Contains(got, "## Verification Before Push\nBefore pushing, run `npm run lint`") {
+		t.Fatalf("worker prompt missing verify command:\n%s", got)
+	}
+	cfg.VerifyCommand = ""
+	if strings.Contains(buildSystemPromptText(cfg), "Verification Before Push") {
+		t.Fatal("verify section rendered without a command")
+	}
+	cfg = systemPromptConfig{Role: sessionPromptRoleOrchestrator, VerifyCommand: "npm run lint"}
+	if strings.Contains(buildSystemPromptText(cfg), "Verification Before Push") {
+		t.Fatal("orchestrator prompt must not include the worker verify command")
+	}
+}
+
 func TestBuildProjectRules_ReadsInlineAndFileRules(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "rules.md"), []byte("File rule.\n"), 0o644); err != nil {

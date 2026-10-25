@@ -6217,6 +6217,7 @@ export interface components {
             sessionPrefix?: string;
             symlinks?: string[];
             trackerIntake?: components["schemas"]["TrackerIntakeConfig"];
+            verifyCommand?: string;
             worker?: components["schemas"]["RoleOverride"];
             workersRequestReview?: boolean;
         };

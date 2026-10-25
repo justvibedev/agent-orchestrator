@@ -5918,6 +5918,7 @@ func (m *Manager) buildSystemPrompt(ctx context.Context, kind domain.SessionKind
 			return "", err
 		}
 		cfg.ProjectRules = rules
+		cfg.VerifyCommand = project.Config.VerifyCommand
 	default:
 		return "", nil
 	}

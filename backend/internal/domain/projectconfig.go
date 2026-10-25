@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"unicode"
 )
 
 // ProjectConfig is the typed per-project configuration — the SQLite twin of the
@@ -45,6 +46,10 @@ type ProjectConfig struct {
 	// AgentRulesFile is a repo-relative Markdown/text file whose contents are
 	// appended to AgentRules for worker sessions.
 	AgentRulesFile string `json:"agentRulesFile,omitempty"`
+	// VerifyCommand is a single-line command worker prompts tell the worker to
+	// run, and pass, before pushing. It is prompt-only: the daemon never
+	// executes it.
+	VerifyCommand string `json:"verifyCommand,omitempty"`
 	// OrchestratorRules are project-specific standing instructions for
 	// orchestrator sessions.
 	OrchestratorRules string `json:"orchestratorRules,omitempty"`
@@ -261,6 +266,9 @@ func (c ProjectConfig) Validate() error {
 	if err := validateRepoRelative(c.AgentRulesFile); err != nil {
 		return fmt.Errorf("agentRulesFile %q: %w", c.AgentRulesFile, err)
 	}
+	if err := validateVerifyCommand(c.VerifyCommand); err != nil {
+		return err
+	}
 	for i, rv := range c.Reviewers {
 		if !rv.Harness.IsKnown() {
 			return fmt.Errorf("reviewers[%d].harness: unknown harness %q", i, rv.Harness)
@@ -271,6 +279,21 @@ func (c ProjectConfig) Validate() error {
 	}
 	if err := c.TrackerIntake.Validate(); err != nil {
 		return err
+	}
+	return nil
+}
+
+// MaxVerifyCommandLen bounds VerifyCommand so it stays a one-line prompt hint.
+const MaxVerifyCommandLen = 500
+
+func validateVerifyCommand(cmd string) error {
+	if len(cmd) > MaxVerifyCommandLen {
+		return fmt.Errorf("verifyCommand: must be at most %d characters", MaxVerifyCommandLen)
+	}
+	for _, r := range cmd {
+		if unicode.IsControl(r) {
+			return fmt.Errorf("verifyCommand: must be a single line without control characters")
+		}
 	}
 	return nil
 }

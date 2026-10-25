@@ -1,6 +1,9 @@
 package domain
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestProjectConfigValidate(t *testing.T) {
 	tests := []struct {
@@ -36,6 +39,10 @@ func TestProjectConfigValidate(t *testing.T) {
 		{"agent rules file parent escape", ProjectConfig{AgentRulesFile: "../rules.md"}, true},
 		{"agent rules file cleans to dot", ProjectConfig{AgentRulesFile: "docs/.."}, true},
 		{"agent rules file bare dot", ProjectConfig{AgentRulesFile: "."}, true},
+		{"good verify command", ProjectConfig{VerifyCommand: "cd backend && go test ./..."}, false},
+		{"verify command newline", ProjectConfig{VerifyCommand: "go test ./...\nrm -rf /"}, true},
+		{"verify command control char", ProjectConfig{VerifyCommand: "go test\x00"}, true},
+		{"verify command too long", ProjectConfig{VerifyCommand: strings.Repeat("a", MaxVerifyCommandLen+1)}, true},
 		{"good reviewers", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerClaudeCode}}}, false},
 		{"good codex reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerCodex}}}, false},
 		{"good copilot reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerCopilot}}}, false},
