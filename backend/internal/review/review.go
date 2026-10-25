@@ -1390,6 +1390,7 @@ func reviewLaunchSpec(
 		TargetSHA:       run.TargetSHA,
 		ReviewQueue:     queue,
 		ReviewIndex:     index,
+		TaskContext:     taskContext(worker.Metadata.Prompt),
 	}
 }
 
