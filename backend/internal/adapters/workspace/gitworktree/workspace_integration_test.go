@@ -1636,7 +1636,8 @@ func TestWorkspaceIntegrationWorktreeIncludeSeedsOnlyUntrackedMatches(t *testing
 	write(".env", "SECRET=1")
 	write("node_modules/pkg/index.js", "module")
 	write("other.log", "not listed")
-	write(".worktreeinclude", ".env\nnode_modules/\ntracked.env\nmissing.txt\n*.nomatch\n")
+	write("local.config.json", "untracked, not ignored")
+	write(".worktreeinclude", ".env\nnode_modules/\ntracked.env\nmissing.txt\n*.nomatch\nlocal.config.json\n")
 	runGit(t, git, repo, "add", ".gitignore", "tracked.env")
 	runGit(t, git, repo, "commit", "-m", "track")
 	runGit(t, git, repo, "push", "origin", "main")
@@ -1673,9 +1674,15 @@ func TestWorkspaceIntegrationWorktreeIncludeSeedsOnlyUntrackedMatches(t *testing
 			t.Fatalf("escaping symlink %s was seeded: %v", rel, err)
 		}
 	}
+	if _, err := os.Lstat(filepath.Join(info.Path, "local.config.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("untracked but not ignored file was seeded: %v", err)
+	}
 	// A tracked file comes from git, not from the manifest copy.
 	if got, err := os.ReadFile(filepath.Join(info.Path, "tracked.env")); err != nil || string(got) != "tracked" {
 		t.Fatalf("tracked.env = %q, %v", got, err)
+	}
+	if err := ws.Destroy(context.Background(), info); err != nil {
+		t.Fatalf("destroy seeded worktree: %v", err)
 	}
 }
 

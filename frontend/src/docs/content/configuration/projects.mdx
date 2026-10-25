@@ -192,7 +192,7 @@ Git worktrees start from tracked files only, so ignored files such as `.env` or 
 node_modules/
 ```
 
-When a session worktree is created, Orchestrator copies the untracked paths in the main checkout that match the file into the new worktree. Tracked files are never copied, missing paths are skipped, and `.git` and `.ao` entries are ignored. Symlinks that are absolute or point outside the repository are skipped. A missing `.worktreeinclude` does nothing. Copies are independent: later changes in either checkout are not synced.
+When a session worktree is created, Orchestrator copies the paths in the main checkout that match the file and are also ignored by `.gitignore` (or other standard git excludes) into the new worktree. Tracked files and untracked-but-not-ignored files are never copied (they would leave the worktree dirty), missing paths are skipped, and `.git` and `.ao` entries are ignored. Symlinks that are absolute or point outside the repository are skipped. A missing `.worktreeinclude` does nothing. Copies are independent: later changes in either checkout are not synced.
 
 ## Tracker and source control
 

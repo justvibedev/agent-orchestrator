@@ -35,7 +35,17 @@ func (w *Workspace) seedWorktreeInclude(ctx context.Context, sourceRoot, destina
 	if err != nil {
 		return fmt.Errorf("gitworktree: list %s matches: %w", worktreeIncludeFile, err)
 	}
+	// Seed only paths that the standard excludes also ignore: an untracked but
+	// not-ignored copy would show as `??` and leave the worktree permanently dirty.
+	ignoredOut, err := w.run(ctx, w.binary, "-C", sourceRoot, "ls-files", "-z", "--others", "--ignored", "--directory", "--exclude-standard")
+	if err != nil {
+		return fmt.Errorf("gitworktree: list ignored paths: %w", err)
+	}
+	ignored := strings.Split(string(ignoredOut), "\x00")
 	for _, entry := range strings.Split(string(out), "\x00") {
+		if entry == "" || !coveredByIgnored(entry, ignored) {
+			continue
+		}
 		rel, err := cleanRelativePath(strings.TrimSuffix(entry, "/"))
 		if err != nil || hasWorkspaceManagedComponent(rel) {
 			continue
@@ -118,4 +128,18 @@ func copyPath(src, dst string) error {
 		return copyErr
 	}
 	return closeErr
+}
+
+// coveredByIgnored reports whether entry is itself ignored or sits inside an
+// ignored directory (ls-files --directory collapses ignored directories).
+func coveredByIgnored(entry string, ignored []string) bool {
+	for _, ig := range ignored {
+		if ig == "" {
+			continue
+		}
+		if entry == ig || (strings.HasSuffix(ig, "/") && strings.HasPrefix(entry, ig)) {
+			return true
+		}
+	}
+	return false
 }
