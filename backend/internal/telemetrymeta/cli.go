@@ -133,7 +133,6 @@ var legacyActorlessUserCLICommands = map[string]struct{}{
 	"ao dev":                    {},
 	"ao dev import-projects":    {},
 	"ao doctor":                 {},
-	"ao import":                 {},
 	"ao launch":                 {},
 	"ao orchestrator":           {},
 	"ao orchestrator done":      {},

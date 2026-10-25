@@ -195,7 +195,7 @@ import type {
 } from "./main/browser-live-types";
 import { keepDaemonAlive, shouldLinkOnAttach } from "./main/daemon-owner";
 import { readProcessStartMs } from "./main/process-start";
-import { readMigrationState, updateMigration, writeAppStateMarker, type MigrationState } from "./main/app-state";
+import { writeAppStateMarker } from "./main/app-state";
 import { isAllowedAppExternalURL, openAllowedAppExternalURL } from "./main/external-open";
 import {
 	dockBounceType,
@@ -2962,17 +2962,6 @@ ipcMain.handle("terminal:saveDroppedFile", async (_event, input: { name: string;
 	const target = path.join(dir, `${Date.now()}-${base}`);
 	await writeFile(target, Buffer.from(input.bytes));
 	return target;
-});
-
-ipcMain.handle("appState:getMigration", async (): Promise<MigrationState> => {
-	const runFile = runFilePath();
-	if (!runFile) return { status: "pending" };
-	return readMigrationState(path.dirname(runFile));
-});
-ipcMain.handle("appState:setMigration", async (_event, migration: MigrationState) => {
-	const runFile = runFilePath();
-	if (!runFile) return;
-	await updateMigration({ stateDir: path.dirname(runFile), migration, now: () => new Date() });
 });
 
 ipcMain.handle("updateSettings:get", async (): Promise<UpdateSettings> => {

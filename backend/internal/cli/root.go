@@ -228,7 +228,6 @@ func NewRootCommand(deps Deps) *cobra.Command {
 	root.AddCommand(newPtyHostCommand())
 	root.AddCommand(newCodexLoginCommand(ctx))
 	root.AddCommand(newClaudeLoginCommand(ctx))
-	root.AddCommand(newImportCommand(ctx))
 	root.AddCommand(newDevCommand(ctx))
 	root.AddCommand(newProjectCommand(ctx))
 	root.AddCommand(newSessionCommand(ctx))

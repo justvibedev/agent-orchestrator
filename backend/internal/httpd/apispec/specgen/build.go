@@ -577,9 +577,6 @@ var schemaNames = map[string]string{ //nolint:gosec // Public OpenAPI type names
 	// domain review entities
 	"DomainReviewRun":     "ReviewRun",
 	"ReviewPRReviewState": "PRReviewState",
-	// httpd/controllers: import wire envelopes
-	"ControllersImportStatusResponse": "ImportStatusResponse",
-	"ControllersImportRunResponse":    "ImportRunResponse",
 	// service/importer: project import onboarding DTOs
 	"ImporterImportValidationInput":         "ImportValidationInput",
 	"ImporterImportValidationResult":        "ImportValidationResult",
@@ -613,8 +610,6 @@ var schemaNames = map[string]string{ //nolint:gosec // Public OpenAPI type names
 	"ControllersPushDeviceEnvelope":           "PushDeviceEnvelope",
 	"ControllersPushDeviceResponse":           "PushDeviceResponse",
 	"ControllersUnregisterPushDeviceResponse": "UnregisterPushDeviceResponse",
-	// legacyimport report
-	"LegacyimportReport": "ImportReport",
 	// service/project entities + DTOs
 	"ProjectProject":                    "Project",
 	"ProjectSummary":                    "ProjectSummary",
@@ -2260,24 +2255,6 @@ func mobileDeviceOperations() []operation {
 // the routes ImportController.Register mounts (enforced by the parity test).
 func importOperations() []operation {
 	return []operation{
-		{
-			method: http.MethodGet, path: "/api/v1/import", id: "getImportStatus", tag: "import",
-			summary: "Check whether a legacy AO install is available to import",
-			resps: []respUnit{
-				{http.StatusOK, controllers.ImportStatusResponse{}},
-				{http.StatusInternalServerError, envelope.APIError{}},
-				{http.StatusNotImplemented, envelope.APIError{}},
-			},
-		},
-		{
-			method: http.MethodPost, path: "/api/v1/import", id: "runImport", tag: "import",
-			summary: "Run the legacy AO project import through the daemon store",
-			resps: []respUnit{
-				{http.StatusOK, controllers.ImportRunResponse{}},
-				{http.StatusInternalServerError, envelope.APIError{}},
-				{http.StatusNotImplemented, envelope.APIError{}},
-			},
-		},
 		{
 			method: http.MethodPost, path: "/api/v1/imports/validate", id: "validateImport", tag: "import",
 			summary: "Validate a selected folder for project import onboarding",

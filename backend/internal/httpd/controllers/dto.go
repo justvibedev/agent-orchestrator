@@ -8,7 +8,6 @@ import (
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/devimport"
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
-	"github.com/aoagents/agent-orchestrator/backend/internal/legacyimport"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 	agentsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/agent"
 	"github.com/aoagents/agent-orchestrator/backend/internal/service/agentaccounts"
@@ -2390,19 +2389,6 @@ type ClearNotificationsResponse struct {
 	ClearID       string `json:"clearId" description:"Identifier shared with the ordered notification_cleared stream event."`
 	ClearEpoch    string `json:"clearEpoch" description:"Daemon epoch for ordering notification clears across one daemon lifetime."`
 	ClearSequence int64  `json:"clearSequence" description:"Monotonic notification-clear sequence within clearEpoch."`
-}
-
-// ImportStatusResponse is the body of GET /api/v1/import: whether a legacy AO
-// install is available to import, and the root the daemon would read from.
-type ImportStatusResponse struct {
-	Available  bool   `json:"available"`
-	LegacyRoot string `json:"legacyRoot"`
-}
-
-// ImportRunResponse is the body of POST /api/v1/import: the structured outcome
-// of the import run (counts + notes), reused verbatim from the import engine.
-type ImportRunResponse struct {
-	Report legacyimport.Report `json:"report"`
 }
 
 // ListDirsQuery is the query string accepted by GET /api/v1/fs/dirs.

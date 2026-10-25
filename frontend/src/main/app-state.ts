@@ -8,16 +8,6 @@ import path from "node:path";
  * below MUST match its struct tags exactly (camelCase).
  */
 
-export type MigrationStatus = "pending" | "completed" | "declined" | "failed";
-
-export interface MigrationState {
-	status: MigrationStatus;
-	lastAttemptAt?: string;
-	completedAt?: string;
-	report?: { projectsImported: number; projectsSkipped: number };
-	error?: string;
-}
-
 export interface AppStateMarker {
 	/** Newer builds acknowledge their mounted shell to the restart helper. */
 	updateRestartProtocol?: 1;
@@ -27,7 +17,6 @@ export interface AppStateMarker {
 	installedAt: string;
 	lastReconciledAt: string;
 	installSource: string;
-	migration?: MigrationState;
 }
 
 /** Current marker format version (spec §5, schemaVersion field). */
@@ -97,9 +86,6 @@ async function atomicWriteMarker(stateDir: string, marker: AppStateMarker): Prom
  * On first creation, installedAt and installSource are captured and then
  * preserved across all later launches; appPath, version, and lastReconciledAt
  * are refreshed every launch (spec §5 field table).
- *
- * An existing `migration` block is preserved unchanged so a launch write does
- * not erase a prior decision recorded by updateMigration.
  */
 export async function writeAppStateMarker(opts: WriteAppStateOptions): Promise<void> {
 	const file = path.join(opts.stateDir, APP_STATE_FILE_NAME);
@@ -116,42 +102,7 @@ export async function writeAppStateMarker(opts: WriteAppStateOptions): Promise<v
 		// Refreshed on every launch that touches the marker.
 		lastReconciledAt: nowIso,
 		installSource: existing?.installSource ?? opts.installedVia ?? "unknown",
-		// Preserve a migration block written before this launch write.
-		...(existing?.migration !== undefined ? { migration: existing.migration } : {}),
 	};
 
 	await atomicWriteMarker(opts.stateDir, marker);
-}
-
-export interface UpdateMigrationOptions {
-	stateDir: string;
-	migration: MigrationState;
-	now: () => Date;
-}
-
-// updateMigration sets ONLY the migration block, preserving every launch-written
-// field already on disk. Used by the app's IPC setter. Atomic like the launch write.
-export async function updateMigration(opts: UpdateMigrationOptions): Promise<void> {
-	const file = path.join(opts.stateDir, APP_STATE_FILE_NAME);
-	const existing = await readExisting(file);
-	const nowIso = opts.now().toISOString();
-	const marker: AppStateMarker = existing
-		? { ...existing, migration: opts.migration }
-		: {
-				schemaVersion: SCHEMA_VERSION,
-				appPath: "",
-				version: "",
-				installedAt: nowIso,
-				lastReconciledAt: nowIso,
-				installSource: "unknown",
-				migration: opts.migration,
-			};
-	await atomicWriteMarker(opts.stateDir, marker);
-}
-
-// readMigrationState returns the marker's migration block, defaulting to pending
-// when the file is absent or unparseable (self-healing, like the rest of the reader).
-export async function readMigrationState(stateDir: string): Promise<MigrationState> {
-	const existing = await readExisting(path.join(stateDir, APP_STATE_FILE_NAME));
-	return existing?.migration ?? { status: "pending" };
 }

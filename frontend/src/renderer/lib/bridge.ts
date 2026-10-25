@@ -301,10 +301,6 @@ export const aoBridge: AoBridge =
 			setAttentionState: () => undefined,
 			onOpenSession: () => () => undefined,
 		},
-		appState: {
-			getMigration: async () => ({ status: "pending" }),
-			setMigration: async () => undefined,
-		},
 		cliLink: {
 			setEnabled: async () => undefined,
 			inspect: async () => ({ ok: false as const, code: "unsupported" as const, message: "The desktop app is required to link the global ao command." }),
