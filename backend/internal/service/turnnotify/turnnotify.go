@@ -99,14 +99,14 @@ func (o *Observer) ApplyActivitySignal(ctx context.Context, id domain.SessionID,
 	}
 	switch {
 	case s.Event == "session-end" || (s.Valid && s.State == domain.ActivityExited):
-		o.sessionEnded(ctx, id, s.FinalAssistantMessage)
+		o.sessionEnded(ctx, id, s, s.FinalAssistantMessage)
 	case s.Event == "user-prompt-submit":
-		o.turnStarted(ctx, id)
+		o.turnStarted(ctx, id, s)
 	case s.Event == "stop":
 		if s.RunningSubagentIDs != nil && len(*s.RunningSubagentIDs) > 0 {
 			return nil // a later Stop ends the turn for real
 		}
-		o.turnEnded(ctx, id, s.FinalAssistantMessage)
+		o.turnEnded(ctx, id, s, s.FinalAssistantMessage)
 	}
 	return nil
 }
@@ -130,11 +130,16 @@ func nonInteractive(entrypoint string) bool {
 	return false
 }
 
-// worker returns the session only when it is a worker; orchestrators and
-// reviewers never produce synthesized reports.
-func (o *Observer) worker(ctx context.Context, id domain.SessionID) (domain.SessionRecord, bool) {
+// worker returns the session only when it is a live worker and the signal
+// would be accepted by the lifecycle manager. Next cannot say whether it
+// dropped a fenced signal, so the same fences apply here: terminated sessions,
+// non-TUI (chat) controllers, and a stale runtime launch are ignored.
+// Orchestrators and reviewers never produce synthesized reports.
+func (o *Observer) worker(ctx context.Context, id domain.SessionID, s ports.ActivitySignal) (domain.SessionRecord, bool) {
 	rec, ok, err := o.Sessions.GetSession(ctx, id)
-	if err != nil || !ok || rec.Kind != domain.KindWorker {
+	if err != nil || !ok || rec.Kind != domain.KindWorker || rec.IsTerminated ||
+		s.ControllerGeneration != "" || domain.NormalizeSessionMode(rec.Mode) != domain.SessionModeTUI ||
+		s.LaunchID != rec.Metadata.RuntimeLaunchID {
 		return domain.SessionRecord{}, false
 	}
 	return rec, true
@@ -149,8 +154,8 @@ func (o *Observer) cancel(t *turn) {
 	}
 }
 
-func (o *Observer) turnStarted(ctx context.Context, id domain.SessionID) {
-	if _, ok := o.worker(ctx, id); !ok {
+func (o *Observer) turnStarted(ctx context.Context, id domain.SessionID, s ports.ActivitySignal) {
+	if _, ok := o.worker(ctx, id, s); !ok {
 		return
 	}
 	o.mu.Lock()
@@ -164,8 +169,8 @@ func (o *Observer) turnStarted(ctx context.Context, id domain.SessionID) {
 	t.reported, t.notified, t.last = false, false, ""
 }
 
-func (o *Observer) turnEnded(ctx context.Context, id domain.SessionID, last string) {
-	if _, ok := o.worker(ctx, id); !ok {
+func (o *Observer) turnEnded(ctx context.Context, id domain.SessionID, s ports.ActivitySignal, last string) {
+	if _, ok := o.worker(ctx, id, s); !ok {
 		return
 	}
 	o.mu.Lock()
@@ -197,8 +202,8 @@ func (o *Observer) idleElapsed(id domain.SessionID, gen uint64) {
 	o.send(id, KindTurnEnded, last)
 }
 
-func (o *Observer) sessionEnded(ctx context.Context, id domain.SessionID, last string) {
-	if _, ok := o.worker(ctx, id); !ok {
+func (o *Observer) sessionEnded(ctx context.Context, id domain.SessionID, s ports.ActivitySignal, last string) {
+	if _, ok := o.worker(ctx, id, s); !ok {
 		return
 	}
 	o.mu.Lock()
@@ -221,7 +226,7 @@ func (o *Observer) send(id domain.SessionID, kind, last string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	rec, ok, err := o.Sessions.GetSession(ctx, id)
-	if err != nil || !ok {
+	if err != nil || !ok || rec.IsTerminated {
 		return
 	}
 	_, err = o.Reports.Create(ctx, reportsvc.CreateInput{

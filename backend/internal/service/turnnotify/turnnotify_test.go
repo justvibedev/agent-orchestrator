@@ -36,15 +36,17 @@ type fakeTimer struct{ stopped bool }
 func (t *fakeTimer) Stop() bool { t.stopped = true; return true }
 
 type harness struct {
-	o       *Observer
-	reports *fakeReports
-	pending []func()
-	delay   time.Duration
+	sessions fakeSessions
+	o        *Observer
+	reports  *fakeReports
+	pending  []func()
+	delay    time.Duration
 }
 
 func newHarness(kind domain.SessionKind) *harness {
 	h := &harness{reports: &fakeReports{}}
 	sessions := fakeSessions{"w1": {ID: "w1", ProjectID: "p", Kind: kind, Metadata: domain.SessionMetadata{Branch: "feat/x"}}}
+	h.sessions = sessions
 	h.o = New(Deps{Next: nopApplier{}, Sessions: sessions, Reports: h.reports,
 		AfterFunc: func(d time.Duration, f func()) stopper {
 			h.delay = d
@@ -151,5 +153,52 @@ func TestOrchestratorAndReviewerSessionsAreIgnored(t *testing.T) {
 		if len(h.reports.got) != 0 {
 			t.Fatalf("%s: reports = %d, want 0", kind, len(h.reports.got))
 		}
+	}
+}
+
+func TestFencedSignalsDoNotNotify(t *testing.T) {
+	cases := map[string]func(h *harness) ports.ActivitySignal{
+		"stale launch": func(h *harness) ports.ActivitySignal {
+			r := h.sessions["w1"]
+			r.Metadata.RuntimeLaunchID = "new"
+			h.sessions["w1"] = r
+			return ports.ActivitySignal{Event: "session-end", LaunchID: "old"}
+		},
+		"terminated": func(h *harness) ports.ActivitySignal {
+			r := h.sessions["w1"]
+			r.IsTerminated = true
+			h.sessions["w1"] = r
+			return ports.ActivitySignal{Event: "session-end"}
+		},
+		"chat mode": func(h *harness) ports.ActivitySignal {
+			r := h.sessions["w1"]
+			r.Mode = domain.SessionModeChat
+			h.sessions["w1"] = r
+			return ports.ActivitySignal{Event: "stop"}
+		},
+		"controller generation": func(h *harness) ports.ActivitySignal {
+			return ports.ActivitySignal{Event: "stop", ControllerGeneration: "g"}
+		},
+	}
+	for name, mk := range cases {
+		h := newHarness(domain.KindWorker)
+		sig := mk(h)
+		_ = h.o.ApplyActivitySignal(context.Background(), "w1", sig)
+		h.fire()
+		if len(h.reports.got) != 0 {
+			t.Fatalf("%s: reports = %d, want 0", name, len(h.reports.got))
+		}
+	}
+}
+
+func TestSessionTerminatedBeforeIdleDelaySendsNothing(t *testing.T) {
+	h := newHarness(domain.KindWorker)
+	h.signal("stop", "x")
+	r := h.sessions["w1"]
+	r.IsTerminated = true
+	h.sessions["w1"] = r
+	h.fire()
+	if len(h.reports.got) != 0 {
+		t.Fatalf("reports = %d, want 0", len(h.reports.got))
 	}
 }
