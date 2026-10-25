@@ -119,6 +119,14 @@ repeats. Reports route to the active project orchestrator at each attempt and
 remain pending when none is active. AO never spawns an orchestrator to deliver
 a report.
 
+The daemon also files two system-generated free-form reports for worker
+sessions (never orchestrators) from agent hook facts: `[auto] turn_ended` when
+a turn's `Stop` is followed by 60 seconds (`turnnotify.DefaultIdleDelay`) of
+idleness, and `[auto] exited` on `SessionEnd`. Each carries the branch and a
+truncated last-assistant-message excerpt, is due immediately, and is skipped
+when the worker filed its own report in that turn. At most one is sent per
+worker turn. State is in memory, so a daemon restart forgets pending timers.
+
 Scheduled delivery and exact same-turn user-message piggyback use Chat's
 durable semantic message boundary. Supported TUIs acknowledge delivery only
 after their native prompt hook reports acceptance of the exact durable batch
