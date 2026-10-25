@@ -34,6 +34,7 @@ import {
 	useEffect,
 	useMemo,
 	useState,
+	type ComponentProps,
 	type MouseEvent as ReactMouseEvent,
 	type ReactNode,
 } from "react";
@@ -45,6 +46,9 @@ import { isHostLocalWebLink } from "../../lib/loopback";
 import { canonicalLanguage } from "../../lib/code-highlight";
 import { fenceOf } from "../../lib/markdown-fence";
 import { EMOJI_GRAPHEME, rehypeStreamFade } from "../../lib/rehype-stream-fade";
+import { remarkLocalPaths } from "../../lib/remark-local-paths";
+import { isLocalPathCandidate } from "../../../shared/local-path";
+import { LocalPathMenu } from "../LocalPathMenu";
 import { artifactLinkForPath, findSessionLinks, isAoLink, isSessionLink, remarkSessionLinks } from "../../lib/session-links";
 import { useSessionLinkSource } from "../../lib/use-session-link-navigation";
 import {
@@ -83,7 +87,7 @@ export const ActivityTitle = memo(function ActivityTitle({ text }: { text: strin
 });
 
 /** GitHub-flavoured markdown: tables, strikethrough, task lists, autolinks. */
-const PLUGINS = [remarkGfm, remarkSessionLinks];
+const PLUGINS = [remarkGfm, remarkSessionLinks, remarkLocalPaths];
 // Reduced motion gets plain text, not a span per character that never animates.
 const prefersReducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 // How long a settled reply keeps its fade spans, so the last characters (and the final
@@ -451,15 +455,16 @@ export function useChatLinkWorkspaces() {
 }
 
 /** Inline code naming a listed session artifact, linked to that artifact. */
-export function ArtifactPathCode({ text, children }: { text: string; children: ReactNode }) {
+export function ArtifactPathCode({ text, children, fallback }: { text: string; children: ReactNode; fallback?: ReactNode }) {
 	const workspaces = useChatLinkWorkspaces();
 	const href = artifactLinkForPath(text, workspaces);
-	return href ? <MarkdownLink href={href}>{children}</MarkdownLink> : <>{children}</>;
+	return href ? <MarkdownLink href={href}>{children}</MarkdownLink> : <>{fallback ?? children}</>;
 }
 
 function InlineCode({ children }: { children?: ReactNode }) {
-	const { openFile: onFileOpen, openSession, workspacePaths } = useContext(OpenChatLink);
+	const { openFile: onFileOpen, openSession, remoteHost, workspacePaths } = useContext(OpenChatLink);
 	const insideLink = useContext(InsideMarkdownLink);
+	const safeOrigin = useContext(SafeOriginContent);
 	const text = typeof children === "string" ? children : undefined;
 	const filePath = text && onFileOpen ? findWorkspaceFilePath(text, workspacePaths) : undefined;
 	const code = (
@@ -468,7 +473,10 @@ function InlineCode({ children }: { children?: ReactNode }) {
 		</code>
 	);
 	if (insideLink) return code;
-	if (!filePath || !onFileOpen) return text?.includes("/") && openSession ? <ArtifactPathCode text={text}>{code}</ArtifactPathCode> : code;
+	if (!filePath || !onFileOpen) {
+		const local = text && !remoteHost && !safeOrigin && isLocalPathCandidate(text) ? <LocalPathMenu path={text}>{code}</LocalPathMenu> : code;
+		return text?.includes("/") && openSession ? <ArtifactPathCode text={text} fallback={local}>{code}</ArtifactPathCode> : local;
+	}
 	return (
 		<button
 			type="button"
@@ -484,6 +492,17 @@ function InlineCode({ children }: { children?: ReactNode }) {
 			{code}
 		</button>
 	);
+}
+
+/** Plain-text path marked by `remarkLocalPaths`; any other span renders unchanged. */
+function LocalPathSpan(props: ComponentProps<"span"> & { node?: unknown }) {
+	const { node: _node, children, ...rest } = props;
+	const { remoteHost } = useContext(OpenChatLink);
+	const insideLink = useContext(InsideMarkdownLink);
+	const safeOrigin = useContext(SafeOriginContent);
+	const path = (rest as Record<string, unknown>)["data-local-path"];
+	if (typeof path !== "string" || remoteHost || insideLink || safeOrigin) return <span {...rest}>{children}</span>;
+	return <LocalPathMenu path={path}>{children}</LocalPathMenu>;
 }
 
 const COMPONENTS: Components = {
@@ -556,6 +575,7 @@ const COMPONENTS: Components = {
 	},
 	// Only inline code reaches here; `pre` above takes every fence.
 	code: InlineCode,
+	span: LocalPathSpan,
 
 	// Wide tables scroll inside their own container so the conversation column
 	// never scrolls sideways.
