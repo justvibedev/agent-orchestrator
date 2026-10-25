@@ -1323,7 +1323,22 @@ func (w *Workspace) ObserveWorkspace(ctx context.Context, info ports.WorkspaceIn
 		Untracked: untracked,
 		Changes:   changes,
 		Commits:   parseObservedWorkspaceCommits(string(logOut)),
+		Landed:    w.observeLanded(ctx, path, strings.TrimSpace(string(head)), info),
 	}, nil
+}
+
+// observeLanded reports whether HEAD is already contained in the project base
+// ref. It reads local refs only and treats every failure, including a missing
+// base, as "not landed". A HEAD still at the session's creation commit is not
+// landed: it is trivially contained in the base it was cut from.
+func (w *Workspace) observeLanded(ctx context.Context, path, head string, info ports.WorkspaceInfo) bool {
+	base := strings.TrimSpace(info.BaseRef)
+	// "HEAD" is the spawn fallback when no default branch resolved, not a base.
+	if base == "" || base == "HEAD" || base == "@" || head == "" || head == strings.TrimSpace(info.BaseSHA) {
+		return false
+	}
+	out, err := w.run(ctx, w.binary, "-C", path, "rev-list", "-n", "1", "HEAD", "--not", base, "--")
+	return err == nil && strings.TrimSpace(string(out)) == ""
 }
 
 func parseObservedWorkspaceChanges(output string, limit int) ([]ports.WorkspaceChange, bool, bool) {

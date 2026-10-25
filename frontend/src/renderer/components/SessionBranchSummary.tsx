@@ -14,7 +14,7 @@ import {
 	Loader2,
 	Pencil,
 } from "lucide-react";
-import { sessionWorkspaceFilesQueryOptions, type WorkspaceFileSummary } from "../hooks/useSessionWorkspaceFiles";
+import { sessionWorkspaceFilesQueryOptions, sessionWorkspaceHistoryQueryOptions, type WorkspaceFileSummary } from "../hooks/useSessionWorkspaceFiles";
 import { apiErrorMessage } from "../lib/api-client";
 import { clientForSessionHost } from "../lib/host-clients";
 import { sessionUiKey } from "../lib/hosts";
@@ -44,6 +44,8 @@ type GitFacts = {
 	/** The daemon's commit and push facts; undefined until it has observed the branch. */
 	branch?: SessionBranchState;
 	base?: string;
+	/** The branch is already contained in the base ref. */
+	landed?: boolean;
 };
 
 type GitActionPlan = { primary: SessionGitActionKind; menu: SessionGitActionKind[] };
@@ -75,6 +77,17 @@ export function SessionBranchSummary({
 	const showGit = !session.cloud && session.kind !== "orchestrator";
 	const manifest = useQuery({ ...sessionWorkspaceFilesQueryOptions(session.id, undefined, hostId), enabled: showGit });
 
+	// Landed moves when the base ref or the commit count moves, not on file edits.
+	// Own key, outside the shared history prefix that every workspace_changed
+	// event invalidates. A hint only, so a failed read is silent.
+	const history = useQuery({
+		queryKey: ["session-landed", hostId ?? "", session.id, session.branchState?.commits ?? 0],
+		queryFn: sessionWorkspaceHistoryQueryOptions(session.id, undefined, hostId).queryFn,
+		enabled: showGit,
+		staleTime: 60_000,
+		retry: false,
+	});
+
 	const sections = manifest.data?.sections;
 	const facts: GitFacts = {
 		loaded: manifest.data !== undefined,
@@ -82,6 +95,7 @@ export function SessionBranchSummary({
 		committed: sections?.committed ?? [],
 		branch: session.branchState,
 		// head_fallback compares against HEAD because the base is unknown.
+		landed: history.data?.landed === true,
 		base: manifest.data?.compareMode === "head_fallback" ? undefined : displayBaseRef(manifest.data?.compareBaseRef),
 	};
 	const plan = gitActionPlan(facts, openPRNumber);
@@ -154,7 +168,7 @@ export function SessionBranchSummary({
 	return (
 		<InspectorSection surface={false} title={title}>
 			<section aria-label={t("inspector.branch")} className="flex flex-col" data-testid="inspector-branch">
-				{branch || naming ? <BranchLine base={facts.base} branch={branch} naming={naming} /> : null}
+				{branch || naming ? <BranchLine base={facts.base} branch={branch} landed={facts.landed} naming={naming} /> : null}
 				{cards}
 				{facts.uncommitted.length > 0 ? (
 					<GitStatusRow
@@ -187,7 +201,8 @@ export function SessionBranchSummary({
 	);
 }
 
-function BranchLine({ base, branch, naming }: { base?: string; branch?: string; naming: boolean }) {
+function BranchLine({ base, branch, landed, naming }: { base?: string; branch?: string; landed?: boolean; naming: boolean }) {
+	const { t } = useTranslation();
 	return (
 		<div className="flex min-w-0 items-center gap-1.5 pb-3 font-mono last:pb-0 text-xs text-muted-foreground">
 			<GitBranch aria-hidden="true" className="size-icon-2xs shrink-0" />
@@ -195,6 +210,7 @@ function BranchLine({ base, branch, naming }: { base?: string; branch?: string; 
 				{branch}
 			</span>}
 			{base && !naming ? <span className="shrink-0 text-passive">→ {base}</span> : null}
+			{landed && !naming ? <span className="shrink-0 text-passive" title={t("inspector.git.landedHint")}>· {t("inspector.git.landed")}</span> : null}
 		</div>
 	);
 }

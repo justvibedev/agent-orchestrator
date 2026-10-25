@@ -827,6 +827,8 @@
 	"inspector.git.someNotPushed_one": "{{count}} sem push",
 	"inspector.git.someNotPushed_many": "{{count}} sem push",
 	"inspector.git.someNotPushed_other": "{{count}} sem push",
+	"inspector.git.landed": "mesclada",
+	"inspector.git.landedHint": "Esta branch já está contida na branch base",
 	"inspector.git.uncommittedFiles_one": "{{count}} arquivo sem commit",
 	"inspector.git.uncommittedFiles_many": "{{count}} arquivos sem commit",
 	"inspector.git.uncommittedFiles_other": "{{count}} arquivos sem commit",

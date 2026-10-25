@@ -827,6 +827,8 @@
 	"inspector.git.someNotPushed_one": "{{count}} non poussé",
 	"inspector.git.someNotPushed_many": "{{count}} non poussés",
 	"inspector.git.someNotPushed_other": "{{count}} non poussés",
+	"inspector.git.landed": "fusionnée",
+	"inspector.git.landedHint": "Cette branche est déjà incluse dans la branche de base",
 	"inspector.git.uncommittedFiles_one": "{{count}} fichier non commité",
 	"inspector.git.uncommittedFiles_many": "{{count}} fichiers non commités",
 	"inspector.git.uncommittedFiles_other": "{{count}} fichiers non commités",

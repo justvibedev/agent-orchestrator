@@ -427,6 +427,11 @@ type WorkspaceObservation struct {
 	Untracked bool
 	Changes   []WorkspaceChange
 	Commits   []WorkspaceCommit
+	// Landed is true when HEAD has moved past the session's creation commit
+	// and is fully contained in the project base ref (local refs only, no
+	// fetch). False when the base is unknown or unresolvable. Display and
+	// cleanup hint only; it never gates cleanup.
+	Landed bool
 }
 
 // WorkspaceChange is one changed path reported by the workspace adapter.

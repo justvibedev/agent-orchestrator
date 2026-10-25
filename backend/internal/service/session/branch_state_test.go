@@ -179,3 +179,29 @@ func countGitCalls(t *testing.T) func() int {
 		return strings.Count(string(raw), "\n")
 	}
 }
+
+func TestGitHeadLanded(t *testing.T) {
+	repo := newPushableRepo(t)
+	creation := strings.TrimSpace(runGit(t, repo, "rev-parse", "HEAD"))
+	runGit(t, repo, "checkout", "-b", "feat/x")
+	ctx := context.Background()
+	if gitHeadLanded(ctx, repo, "main", creation) {
+		t.Fatal("fresh branch at its creation commit must not read as landed")
+	}
+	commitFile(t, repo, "a.go")
+	if gitHeadLanded(ctx, repo, "main", creation) {
+		t.Fatal("unmerged commits must not read as landed")
+	}
+	if gitHeadLanded(ctx, repo, "HEAD", creation) {
+		t.Fatal("HEAD fallback base must not read as landed")
+	}
+	if gitHeadLanded(ctx, repo, "", creation) || gitHeadLanded(ctx, repo, "refs/remotes/origin/nope", creation) {
+		t.Fatal("missing base must not read as landed")
+	}
+	runGit(t, repo, "checkout", "main")
+	runGit(t, repo, "merge", "--no-ff", "-m", "merge", "feat/x")
+	runGit(t, repo, "checkout", "feat/x")
+	if !gitHeadLanded(ctx, repo, "main", creation) {
+		t.Fatal("branch merged into main must read as landed")
+	}
+}

@@ -7664,6 +7664,8 @@ export interface components {
             behind?: null | number;
             commits: components["schemas"]["WorkspaceCommitSummary"][];
             commitsTruncated?: boolean;
+            /** @description Checked-out view only. True when HEAD has moved past the session's creation commit and is already contained in the project base ref (local refs only). A display and cleanup hint; it never changes cleanup behavior. */
+            landed?: boolean;
             /** @description Totals for All commits. Views only. */
             rangeSummary?: components["schemas"]["WorkspaceSummary"];
             sessionId: string;
