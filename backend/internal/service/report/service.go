@@ -25,6 +25,9 @@ type CreateInput struct {
 	Note      string
 	Message   string
 	Outputs   []domain.ReportOutput
+	// Immediate makes a free-form message report due now instead of waiting for
+	// the informational batch fallback. Daemon-synthesized notifications set it.
+	Immediate bool
 }
 
 // ArtifactRecorder shows a reported artifact in the worker's chat thread. It
@@ -125,6 +128,9 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (domain.ReportR
 		availableAt = now
 	default:
 		availableAt = now.Add(domain.ReportBatchFallback)
+		if input.Immediate && input.Message != "" {
+			availableAt = now
+		}
 	}
 	rec := domain.ReportRecord{
 		ID: s.newID(), SessionID: session.ID, ProjectID: session.ProjectID,

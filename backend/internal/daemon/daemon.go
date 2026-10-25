@@ -74,6 +74,7 @@ import (
 	settingssvc "github.com/aoagents/agent-orchestrator/backend/internal/service/settings"
 	"github.com/aoagents/agent-orchestrator/backend/internal/service/systemcheck"
 	"github.com/aoagents/agent-orchestrator/backend/internal/service/systeminstall"
+	"github.com/aoagents/agent-orchestrator/backend/internal/service/turnnotify"
 	usagesvc "github.com/aoagents/agent-orchestrator/backend/internal/service/usage"
 	sessionmanager "github.com/aoagents/agent-orchestrator/backend/internal/session_manager"
 	"github.com/aoagents/agent-orchestrator/backend/internal/skillassets"
@@ -639,7 +640,11 @@ func Run(buildVersion string) error {
 		return errors.New("wire report delivery: session manager lacks semantic send support")
 	}
 	var reportCoordinator *reportsvc.Coordinator
-	reportSvc := reportsvc.New(reportsvc.Deps{Store: store, Artifacts: chatSvc, OnCreated: func(domain.ReportRecord) {
+	var turnNotifier *turnnotify.Observer
+	reportSvc := reportsvc.New(reportsvc.Deps{Store: store, Artifacts: chatSvc, OnCreated: func(r domain.ReportRecord) {
+		if turnNotifier != nil {
+			turnNotifier.ReportFiled(r)
+		}
 		if reportCoordinator != nil {
 			reportCoordinator.Wake()
 		}
@@ -974,6 +979,9 @@ func Run(buildVersion string) error {
 	// Terminal hooks pass the hook process gate: a Claude process other than
 	// the session's own must not replace its activity or transcript.
 	hookActivity := hookprocess.New(lcStack.LCM, store, runtimeAdapter, nil, log)
+	// Hook Stop/SessionEnd facts that clear the gate also drive the synthesized
+	// turn_ended/exited reports to the worker's orchestrator.
+	turnNotifier = turnnotify.New(turnnotify.Deps{Next: hookActivity, Sessions: store, Reports: reportSvc, Log: log})
 	srv, err := httpd.NewWithDeps(cfg, log, termMgr, httpd.APIDeps{
 		Awake:              awakeSvc,
 		Projects:           projectSvc,
@@ -1007,7 +1015,7 @@ func Run(buildVersion string) error {
 		Settings:           settingsSvc,
 		CDC:                store,
 		Events:             cdcPipe.Broadcaster,
-		Activity:           hookActivity,
+		Activity:           turnNotifier,
 		NativeSessions:     nativeSessions,
 		UsageHooks:         usageCollector,
 		UsageSummary:       usagesvc.NewSummaryReader(store),
