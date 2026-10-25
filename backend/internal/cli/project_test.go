@@ -268,6 +268,26 @@ func TestProjectSetConfig_RulesFlags(t *testing.T) {
 	}
 }
 
+func TestProjectSetConfig_ConfigJSONKeepsVerifyCommand(t *testing.T) {
+	cfg := setConfigEnv(t)
+	srv, capture := projectServer(t, http.StatusOK, `{"status":"ok","project":{"id":"demo","config":{"verifyCommand":"npm test"}}}`)
+	writeRunFileFor(t, cfg, srv)
+
+	_, errOut, err := executeCLI(t, Deps{
+		ProcessAlive: func(int) bool { return true },
+	}, "project", "set-config", "demo", "--config-json", `{"verifyCommand":"npm test","sessionPrefix":"work"}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v\nstderr=%s", err, errOut)
+	}
+	var got setConfigRequest
+	if err := json.Unmarshal(capture.body, &got); err != nil {
+		t.Fatalf("decode request body: %v\nbody=%s", err, capture.body)
+	}
+	if got.Config.VerifyCommand != "npm test" || got.Config.SessionPrefix != "work" {
+		t.Fatalf("config = %#v, want verifyCommand preserved", got.Config)
+	}
+}
+
 func TestProjectSetConfig_ReviewerJSON(t *testing.T) {
 	cfg := setConfigEnv(t)
 	srv, capture := projectServer(t, http.StatusOK, `{"status":"ok","project":{"id":"demo","config":{"sessionPrefix":"work","reviewers":[{"harness":"claude-code"}]}}}`)
