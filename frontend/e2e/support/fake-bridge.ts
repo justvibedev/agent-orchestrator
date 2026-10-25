@@ -302,10 +302,6 @@ export async function installFakeBridge(page: Page, opts: FakeBridgeOptions = {}
 					setAttentionState: () => undefined,
 					onOpenSession: unsubscribe,
 				},
-				appState: {
-					getMigration: async () => ({ status: "completed" }),
-					setMigration: async () => undefined,
-				},
 				cliLink: {
 					setEnabled: async () => undefined,
 					inspect: async () => ({ ok: false as const, code: "unsupported" as const, message: "unavailable" }),
@@ -1194,7 +1190,6 @@ export async function installFakeAgent(page: Page, opts: FakeAgentOptions = {}):
 					reportSoundFailure: () => undefined,
 				},
 				tray: { setAttentionState: () => undefined, onOpenSession: unsubscribe },
-				appState: { getMigration: async () => ({ status: "completed" }), setMigration: async () => undefined },
 				cliLink: {
 					setEnabled: async () => undefined,
 					inspect: async () => ({ ok: false as const, code: "unsupported" as const, message: "unavailable" }),

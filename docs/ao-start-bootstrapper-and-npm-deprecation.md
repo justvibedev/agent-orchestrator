@@ -382,7 +382,7 @@ website.
 | 8   | Windows `ao start`                                        | Downloads NSIS `.exe`, runs installer, resolves + opens installed exe.                                                                                      |
 | 9   | Linux `ao start`                                          | Fetches chosen artifact and launches.                                                                                                                       |
 | 10  | `ao stop`/`ao status`/`ao spawn` after `ao start`         | Work against the app-owned daemon (CLI is a client).                                                                                                        |
-| 11  | Existing CLI user runs `npm update` then `ao start`       | New binary in place; `ao start` no longer starts a daemon, it opens the app; their `ao import` data migrates (per §6.4).                                    |
+| 11  | Existing CLI user runs `npm update` then `ao start`       | New binary in place; `ao start` no longer starts a daemon, it opens the app.                                     |
 
 > `ao start` opens the app through the calling shell's enriched env, so a green
 > `ao start` proves nothing about the Dock-launch path. Test the Dock path
@@ -397,8 +397,7 @@ website.
    package did. Test scope is **`@theharshitsingh/ao`**; the **prod package name**
    (the legacy `ao` users already have) still needs confirming, plus an `NPM_TOKEN`
    - publish workflow for each.
-2. **Legacy first-boot import** (§6.4): move into the desktop app, or drop from
-   `ao start` and rely on `ao import`?
+2. **Legacy first-boot import** (§6.4): removed; the legacy import feature no longer exists.
 3. **Linux artifact form:** `.deb`/`.rpm` (install) vs **AppImage** (fetch-and-run).
 4. **Draft release finalization:** `draft: false` vs a CI publish step.
 5. **Signing gate:** gate the launcher on signed+notarized builds, ship against

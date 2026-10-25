@@ -28,7 +28,6 @@ trigger: "Using the ao CLI in an AO workspace: creating Cues, spawning workers, 
 | `stop` | Stop the AO daemon | Shutting down AO | [commands/stop.md](commands/stop.md) |
 | `status` | Show daemon status | Verifying the daemon is up and healthy | [commands/status.md](commands/status.md) |
 | `doctor` | Run local health checks | Diagnosing AO setup problems | [commands/doctor.md](commands/doctor.md) |
-| `import` | Import projects from a legacy AO install | Migrating from the old flat-file store | [commands/import.md](commands/import.md) |
 | `version` | Print version information | Checking installed version | - |
 | `completion` | Generate shell completion scripts | Setting up tab completion | - |
 

@@ -2343,7 +2343,7 @@ func TestEmptyCloneOnboardingCreatesFirstWorkspace(t *testing.T) {
 			if out, err := exec.Command("git", "-C", prepared.Path, "symbolic-ref", "HEAD", "refs/heads/"+branch).CombinedOutput(); err != nil {
 				t.Fatalf("select initial branch: %v (%s)", err, out)
 			}
-			setup, err := importer.New(importer.Deps{}).PrepareGit(ctx, importer.GitPreparationInput{
+			setup, err := importer.New().PrepareGit(ctx, importer.GitPreparationInput{
 				ImportKind: importer.ImportKindProject, Path: prepared.Path,
 				ApprovedActions:  []string{importer.GitPreparationActionCommit},
 				InitialCommitMsg: "Start project",

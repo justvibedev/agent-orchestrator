@@ -44,7 +44,6 @@ import {
 	type RendererTelemetryQueuePurgeRequest,
 	type TelemetryPolicyView,
 } from "./shared/telemetry-policy";
-import type { MigrationState } from "./main/app-state";
 import type { UpdateSettings, UpdateStatus, UpdateInstallResult } from "./main/update-settings";
 import type { CloudAccount } from "./shared/cloud-account";
 import type { LocalLoginInput, LocalRegisterInput } from "./main/cloud-auth-local";
@@ -680,11 +679,6 @@ const api = {
 				ipcRenderer.off(TRAY_OPEN_SESSION_CHANNEL, wrapped);
 			};
 		},
-	},
-	appState: {
-		getMigration: () => ipcRenderer.invoke("appState:getMigration") as Promise<MigrationState>,
-		setMigration: (migration: MigrationState) =>
-			ipcRenderer.invoke("appState:setMigration", migration) as Promise<void>,
 	},
 	cliLink: {
 		setEnabled: (enabled: boolean) => ipcRenderer.invoke("cliLink:setEnabled", enabled) as Promise<void>,

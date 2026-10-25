@@ -103,7 +103,6 @@ const ROUTE_TEMPLATES = [
 	"/api/v1/agents/{agent}/verify",
 	"/api/v1/desktop/sessions/{sessionId}/workspace",
 	"/api/v1/events",
-	"/api/v1/import",
 	"/api/v1/imports/prepare-git",
 	"/api/v1/imports/validate",
 	"/api/v1/notifications",

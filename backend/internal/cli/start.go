@@ -597,7 +597,7 @@ func (p *progressWriter) done() {
 }
 
 // writerIsInteractive reports whether w is an interactive terminal, mirroring
-// stdinIsInteractive: only a real *os.File backed by a character device counts,
+// the same rule as elsewhere: only a real *os.File backed by a character device counts,
 // so a bytes.Buffer or pipe is treated as non-interactive.
 func writerIsInteractive(w io.Writer) bool {
 	f, ok := w.(*os.File)
