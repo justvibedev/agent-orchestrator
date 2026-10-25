@@ -6,10 +6,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -23,6 +25,26 @@ const ReportInterruptWindow = 3 * time.Minute
 // OrchestratorBusyRetry is how long a batch refused with ErrOrchestratorBusy
 // waits before its next delivery attempt.
 const OrchestratorBusyRetry = 30 * time.Second
+
+// Delivery retry policy. Transient failures back off exponentially per batch
+// (the deferred available_at keeps the batch from being re-picked hot) up to
+// MaxDeliveryBackoff; after MaxDeliveryAttempts a batch only retries every
+// ExhaustedDeliveryRetry.
+const (
+	MaxDeliveryBackoff     = 10 * time.Minute
+	MaxDeliveryAttempts    = 10
+	ExhaustedDeliveryRetry = time.Hour
+	// UndeliverableRecheck is how often a project parked for lacking an
+	// orchestrator is re-examined (Wake also re-examines it immediately).
+	UndeliverableRecheck = time.Minute
+	// errorLogInterval rate-limits repeated identical delivery error logs.
+	errorLogInterval = 5 * time.Minute
+	scheduleLimit    = 1000
+)
+
+// errNoOrchestrator marks a project whose reports cannot be delivered because
+// it has no live orchestrator. It is not retried hot.
+var errNoOrchestrator = errors.New("project has no active orchestrator")
 
 // ErrReportDeliveryModeUnsupported reports a target without semantic delivery.
 var ErrReportDeliveryModeUnsupported = errors.New("report delivery requires a semantic conversation")
@@ -58,7 +80,20 @@ type Coordinator struct {
 	newToken   func() string
 	retryDelay time.Duration
 	wake       chan struct{}
+	rewake     atomic.Bool
 	mu         sync.Mutex
+	log        *slog.Logger
+	// holds delays projects in memory: parked ones lack an orchestrator,
+	// others failed before a batch could be claimed (so no durable backoff).
+	holds   map[domain.ProjectID]hold
+	logged  map[string]time.Time
+	statusM sync.Mutex
+	parked  map[domain.ProjectID]time.Time
+}
+
+type hold struct {
+	until  time.Time
+	parked bool
 }
 
 // CoordinatorDeps configures durable scheduling and delivery.
@@ -68,6 +103,7 @@ type CoordinatorDeps struct {
 	Now        func() time.Time
 	NewToken   func() string
 	RetryDelay time.Duration
+	Logger     *slog.Logger
 }
 
 // NewCoordinator constructs an idle report delivery coordinator.
@@ -81,7 +117,29 @@ func NewCoordinator(d CoordinatorDeps) *Coordinator {
 	if d.RetryDelay <= 0 {
 		d.RetryDelay = 5 * time.Second
 	}
-	return &Coordinator{store: d.Store, delivery: d.Delivery, now: d.Now, newToken: d.NewToken, retryDelay: d.RetryDelay, wake: make(chan struct{}, 1)}
+	if d.Logger == nil {
+		d.Logger = slog.New(slog.DiscardHandler)
+	}
+	return &Coordinator{
+		store: d.Store, delivery: d.Delivery, now: d.Now, newToken: d.NewToken, retryDelay: d.RetryDelay,
+		wake: make(chan struct{}, 1), log: d.Logger,
+		holds: map[domain.ProjectID]hold{}, logged: map[string]time.Time{}, parked: map[domain.ProjectID]time.Time{},
+	}
+}
+
+// UndeliverableProjects lists projects whose pending reports are parked because
+// no orchestrator is running, with the time each was first parked.
+func (c *Coordinator) UndeliverableProjects() map[domain.ProjectID]time.Time {
+	out := map[domain.ProjectID]time.Time{}
+	if c == nil {
+		return out
+	}
+	c.statusM.Lock()
+	defer c.statusM.Unlock()
+	for id, since := range c.parked {
+		out[id] = since
+	}
+	return out
 }
 
 // Wake asks the coordinator to inspect durable scheduling state.
@@ -89,6 +147,7 @@ func (c *Coordinator) Wake() {
 	if c == nil {
 		return
 	}
+	c.rewake.Store(true)
 	select {
 	case c.wake <- struct{}{}:
 	default:
@@ -106,6 +165,9 @@ func (c *Coordinator) run(ctx context.Context) {
 	for {
 		delay, err := c.RunDue(ctx)
 		if err != nil {
+			c.logRateLimited("run-due", "report delivery failed", err)
+		}
+		if delay < 0 && err != nil {
 			delay = c.retryDelay
 		}
 		if delay < 0 {
@@ -135,22 +197,133 @@ func (c *Coordinator) RunDue(ctx context.Context) (time.Duration, error) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	// A Wake means something changed (new report, new orchestrator): give
+	// every parked or held project another look.
+	if c.rewake.Swap(false) {
+		c.holds = map[domain.ProjectID]hold{}
+	}
+	var errs []error
 	for {
-		pending, err := c.store.ListPendingReportSchedule(ctx, 1)
+		pending, err := c.store.ListPendingReportSchedule(ctx, scheduleLimit)
 		if err != nil {
-			return c.retryDelay, err
-		}
-		if len(pending) == 0 {
-			return -1, nil
+			return c.retryDelay, errors.Join(append(errs, err)...)
 		}
 		now := c.now().UTC()
-		if pending[0].AvailableAt.After(now) {
-			return pending[0].AvailableAt.Sub(now), nil
+		next := time.Duration(-1)
+		note := func(d time.Duration) {
+			if d < 0 {
+				d = 0
+			}
+			if next < 0 || d < next {
+				next = d
+			}
 		}
-		if err := c.deliverProject(ctx, pending[0].ProjectID); err != nil {
-			return c.retryDelay, err
+		live := map[domain.ProjectID]bool{}
+		delivered := false
+		// pending holds one row per project, earliest first.
+		for _, rec := range pending {
+			project := rec.ProjectID
+			live[project] = true
+			if h, ok := c.holds[project]; ok && h.until.After(now) {
+				note(h.until.Sub(now))
+				continue
+			}
+			if rec.AvailableAt.After(now) {
+				note(rec.AvailableAt.Sub(now))
+				continue
+			}
+			err := c.deliverProject(ctx, project)
+			switch {
+			case err == nil:
+				delete(c.holds, project)
+				c.unpark(project)
+				delivered = true
+			case errors.Is(err, errNoOrchestrator):
+				c.park(project, now)
+				c.holds[project] = hold{until: now.Add(UndeliverableRecheck), parked: true}
+				note(UndeliverableRecheck)
+			default:
+				errs = append(errs, fmt.Errorf("project %s: %w", project, err))
+				c.holds[project] = hold{until: now.Add(c.retryDelay)}
+				note(c.retryDelay)
+			}
+			if delivered {
+				break
+			}
+		}
+		if delivered {
+			continue
+		}
+		for project := range c.holds {
+			if !live[project] {
+				delete(c.holds, project)
+				c.unpark(project)
+			}
+		}
+		return next, errors.Join(errs...)
+	}
+}
+
+func (c *Coordinator) park(project domain.ProjectID, now time.Time) {
+	c.statusM.Lock()
+	_, already := c.parked[project]
+	if !already {
+		c.parked[project] = now
+	}
+	c.statusM.Unlock()
+	if !already {
+		c.log.Warn("worker reports are undeliverable: project has no active orchestrator; they are parked until one starts", "project", project)
+	}
+}
+
+func (c *Coordinator) unpark(project domain.ProjectID) {
+	c.statusM.Lock()
+	_, was := c.parked[project]
+	delete(c.parked, project)
+	c.statusM.Unlock()
+	if was {
+		c.log.Info("parked worker reports are deliverable again", "project", project)
+	}
+}
+
+// logRateLimited logs err at most once per errorLogInterval per key.
+func (c *Coordinator) logRateLimited(key, msg string, err error) {
+	now := c.now()
+	c.statusM.Lock()
+	last, ok := c.logged[key]
+	if ok && now.Sub(last) < errorLogInterval {
+		c.statusM.Unlock()
+		return
+	}
+	c.logged[key] = now
+	c.statusM.Unlock()
+	c.log.Error(msg, "error", err)
+}
+
+// backoff defers a claimed batch with exponential delay based on its attempts
+// so a failing batch never stays the earliest-due work.
+func (c *Coordinator) backoff(ctx context.Context, batch PreparedBatch, cause error) error {
+	attempts := int64(1)
+	for _, r := range batch.Reports {
+		if r.DeliveryAttempts > attempts {
+			attempts = r.DeliveryAttempts
 		}
 	}
+	delay := ExhaustedDeliveryRetry
+	if attempts < int64(MaxDeliveryAttempts) {
+		delay = c.retryDelay
+		for i := int64(1); i < attempts && delay < MaxDeliveryBackoff; i++ {
+			delay *= 2
+		}
+		if delay > MaxDeliveryBackoff {
+			delay = MaxDeliveryBackoff
+		}
+	}
+	_, deferErr := c.store.DeferReportBatch(ctx, batch.ProjectID, batch.Token, c.now().UTC().Add(delay), cause.Error())
+	if deferErr != nil {
+		return errors.Join(cause, deferErr)
+	}
+	return cause
 }
 
 func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.ProjectID) error {
@@ -159,7 +332,7 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 		return err
 	}
 	if !ok {
-		return fmt.Errorf("project %s has no active orchestrator", projectID)
+		return errNoOrchestrator
 	}
 	batch, err := c.claim(ctx, projectID)
 	if err != nil || len(batch.Reports) == 0 {
@@ -171,12 +344,12 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 		for _, worker := range batch.stuckWorkers() {
 			acquired, next, acquireErr := c.store.AcquireReportInterrupt(ctx, worker, c.now().UTC(), ReportInterruptWindow)
 			if acquireErr != nil {
-				return c.release(ctx, batch, acquireErr)
+				return c.backoff(ctx, batch, acquireErr)
 			}
 			if acquired {
 				interrupted = true
 				if interruptErr := c.delivery.Interrupt(ctx, target.ID); interruptErr != nil {
-					return c.release(ctx, batch, interruptErr)
+					return c.backoff(ctx, batch, interruptErr)
 				}
 			} else if nextInterrupt.IsZero() || next.Before(nextInterrupt) {
 				nextInterrupt = next
@@ -189,12 +362,10 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 	}
 	if err := c.delivery.Submit(ctx, target.ID, batch.Render(), batch.IdempotencyKey()); err != nil {
 		if errors.Is(err, ErrOrchestratorBusy) {
-			// Released, the batch would stay the earliest due and every retry would
-			// stop RunDue before any other project's reports. Back off instead.
 			_, deferErr := c.store.DeferReportBatch(ctx, batch.ProjectID, batch.Token, c.now().UTC().Add(OrchestratorBusyRetry), err.Error())
 			return deferErr
 		}
-		return c.release(ctx, batch, err)
+		return c.backoff(ctx, batch, err)
 	}
 	_, err = c.store.AcknowledgeReportBatch(ctx, batch.ProjectID, batch.Token, c.now().UTC())
 	return err

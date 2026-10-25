@@ -93,8 +93,9 @@ func (s *Store) ListReportsByProject(ctx context.Context, id domain.ProjectID) (
 	return s.reportsWithOutputs(ctx, rows)
 }
 
-// ListPendingReportSchedule returns the earliest pending work regardless of
-// availability so a coordinator can restore the original deadline after restart.
+// ListPendingReportSchedule returns each project's earliest pending report,
+// ordered by availability, regardless of availability so a coordinator can
+// restore the original deadlines after restart.
 func (s *Store) ListPendingReportSchedule(ctx context.Context, limit int64) ([]domain.ReportRecord, error) {
 	rows, err := s.qr.ListPendingReportSchedule(ctx, limit)
 	if err != nil {

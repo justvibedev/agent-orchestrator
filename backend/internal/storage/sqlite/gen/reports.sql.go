@@ -410,11 +410,22 @@ func (q *Queries) GetReportInterrupt(ctx context.Context, sessionID string) (tim
 
 const listPendingReportSchedule = `-- name: ListPendingReportSchedule :many
 SELECT id, session_id, project_id, state, note, message, created_at, delivery_state, available_at, settlement_deadline, repeat_count, claim_token, claimed_at, delivery_attempts, acknowledged_at, last_error, delivery_batch_id FROM reports
-WHERE delivery_state = 'pending'
+WHERE id IN (
+    SELECT ranked.id FROM (
+        SELECT r.id, ROW_NUMBER() OVER (
+            PARTITION BY r.project_id ORDER BY r.available_at, r.created_at, r.id
+        ) AS rn
+        FROM reports r
+        WHERE r.delivery_state = 'pending'
+    ) AS ranked
+    WHERE ranked.rn = 1
+)
 ORDER BY available_at, created_at, id
 LIMIT ?
 `
 
+// One row per project: that project's earliest pending report. A global
+// earliest-first list would let one undeliverable project starve the rest.
 func (q *Queries) ListPendingReportSchedule(ctx context.Context, limit int64) ([]Report, error) {
 	rows, err := q.db.QueryContext(ctx, listPendingReportSchedule, limit)
 	if err != nil {

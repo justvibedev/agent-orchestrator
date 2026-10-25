@@ -29,8 +29,19 @@ ORDER BY r.created_at, r.id, o.position;
 SELECT * FROM reports WHERE project_id = ? ORDER BY created_at, id;
 
 -- name: ListPendingReportSchedule :many
+-- One row per project: that project's earliest pending report. A global
+-- earliest-first list would let one undeliverable project starve the rest.
 SELECT * FROM reports
-WHERE delivery_state = 'pending'
+WHERE id IN (
+    SELECT ranked.id FROM (
+        SELECT r.id, ROW_NUMBER() OVER (
+            PARTITION BY r.project_id ORDER BY r.available_at, r.created_at, r.id
+        ) AS rn
+        FROM reports r
+        WHERE r.delivery_state = 'pending'
+    ) AS ranked
+    WHERE ranked.rn = 1
+)
 ORDER BY available_at, created_at, id
 LIMIT ?;
 
