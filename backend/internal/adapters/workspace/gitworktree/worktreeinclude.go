@@ -43,6 +43,9 @@ func (w *Workspace) seedWorktreeInclude(ctx context.Context, sourceRoot, destina
 	}
 	ignored := strings.Split(string(ignoredOut), "\x00")
 	for _, entry := range strings.Split(string(out), "\x00") {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if entry == "" || !coveredByIgnored(entry, ignored) {
 			continue
 		}
@@ -58,7 +61,7 @@ func (w *Workspace) seedWorktreeInclude(ctx context.Context, sourceRoot, destina
 		if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
 			return err
 		}
-		if err := seedWorktreeIncludeEntry(sourceRoot, source, destination); err != nil {
+		if err := seedWorktreeIncludeEntry(ctx, sourceRoot, source, destination); err != nil {
 			return fmt.Errorf("gitworktree: seed %s entry %q: %w", worktreeIncludeFile, rel, err)
 		}
 	}
@@ -68,7 +71,7 @@ func (w *Workspace) seedWorktreeInclude(ctx context.Context, sourceRoot, destina
 // seedWorktreeIncludeEntry copies one manifest match. Directories are walked
 // here so a single unsafe or vanished child is skipped without discarding its
 // siblings; each leaf goes through copyWorkspaceAssetTree for confinement.
-func seedWorktreeIncludeEntry(sourceRoot, source, destination string) error {
+func seedWorktreeIncludeEntry(ctx context.Context, sourceRoot, source, destination string) error {
 	info, err := os.Lstat(source)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -85,10 +88,13 @@ func seedWorktreeIncludeEntry(sourceRoot, source, destination string) error {
 			return err
 		}
 		for _, entry := range entries {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			if hasWorkspaceManagedComponent(entry.Name()) {
 				continue
 			}
-			if err := seedWorktreeIncludeEntry(sourceRoot, filepath.Join(source, entry.Name()), filepath.Join(destination, entry.Name())); err != nil {
+			if err := seedWorktreeIncludeEntry(ctx, sourceRoot, filepath.Join(source, entry.Name()), filepath.Join(destination, entry.Name())); err != nil {
 				return err
 			}
 		}

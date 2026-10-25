@@ -1705,3 +1705,27 @@ func TestWorkspaceIntegrationWorktreeIncludeAbsentManifestIsNoop(t *testing.T) {
 		t.Fatalf(".env copied without a manifest: %v", err)
 	}
 }
+
+func TestWorkspaceIntegrationWorktreeIncludeStopsOnCancelledContext(t *testing.T) {
+	git := requireGit(t)
+	tmp := t.TempDir()
+	repo := setupOriginClone(t, git, filepath.Join(tmp, "root"))
+	for name, body := range map[string]string{".gitignore": ".env\n", ".env": "x", ".worktreeinclude": ".env\n"} {
+		if err := os.WriteFile(filepath.Join(repo, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ws, err := New(Options{Binary: git, ManagedRoot: filepath.Join(tmp, "managed"), RepoResolver: StaticRepoResolver{"proj": repo}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dest := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := ws.seedWorktreeInclude(ctx, repo, dest); !errors.Is(err, context.Canceled) {
+		t.Fatalf("seed with cancelled ctx = %v, want context.Canceled", err)
+	}
+	if _, err := os.Lstat(filepath.Join(dest, ".env")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf(".env copied after cancellation: %v", err)
+	}
+}
