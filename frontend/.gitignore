@@ -1,4 +1,2 @@
-app-update.yml
 .env.local
-/update-helper/
 /dist-host/

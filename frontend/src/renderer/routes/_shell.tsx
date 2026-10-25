@@ -24,7 +24,6 @@ import { KeyboardShortcutsSettingsDialog } from "../components/settings/Keyboard
 import { ShellTopbar } from "../components/ShellTopbar";
 import { SessionTopbarProvider } from "../components/SessionTopbarPortal";
 import { OrchestratorReplacementDialog } from "../components/OrchestratorReplacementDialog";
-import { RestartToUpdateDialog } from "../components/RestartToUpdateDialog";
 import { Sidebar } from "../components/Sidebar";
 import type { CreateProjectInput } from "../components/CreateProjectFlow";
 import { useRemoteHosts } from "../hooks/useRemoteHosts";
@@ -1333,7 +1332,6 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 				) : null}
 				<GlobalNewTaskDialog />
 				<GlobalToast />
-				<RestartToUpdateDialog />
 				{quitConfirmDialog}
 				<KeyboardShortcutsDialog
 					open={isKeyboardShortcutsOpen}

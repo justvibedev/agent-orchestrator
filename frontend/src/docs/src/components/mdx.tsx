@@ -244,7 +244,7 @@ export function PlatformSupport({
 }
 
 export function InstallDownloads() {
-  const release = "https://github.com/Untrivial-ai/agent-orchestrator/releases/latest/download";
+  const release = "https://github.com/justvibedev/agent-orchestrator/releases/latest/download";
   const downloads = [
     { platform: "macOS Apple silicon", assets: [["Disk image", "darwin-arm64.dmg"], ["Zip", "darwin-arm64.zip"]] },
     { platform: "macOS Intel", assets: [["Disk image", "darwin-x64.dmg"], ["Zip", "darwin-x64.zip"]] },

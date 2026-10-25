@@ -1,6 +1,5 @@
 import type { Page } from "@playwright/test";
 
-import type { UpdateSettings, UpdateStatus } from "../../src/main/update-settings";
 import type { AoBridge } from "../../src/preload";
 import type { DaemonStatus } from "../../src/shared/daemon-status";
 import { coerceUiSettings, DEFAULT_UI_SETTINGS } from "../../src/shared/ui-locale";
@@ -29,36 +28,21 @@ import { coerceUiSettings, DEFAULT_UI_SETTINGS } from "../../src/shared/ui-local
 // not "the boundary works."
 
 export type FakeBridgeOptions = {
-	/** Version string surfaced by app.getVersion() (Settings > Updates). */
+	/** Version string surfaced by app.getVersion(). */
 	version?: string;
 	/** Daemon lifecycle state the renderer should observe. */
 	daemonState?: "ready" | "starting" | "stopped" | "error";
 	/** REST port advertised when ready (mock data is served regardless). */
 	daemonPort?: number;
-	/** Desktop updater state surfaced in Settings > Updates. */
-	updateStatus?: UpdateStatus;
-	/** Persisted automatic-update policy surfaced in Settings > Updates. */
-	updateSettings?: UpdateSettings;
 };
 
 export async function installFakeBridge(page: Page, opts: FakeBridgeOptions = {}): Promise<void> {
 	const version = opts.version ?? "9.9.9-test";
 	const daemonState = opts.daemonState ?? "ready";
 	const daemonPort = opts.daemonPort ?? 8080;
-	const updateStatus = opts.updateStatus ?? ({ state: "idle" } satisfies UpdateStatus);
-	const updateSettings =
-		opts.updateSettings ??
-		({ enabled: false, channel: "latest", nightlyAck: false, feature: null } satisfies UpdateSettings);
 	await page.addInitScript(
-		({ version, daemonState, daemonPort, updateStatus, updateSettings }) => {
+		({ version, daemonState, daemonPort }) => {
 			const unsubscribe = () => () => undefined;
-			const updateListeners = new Set<(status: UpdateStatus) => void>();
-			let currentUpdateSettings = updateSettings;
-			let currentUpdateStatus = updateStatus;
-			const emitUpdateStatus = (next: UpdateStatus) => {
-				currentUpdateStatus = next;
-				for (const listener of updateListeners) listener(next);
-			};
 			const status: DaemonStatus =
 				daemonState === "ready" ? { state: "ready", port: daemonPort } : { state: daemonState };
 			const navState = (viewId: string) => ({
@@ -295,15 +279,6 @@ export async function installFakeBridge(page: Page, opts: FakeBridgeOptions = {}
 					link: async () => ({ ok: false as const, code: "unsupported" as const, message: "unavailable" }),
 					unlink: async () => ({ ok: false as const, code: "unsupported" as const, message: "unavailable" }),
 				},
-				updateSettings: {
-					get: async () => currentUpdateSettings,
-					set: async (next: UpdateSettings) => {
-						currentUpdateSettings = next;
-					},
-					setMacDifferentialUpdates: async (enabled: boolean) => {
-						currentUpdateSettings = { ...currentUpdateSettings, macDifferentialUpdates: enabled };
-					},
-				},
 				uiSettings: {
 					get: async () => ({ ...DEFAULT_UI_SETTINGS }),
 					set: async (settings) => coerceUiSettings({ ...DEFAULT_UI_SETTINGS, ...settings }),
@@ -312,27 +287,6 @@ export async function installFakeBridge(page: Page, opts: FakeBridgeOptions = {}
 					get: async () => ({}),
 					set: async (overrides) => overrides,
 					setRecording: async () => undefined,
-				},
-				updates: {
-					getStatus: async () => currentUpdateStatus,
-					check: async () => undefined,
-					returnHome: async () => undefined,
-					download: async () => undefined,
-					install: async () => undefined,
-					isPostUpdateRelaunch: async () => false,
-					relaunch: async () => undefined,
-					onStatus: (listener: (status: UpdateStatus) => void) => {
-						updateListeners.add(listener);
-						return () => {
-							updateListeners.delete(listener);
-						};
-					},
-				},
-				// UpdatesSection calls featureBuilds.getActive() immediately on mount; an
-				// omitted namespace would surface as a swallowed React Query error.
-				featureBuilds: {
-					list: async () => [],
-					getActive: async () => null,
 				},
 				remotes: {
 					list: async () => [],
@@ -375,12 +329,9 @@ export async function installFakeBridge(page: Page, opts: FakeBridgeOptions = {}
 					agentBrowserUrl: async () => "",
 				},
 			} satisfies AoBridge;
-			(window as unknown as { __aoFakeUpdates: { setStatus: (status: UpdateStatus) => void } }).__aoFakeUpdates = {
-				setStatus: emitUpdateStatus,
-			};
 			(window as unknown as { ao: unknown }).ao = ao;
 		},
-		{ version, daemonState, daemonPort, updateStatus, updateSettings },
+		{ version, daemonState, daemonPort },
 	);
 }
 
@@ -481,14 +432,9 @@ export type FakePressureProgress = {
 	delivered: number;
 };
 
-export type FakeUpdateController = {
-	setStatus: (status: UpdateStatus) => void;
-};
-
 declare global {
 	interface Window {
 		__aoFakeAgent?: FakeAgentController;
-		__aoFakeUpdates?: FakeUpdateController;
 	}
 }
 
@@ -1169,17 +1115,6 @@ export async function installFakeAgent(page: Page, opts: FakeAgentOptions = {}):
 					link: async () => ({ ok: false as const, code: "unsupported" as const, message: "unavailable" }),
 					unlink: async () => ({ ok: false as const, code: "unsupported" as const, message: "unavailable" }),
 				},
-				updateSettings: {
-					get: async () => ({
-						enabled: false,
-						channel: "latest",
-						nightlyAck: false,
-						feature: null,
-						macDifferentialUpdates: false,
-					}),
-					set: async () => undefined,
-					setMacDifferentialUpdates: async () => undefined,
-				},
 				uiSettings: {
 					get: async () => ({ ...DEFAULT_UI_SETTINGS }),
 					set: async (settings) => coerceUiSettings({ ...DEFAULT_UI_SETTINGS, ...settings }),
@@ -1188,22 +1123,6 @@ export async function installFakeAgent(page: Page, opts: FakeAgentOptions = {}):
 					get: async () => ({}),
 					set: async (overrides) => overrides,
 					setRecording: async () => undefined,
-				},
-				updates: {
-					getStatus: async () => ({ state: "idle" }),
-					check: async () => undefined,
-					returnHome: async () => undefined,
-					download: async () => undefined,
-					install: async () => undefined,
-					isPostUpdateRelaunch: async () => false,
-					relaunch: async () => undefined,
-					onStatus: unsubscribe,
-				},
-				// UpdatesSection calls featureBuilds.getActive() immediately on mount; an
-				// omitted namespace would surface as a swallowed React Query error.
-				featureBuilds: {
-					list: async () => [],
-					getActive: async () => null,
 				},
 				remotes: {
 					list: async () => [],

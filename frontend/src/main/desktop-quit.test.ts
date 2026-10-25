@@ -7,7 +7,6 @@ function setup(overrides: Partial<QuitOptions> = {}) {
 	const options: QuitOptions = {
 		platform: "darwin",
 		hasTray: () => true,
-		isUpdateRestartRequested: () => false,
 		hasWindow: () => true,
 		closeWindow: vi.fn(),
 		hideDock: vi.fn(),
@@ -73,14 +72,6 @@ describe("desktop quit", () => {
 		controller.cancelQuit();
 		expect(controller.handleBeforeQuit(event)).toBe(true);
 		expect(options.closeWindow).toHaveBeenCalledOnce();
-	});
-
-	it("allows update restart, then backgrounds again if the update is canceled", () => {
-		let restarting = true;
-		const { controller, event } = setup({ isUpdateRestartRequested: () => restarting });
-		expect(controller.handleBeforeQuit(event)).toBe(false);
-		restarting = false;
-		expect(controller.handleBeforeQuit(event)).toBe(true);
 	});
 
 	it.each<NodeJS.Platform>(["win32", "linux"])("keeps %s quit behavior unchanged", (platform) => {

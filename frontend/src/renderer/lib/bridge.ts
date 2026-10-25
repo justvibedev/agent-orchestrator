@@ -1,6 +1,5 @@
 import type { AoBridge } from "../../preload";
 import { coerceUiSettings, DEFAULT_UI_SETTINGS } from "../../shared/ui-locale";
-export type { FeatureBuild } from "../../main/feature-builds";
 
 
 export const aoBridge: AoBridge =
@@ -298,11 +297,6 @@ export const aoBridge: AoBridge =
 			link: async () => ({ ok: false as const, code: "unsupported" as const, message: "The desktop app is required to link the global ao command." }),
 			unlink: async () => ({ ok: false as const, code: "unsupported" as const, message: "The desktop app is required to link the global ao command." }),
 		},
-		updateSettings: {
-			get: async () => ({ enabled: false, channel: "latest", nightlyAck: false, feature: null, macDifferentialUpdates: false }),
-			set: async () => undefined,
-			setMacDifferentialUpdates: async () => undefined,
-		},
 		uiSettings: {
 			get: async () => ({ ...DEFAULT_UI_SETTINGS }),
 			set: async (settings) => coerceUiSettings({ ...DEFAULT_UI_SETTINGS, ...settings }),
@@ -311,20 +305,6 @@ export const aoBridge: AoBridge =
 			get: async () => ({}),
 			set: async (overrides) => overrides,
 			setRecording: async () => undefined,
-		},
-		updates: {
-			getStatus: async () => ({ state: "idle" }),
-			check: async () => undefined,
-			returnHome: async () => undefined,
-			download: async () => undefined,
-			install: async () => undefined,
-			isPostUpdateRelaunch: async () => false,
-			relaunch: async () => undefined,
-			onStatus: () => () => undefined,
-		},
-		featureBuilds: {
-			list: async () => [],
-			getActive: async () => null,
 		},
 		// The daemon-served web build has no Electron bridge and so no access to
 		// ~/.ao/remotes.json. Reporting no hosts leaves the UI showing local only,

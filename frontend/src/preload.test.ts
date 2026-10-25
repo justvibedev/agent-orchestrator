@@ -73,14 +73,3 @@ describe("preload repository branch bridge", () => {
 		expect(electronMocks.invoke).toHaveBeenCalledWith("app:getRepositoryBranch", "/repo/project");
 	});
 });
-
-describe("preload Developer Mode updater bridge", () => {
-	it("sends only the updater eligibility boolean to the main process", async () => {
-		await exposedBridge().updateSettings.setMacDifferentialUpdates(true);
-
-		expect(electronMocks.invoke).toHaveBeenCalledWith(
-			"updateSettings:setMacDifferentialUpdates",
-			true,
-		);
-	});
-});

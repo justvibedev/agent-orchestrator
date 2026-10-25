@@ -27,30 +27,13 @@ test("renderer: packaged bundle launches and paints @T0 @INS", async ({ page }) 
 	// The real "deb/zip installs cleanly on the reference image" check is a pod
 	// packaging step with no renderer surface. The renderer-observable proof that
 	// the install produced a runnable app is that the bundle loads, the shell
-	// paints, and the app carries a real version string (bundle integrity). The
+	// paints, and settings open (bundle integrity). The
 	// on-image install itself stays in the pod INS script.
 	await installFakeBridge(page, { version: "9.9.9-test" });
 	await page.goto("/");
 	await expect(page.getByText("Jump back right in")).toBeVisible();
 	await page.goto("/#/settings");
 	await expect(page.getByTestId("settings-page")).toBeVisible();
-	await page.getByRole("button", { name: "Updates" }).click();
-	await expect(page.getByTestId("app-version")).toContainText(/v\d+\.\d+\.\d+/);
-});
-
-// #2483 INS-007.
-test("renderer: update settings surface renders (feed/checksum checks are pod) @T0 @INS", async ({ page }) => {
-	// INS-007 (updater feed ymls reference real uploaded assets with matching
-	// checksums) is a release-artifact check with no renderer surface — it belongs
-	// to the pod/CI updater leg. The renderer slice we can lock is that the update
-	// settings surface (channel + version) renders, i.e. the app is wired to a
-	// feed at all. Checksum + asset-existence verification stays in the pod.
-	await installFakeBridge(page, { version: "9.9.9-test" });
-	await page.goto("/#/settings");
-	await expect(page.getByTestId("settings-page")).toBeVisible();
-	await page.getByRole("button", { name: "Updates" }).click();
-	await expect(page.locator('[data-testid="settings-section"][data-section="updates"]')).toBeVisible();
-	await expect(page.getByTestId("app-version")).toContainText("v9.9.9-test");
 });
 
 // #2483 INS-002.
@@ -75,15 +58,6 @@ test("renderer: reflects a ready daemon (data dir + config initialized) @T0 @INS
 	await installFakeBridge(page, { daemonState: "ready", daemonPort: 8080 });
 	await page.goto("/");
 	await expect(page.getByTestId("daemon-status")).toHaveAttribute("data-state", "ready");
-});
-
-// #2483 INS-004.
-test("renderer: app version string renders as expected @T0 @INS", async ({ page }) => {
-	await installFakeBridge(page, { version: "9.9.9-test" });
-	await page.goto("/#/settings");
-	await expect(page.getByTestId("settings-page")).toBeVisible();
-	await page.getByRole("button", { name: "Updates" }).click();
-	await expect(page.getByTestId("app-version")).toContainText("v9.9.9-test");
 });
 
 // ── DMN: daemon lifecycle / health ──────────────────────────────────────────
@@ -195,12 +169,10 @@ test("renderer: route nav home to board to session detail and back @T0 @BRD", as
 
 // #2483 SET-001.
 test("renderer: global settings page renders all sections @T0 @SET", async ({ page }) => {
-	// The settings revamp (#2797) reduced the page to General + Updates + Help;
+	// The settings revamp (#2797) reduced the page to General + Help;
 	// Help now renders the report form inline rather than opening another dialog.
 	await page.goto("/#/settings");
 	await expect(page.getByTestId("settings-page")).toBeVisible();
-	await page.getByRole("button", { name: "Updates" }).click();
-	await expect(page.locator('[data-testid="settings-section"][data-section="updates"]')).toBeVisible();
 	await page.getByRole("button", { name: "Help" }).click();
 	await expect(page.getByLabel("Title")).toBeVisible();
 });

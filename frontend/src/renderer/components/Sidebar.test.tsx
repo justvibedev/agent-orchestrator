@@ -46,13 +46,11 @@ type DragOverTestEvent = {
 };
 
 const {
-	checkUpdateMock,
 	cloudGateState,
 	cloudSessionState,
 	dragEnds,
 	dragOvers,
 	dragStarts,
-	downloadUpdateMock,
 	getMock,
 	navigateMock,
 	mockLocation,
@@ -61,7 +59,6 @@ const {
 	renameSessionMock,
 	spawnMock,
 	resumeOrchestratorMock,
-	updateStatusMock,
 	commandPaletteEnabled,
 } = vi.hoisted(
 	() => ({
@@ -84,9 +81,6 @@ const {
 		renameSessionMock: vi.fn().mockResolvedValue(undefined),
 		spawnMock: vi.fn(),
 		resumeOrchestratorMock: vi.fn(),
-		updateStatusMock: vi.fn(),
-		downloadUpdateMock: vi.fn(),
-		checkUpdateMock: vi.fn(),
 		commandPaletteEnabled: { current: true },
 	}),
 );
@@ -171,12 +165,6 @@ vi.mock("../lib/bridge", async (importOriginal) => {
 	return {
 		aoBridge: {
 			...actual.aoBridge,
-			updates: {
-				...actual.aoBridge.updates,
-				getStatus: updateStatusMock,
-				download: downloadUpdateMock,
-				check: checkUpdateMock,
-			},
 		},
 	};
 });
@@ -569,9 +557,6 @@ beforeEach(() => {
 	renameSessionMock.mockReset().mockResolvedValue(undefined);
 	spawnMock.mockReset();
 	resumeOrchestratorMock.mockReset().mockResolvedValue(undefined);
-	updateStatusMock.mockReset().mockResolvedValue({ state: "idle" });
-	downloadUpdateMock.mockReset().mockResolvedValue(undefined);
-	checkUpdateMock.mockReset().mockResolvedValue(undefined);
 	mockParams.projectId = undefined;
 	mockParams.sessionId = undefined;
 	mockParams.hostId = undefined;
@@ -3224,191 +3209,6 @@ describe("Sidebar", () => {
 		});
 
 		resolveKill?.();
-	});
-
-	it("downloads the update when the available row is clicked", async () => {
-		updateStatusMock.mockResolvedValue({ state: "available", version: "9.9.9" });
-		renderSidebar();
-
-		// Both footer variants (expanded row and collapsed rail icon) are mounted.
-		const buttons = await screen.findAllByLabelText("Download update v9.9.9");
-		expect(buttons.length).toBeGreaterThan(0);
-		expect(screen.getByText("Update available")).toBeInTheDocument();
-		const availableRow = screen.getByTestId("sidebar-update-available");
-		expect(within(availableRow).getByText("v9.9.9")).toBeVisible();
-		expect(availableRow.querySelector(".rounded-full")).toBeNull();
-		expect(screen.getByRole("button", { name: "Hide update v9.9.9 for 24 hours" })).not.toHaveClass(
-			"bg-interactive-hover",
-		);
-		// Nothing is staged yet, so the restart action must not be offered.
-		expect(screen.queryByLabelText(/Restart to install update/)).not.toBeInTheDocument();
-
-		await userEvent.click(buttons[0]);
-		expect(downloadUpdateMock).toHaveBeenCalledTimes(1);
-	});
-
-	it("dismisses the current available update without downloading it", async () => {
-		updateStatusMock.mockResolvedValue({ state: "available", version: "9.9.9" });
-		renderSidebar();
-
-		await userEvent.click(await screen.findByRole("button", {
-			name: "Hide update v9.9.9 for 24 hours",
-		}));
-
-		expect(screen.queryByText("Update available")).not.toBeInTheDocument();
-		expect(screen.queryByLabelText("Download update v9.9.9")).not.toBeInTheDocument();
-		expect(downloadUpdateMock).not.toHaveBeenCalled();
-	});
-
-	it("keeps showing update activity while the automatic download is in progress", async () => {
-		updateStatusMock.mockResolvedValue({ state: "downloading", version: "9.9.9", percent: 42 });
-		renderSidebar();
-
-		await waitFor(() => expect(updateStatusMock).toHaveBeenCalled());
-		expect(screen.getByText("Downloading… 42%")).toBeInTheDocument();
-		const downloadingRow = screen.getByTestId("sidebar-update-downloading");
-		expect(downloadingRow).not.toHaveClass("border");
-		expect(downloadingRow.querySelector("svg circle")).toBeNull();
-		expect(screen.queryByLabelText(/Restart to install update/)).not.toBeInTheDocument();
-		// A download already in flight must not offer a second one.
-		expect(screen.queryByLabelText(/Download update/)).not.toBeInTheDocument();
-		expect(screen.queryByLabelText(/Hide update/)).not.toBeInTheDocument();
-	});
-
-	it("keeps automatic update check failures out of the sidebar", async () => {
-		updateStatusMock.mockResolvedValue({ state: "idle", checksFailing: true });
-		renderSidebar();
-
-		await waitFor(() => expect(updateStatusMock).toHaveBeenCalled());
-		expect(screen.queryAllByLabelText("Retry update check")).toHaveLength(2);
-		expect(screen.getByText("Update check failed")).toBeInTheDocument();
-		expect(screen.getByTestId("sidebar-update-failed")).toBeInTheDocument();
-	});
-
-	it("keeps explicit update errors out of the sidebar", async () => {
-		updateStatusMock.mockResolvedValue({
-			state: "error",
-			message: "net::ERR_SSL_PROTOCOL_ERROR",
-			netError: true,
-		});
-		renderSidebar();
-
-		await waitFor(() => expect(updateStatusMock).toHaveBeenCalled());
-		expect(screen.queryByText("net::ERR_SSL_PROTOCOL_ERROR")).not.toBeInTheDocument();
-		expect(screen.queryByLabelText("Retry update check")).not.toBeInTheDocument();
-	});
-
-	it("keeps a ready install action when a later check fails", async () => {
-		updateStatusMock.mockResolvedValue({
-			state: "error",
-			message: "net::ERR_SSL_PROTOCOL_ERROR",
-			staged: { version: "9.9.9", stagedAt: Date.now(), escalated: false },
-		});
-		renderSidebar();
-
-		expect(await screen.findByTestId("sidebar-update-ready")).toBeVisible();
-		expect(screen.getAllByLabelText("Restart to install update v9.9.9")).not.toHaveLength(0);
-		expect(screen.queryByText("net::ERR_SSL_PROTOCOL_ERROR")).not.toBeInTheDocument();
-	});
-
-	it("keeps a staged build's restart action ahead of the failing-checks retry", async () => {
-		updateStatusMock.mockResolvedValue({
-			state: "downloaded",
-			version: "9.9.9",
-			stagedAt: Date.now(),
-			checksFailing: true,
-		});
-		renderSidebar();
-
-		// A build ready to install is more actionable than "checks are failing".
-		expect(await screen.findAllByLabelText("Restart to install update v9.9.9")).not.toHaveLength(0);
-		const readyRow = screen.getByTestId("sidebar-update-ready");
-		expect(readyRow).toHaveClass("bg-muted", "rounded-lg", "w-full");
-		expect(readyRow).not.toHaveClass("shadow-md", "rounded-xl", "absolute", "bottom-2", "text-success", "border-success/35", "bg-success/12", "border-primary/35", "bg-primary/12");
-		expect(within(readyRow).getByText("Restart to update")).toBeVisible();
-		expect(within(readyRow).getByText("9.9.9")).toBeVisible();
-		expect(within(readyRow).queryByText(/ready|Nightly/)).not.toBeInTheDocument();
-		expect(readyRow.querySelector(".rounded-full")).toBeNull();
-		expect(screen.queryAllByLabelText("Retry update check")).toHaveLength(0);
-		// Stays above Connect mobile / Settings — not overlaid on them.
-		const connectMobile = screen.getByRole("button", { name: "Connect mobile" });
-		expect(readyRow.compareDocumentPosition(connectMobile) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-		expect(screen.queryByLabelText(/Hide update/)).not.toBeInTheDocument();
-	});
-
-	it("keeps the staged restart row up while a background check runs", async () => {
-		// Regression: the row keyed off `state`, which a routine check drives
-		// through checking/available/not-available while the staged build is
-		// untouched, so the row blinked out of existence every 15 minutes on
-		// nightly. `staged` is stamped on every status for exactly this reason.
-		const stagedAt = Date.now();
-		updateStatusMock.mockResolvedValue({
-			state: "checking",
-			staged: { version: "9.9.9", stagedAt, escalated: false },
-		});
-		renderSidebar();
-
-		expect(await screen.findAllByLabelText("Restart to install update v9.9.9")).not.toHaveLength(0);
-		expect(screen.getByTestId("sidebar-update-ready")).toBeVisible();
-	});
-
-	it("shows the base version number for a staged nightly without channel or date", async () => {
-		updateStatusMock.mockResolvedValue({
-			state: "downloaded",
-			version: "0.12.11-nightly.202609021713",
-			stagedAt: Date.now(),
-		});
-		renderSidebar();
-
-		const readyRow = await screen.findByTestId("sidebar-update-ready");
-		expect(within(readyRow).getByText("Restart to update")).toBeVisible();
-		expect(within(readyRow).getByText("0.12.11")).toBeVisible();
-		expect(within(readyRow).queryByText(/Nightly|Sep/)).not.toBeInTheDocument();
-		expect(screen.getAllByLabelText("Restart to install update v0.12.11")).not.toHaveLength(0);
-	});
-
-	it("stays quiet for a one-off update failure that has not become a streak", async () => {
-		updateStatusMock.mockResolvedValue({ state: "idle" });
-		renderSidebar();
-
-		await waitFor(() => expect(updateStatusMock).toHaveBeenCalled());
-		expect(screen.queryByLabelText("Retry update check")).not.toBeInTheDocument();
-		expect(screen.queryByText("Update check failed")).not.toBeInTheDocument();
-	});
-
-	it("keeps the muted install cue when the staged update is escalated", async () => {
-		updateStatusMock.mockResolvedValue({
-			state: "downloaded",
-			version: "9.9.9",
-			stagedAt: Date.now(),
-			escalated: true,
-		});
-		renderSidebar();
-
-		// Both footer variants (expanded row and collapsed rail icon) are mounted.
-		const buttons = await screen.findAllByLabelText("Restart to install update v9.9.9");
-		expect(buttons.length).toBeGreaterThan(0);
-		for (const button of buttons) {
-			expect(button).toHaveClass("bg-muted");
-			expect(button).not.toHaveClass("text-success", "bg-working/12");
-		}
-		expect(screen.getByTestId("sidebar-update-ready")).toHaveTextContent("Restart to update");
-		expect(within(screen.getByTestId("sidebar-update-ready")).getByText("9.9.9")).toBeVisible();
-	});
-
-	it("keeps install label and version number on one line without nightly copy", async () => {
-		updateStatusMock.mockResolvedValue({
-			state: "downloaded",
-			version: "0.12.11-nightly.202609021713",
-			stagedAt: Date.now(),
-		});
-		renderSidebar();
-
-		const readyRow = await screen.findByTestId("sidebar-update-ready");
-		expect(readyRow).toHaveTextContent("Restart to update");
-		expect(readyRow).toHaveTextContent("0.12.11");
-		expect(within(readyRow).queryByText(/Nightly|ready/)).not.toBeInTheDocument();
-		expect(readyRow).toHaveAccessibleName("Restart to install update v0.12.11");
 	});
 
 	it("commits a project drop", () => {

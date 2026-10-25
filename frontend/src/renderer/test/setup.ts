@@ -378,11 +378,6 @@ if (typeof window !== "undefined") {
 			link: async () => ({ ok: false as const, code: "unsupported" as const, message: "unavailable" }),
 			unlink: async () => ({ ok: false as const, code: "unsupported" as const, message: "unavailable" }),
 		},
-		updateSettings: {
-			get: async () => ({ enabled: false, channel: "latest", nightlyAck: false, feature: null, macDifferentialUpdates: false }),
-			set: async () => undefined,
-			setMacDifferentialUpdates: async () => undefined,
-		},
 		uiSettings: {
 			get: async () => ({ ...DEFAULT_UI_SETTINGS }),
 			set: async (settings) => coerceUiSettings({ ...DEFAULT_UI_SETTINGS, ...settings }),
@@ -391,20 +386,6 @@ if (typeof window !== "undefined") {
 			get: async () => ({}),
 			set: async (overrides) => overrides,
 			setRecording: async () => undefined,
-		},
-		updates: {
-			getStatus: async () => ({ state: "idle" }),
-			check: async () => undefined,
-			returnHome: async () => undefined,
-			download: async () => undefined,
-			install: async () => undefined,
-			isPostUpdateRelaunch: async () => false,
-			relaunch: async () => undefined,
-			onStatus: () => () => undefined,
-		},
-		featureBuilds: {
-			list: async () => [],
-			getActive: async () => null,
 		},
 		remotes: {
 			list: async () => [],

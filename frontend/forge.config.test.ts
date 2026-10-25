@@ -86,18 +86,12 @@ afterEach(() => {
 });
 
 describe("native runtime resources", () => {
-	it("fails packaging when the macOS helper was not copied into Resources", async () => {
+	it("fails packaging when the macOS wake helper was not copied into Resources", async () => {
 		mkdirSync(join(fixtureDir, "AO.app", "Contents", "Resources"), { recursive: true });
 		const hook = config.hooks?.postPackage;
 		expect(hook).toBeTypeOf("function");
 		if (typeof hook !== "function") return;
-		await expect(hook(config, { platform: "darwin", arch: "arm64", outputPaths: [fixtureDir] })).rejects.toThrow("packaged macOS update helper missing");
-	});
-
-	it("bundles the native update helper only on macOS", () => {
-		expect(extraResourcesForPlatform("darwin")).toContain("update-helper");
-		expect(extraResourcesForPlatform("linux")).not.toContain("update-helper");
-		expect(extraResourcesForPlatform("win32")).not.toContain("update-helper");
+		await expect(hook(config, { platform: "darwin", arch: "arm64", outputPaths: [fixtureDir] })).rejects.toThrow("packaged macOS wake helper missing");
 	});
 
 	it("bundles the wake coordinator only on macOS", () => {
@@ -114,9 +108,7 @@ describe("native runtime resources", () => {
 
 	it("fails packaging when cloudflared was not copied into Resources", async () => {
 		const resources = join(fixtureDir, "AO.app", "Contents", "Resources");
-		mkdirSync(join(resources, "update-helper"), { recursive: true });
 		mkdirSync(join(resources, "wake-helper"), { recursive: true });
-		writeFileSync(join(resources, "update-helper", "ao-update-progress"), "");
 		writeFileSync(join(resources, "wake-helper", "ao-wake"), "");
 		const hook = config.hooks?.postPackage;
 		if (typeof hook !== "function") throw new Error("postPackage hook missing");

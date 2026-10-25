@@ -11,13 +11,14 @@ on:
       - "frontend/src/api/schema.ts"
       - "package.json"
       - ".github/workflows/go.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: go-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   backend-core:
@@ -159,6 +160,8 @@ jobs:
   # an open handle makes both fail. Scoped to those packages rather than the
   # whole suite to keep the matrix cheap.
   windows-workspace:
+    # Windows runners are costly on a private repo: manual runs only.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     defaults:
       run:
