@@ -210,7 +210,10 @@ func (s *Service) unverifiedDoneReason(ctx context.Context, session domain.Sessi
 		return ""
 	}
 	branch := session.BranchState
-	if branch != nil && branch.Unpushed > 0 {
+	if branch == nil {
+		return "" // branch never observed: unknown, not evidence of undelivered work
+	}
+	if branch.Unpushed > 0 {
 		return fmt.Sprintf("%d unpushed commit(s)", branch.Unpushed)
 	}
 	list, err := prs.ListPRsBySession(ctx, session.ID)
@@ -220,7 +223,7 @@ func (s *Service) unverifiedDoneReason(ctx context.Context, session domain.Sessi
 	if len(list) > 0 {
 		return ""
 	}
-	if branch != nil && branch.Commits == 0 {
+	if branch.Commits == 0 {
 		return "" // no code changes, so there is nothing to put in a PR
 	}
 	return "no pull request recorded for this session"

@@ -161,7 +161,10 @@ func TestUnverifiedDoneReason(t *testing.T) {
 		outputs []domain.ReportOutput
 		want    string // expected reason; "" means no annotation
 	}{
-		{name: "no PR", want: "no pull request recorded for this session"},
+		{name: "unobserved branch is unknown", mutate: func(v *verifyStore) { v.session.BranchState = nil }, want: ""},
+		{name: "no PR", mutate: func(v *verifyStore) {
+			v.session.BranchState = &domain.SessionBranchState{Commits: 2, RemoteBranch: "origin/b"}
+		}, want: "no pull request recorded for this session"},
 		{name: "PR with pushed head", mutate: func(v *verifyStore) { v.prs = pr }, want: ""},
 		{name: "PR with unpushed head", mutate: func(v *verifyStore) {
 			v.prs = pr
