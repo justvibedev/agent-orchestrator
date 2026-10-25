@@ -182,6 +182,18 @@ ao spawn --standalone --agent codex --name notes --prompt "Draft release notes"
 
 Standalone workers require an explicit agent. Do not combine `--standalone` with project, branch, issue, PR, or orchestrator options.
 
+## Seed ignored files into worktrees
+
+Git worktrees start from tracked files only, so ignored files such as `.env` or `node_modules/` are missing in a new session. To seed them, add an optional `.worktreeinclude` file at the project root. It uses gitignore syntax:
+
+```gitignore
+.env
+.env.local
+node_modules/
+```
+
+When a session worktree is created, Orchestrator copies the untracked paths in the main checkout that match the file into the new worktree. Tracked files are never copied, missing paths are skipped, and `.git` and `.ao` entries are ignored. Symlinks that are absolute or point outside the repository are skipped. A missing `.worktreeinclude` does nothing. Copies are independent: later changes in either checkout are not synced.
+
 ## Tracker and source control
 
 <span id="tracker-and-scm" />

@@ -1616,3 +1616,85 @@ func run(t *testing.T, binary string, args ...string) {
 		t.Fatalf("%s %s: %v\n%s", binary, strings.Join(args, " "), err, out)
 	}
 }
+
+func TestWorkspaceIntegrationWorktreeIncludeSeedsOnlyUntrackedMatches(t *testing.T) {
+	git := requireGit(t)
+	tmp := t.TempDir()
+	repo := setupOriginClone(t, git, filepath.Join(tmp, "root"))
+	write := func(rel, body string) {
+		t.Helper()
+		p := filepath.Join(repo, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(".gitignore", ".env\nnode_modules/\n")
+	write("tracked.env", "tracked")
+	write(".env", "SECRET=1")
+	write("node_modules/pkg/index.js", "module")
+	write("other.log", "not listed")
+	write(".worktreeinclude", ".env\nnode_modules/\ntracked.env\nmissing.txt\n*.nomatch\n")
+	runGit(t, git, repo, "add", ".gitignore", "tracked.env")
+	runGit(t, git, repo, "commit", "-m", "track")
+	runGit(t, git, repo, "push", "origin", "main")
+	outside := filepath.Join(tmp, "outside.txt")
+	if err := os.WriteFile(outside, []byte("outside"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(repo, "node_modules", "abs-link")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../../../outside.txt", filepath.Join(repo, "node_modules", "pkg", "escape")); err != nil {
+		t.Fatal(err)
+	}
+
+	ws, err := New(Options{Binary: git, ManagedRoot: filepath.Join(tmp, "managed"), RepoResolver: StaticRepoResolver{"proj": repo}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := ws.Create(context.Background(), ports.WorkspaceConfig{ProjectID: "proj", SessionID: "sess", Branch: "ao/include", FreshBranch: true})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if got, err := os.ReadFile(filepath.Join(info.Path, ".env")); err != nil || string(got) != "SECRET=1" {
+		t.Fatalf(".env = %q, %v", got, err)
+	}
+	if got, err := os.ReadFile(filepath.Join(info.Path, "node_modules", "pkg", "index.js")); err != nil || string(got) != "module" {
+		t.Fatalf("node_modules file = %q, %v", got, err)
+	}
+	if _, err := os.Lstat(filepath.Join(info.Path, "other.log")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("unlisted file copied: %v", err)
+	}
+	for _, rel := range []string{"node_modules/abs-link", "node_modules/pkg/escape"} {
+		if _, err := os.Lstat(filepath.Join(info.Path, filepath.FromSlash(rel))); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("escaping symlink %s was seeded: %v", rel, err)
+		}
+	}
+	// A tracked file comes from git, not from the manifest copy.
+	if got, err := os.ReadFile(filepath.Join(info.Path, "tracked.env")); err != nil || string(got) != "tracked" {
+		t.Fatalf("tracked.env = %q, %v", got, err)
+	}
+}
+
+func TestWorkspaceIntegrationWorktreeIncludeAbsentManifestIsNoop(t *testing.T) {
+	git := requireGit(t)
+	tmp := t.TempDir()
+	repo := setupOriginClone(t, git, filepath.Join(tmp, "root"))
+	if err := os.WriteFile(filepath.Join(repo, ".env"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ws, err := New(Options{Binary: git, ManagedRoot: filepath.Join(tmp, "managed"), RepoResolver: StaticRepoResolver{"proj": repo}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := ws.Create(context.Background(), ports.WorkspaceConfig{ProjectID: "proj", SessionID: "sess", Branch: "ao/none", FreshBranch: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(info.Path, ".env")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf(".env copied without a manifest: %v", err)
+	}
+}

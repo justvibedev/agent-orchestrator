@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -347,6 +346,17 @@ func (w *Workspace) Create(ctx context.Context, cfg ports.WorkspaceConfig) (port
 		}
 		return ports.WorkspaceInfo{}, err
 	}
+	if err := w.seedWorktreeInclude(ctx, repo, path); err != nil {
+		if cfg.FreshBranch {
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+			defer cancel()
+			info := ports.WorkspaceInfo{Path: path, Branch: cfg.Branch, BaseSHA: seedSHA, BaseRef: baseRef, SessionID: cfg.SessionID, ProjectID: cfg.ProjectID, RepoPath: repo}
+			if remaining, cleanupErr := w.rollbackPreparedAdd(cleanupCtx, info); cleanupErr != nil {
+				return remaining, errors.Join(err, cleanupErr)
+			}
+		}
+		return ports.WorkspaceInfo{}, err
+	}
 	var baseSHA string
 	if cfg.FreshBranch {
 		baseSHA = seedSHA
@@ -575,7 +585,7 @@ func (w *Workspace) CreateWorkspaceProject(ctx context.Context, cfg ports.Worksp
 		if repoIndex == 0 {
 			_, rootAlreadyExisted := existing[repoIndex]
 			if !rootAlreadyExisted {
-				if err := copyWorkspaceAssets(rootRepo, rootPath, cfg.Assets); err != nil {
+				if err := w.copyWorkspaceAssets(ctx, rootRepo, rootPath, cfg.Assets); err != nil {
 					return fail(err)
 				}
 			}
@@ -654,7 +664,7 @@ func (w *Workspace) repairWorkspaceRootDefault(ctx context.Context, repo string)
 	return worktreeRefs{seedRef: ref, baseRef: ref}, nil
 }
 
-func copyWorkspaceAssets(sourceRoot, destinationRoot string, assets []ports.WorkspaceProjectAssetConfig) error {
+func (w *Workspace) copyWorkspaceAssets(ctx context.Context, sourceRoot, destinationRoot string, assets []ports.WorkspaceProjectAssetConfig) error {
 	for _, asset := range assets {
 		rel, err := cleanRelativePath(asset.RelativePath)
 		if err != nil || hasWorkspaceManagedComponent(rel) {
@@ -672,7 +682,7 @@ func copyWorkspaceAssets(sourceRoot, destinationRoot string, assets []ports.Work
 			return fmt.Errorf("gitworktree: copy workspace asset %q: %w", asset.RelativePath, err)
 		}
 	}
-	return nil
+	return w.seedWorktreeInclude(ctx, sourceRoot, destinationRoot)
 }
 
 func copyWorkspaceAssetTree(sourceRoot, source, destination string) error {
@@ -744,25 +754,7 @@ func copyWorkspaceAssetTree(sourceRoot, source, destination string) error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	in, err := os.Open(source)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = in.Close() }()
-	out, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode().Perm())
-	if err != nil {
-		return err
-	}
-	if err := out.Chmod(info.Mode().Perm()); err != nil {
-		_ = out.Close()
-		return err
-	}
-	_, copyErr := io.Copy(out, in)
-	closeErr := out.Close()
-	if copyErr != nil {
-		return copyErr
-	}
-	return closeErr
+	return copyPath(source, destination)
 }
 
 func assetPathWithin(root, path string) bool {
