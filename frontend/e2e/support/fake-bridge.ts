@@ -28,7 +28,7 @@ import { coerceUiSettings, DEFAULT_UI_SETTINGS } from "../../src/shared/ui-local
 // not "the boundary works."
 
 export type FakeBridgeOptions = {
-	/** Version string surfaced by app.getVersion() (Settings > Updates). */
+	/** Version string surfaced by app.getVersion(). */
 	version?: string;
 	/** Daemon lifecycle state the renderer should observe. */
 	daemonState?: "ready" | "starting" | "stopped" | "error";
