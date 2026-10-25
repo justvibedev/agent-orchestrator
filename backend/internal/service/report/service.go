@@ -3,8 +3,10 @@ package report
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -132,9 +134,15 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (domain.ReportR
 			availableAt = now
 		}
 	}
+	note := input.Note
+	if input.State == domain.ReportDone {
+		if reason := s.unverifiedDoneReason(ctx, session, input.Outputs); reason != "" {
+			note = annotateUnverified(note, reason)
+		}
+	}
 	rec := domain.ReportRecord{
 		ID: s.newID(), SessionID: session.ID, ProjectID: session.ProjectID,
-		State: input.State, Note: input.Note, Message: input.Message, Outputs: input.Outputs,
+		State: input.State, Note: note, Message: input.Message, Outputs: input.Outputs,
 		CreatedAt: now, DeliveryState: domain.ReportPending, AvailableAt: availableAt,
 		SettlementDeadline: settlementDeadline, RepeatCount: 1,
 	}
@@ -156,4 +164,71 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (domain.ReportR
 		}
 	}
 	return created, nil
+}
+
+// prLister and projectReader are optional Store capabilities. A store without
+// them simply skips done verification.
+type prLister interface {
+	ListPRsBySession(context.Context, domain.SessionID) ([]domain.PullRequest, error)
+}
+
+type projectReader interface {
+	GetProject(context.Context, string) (domain.ProjectRecord, bool, error)
+}
+
+// unverifiedDoneReason soft-checks a done report against already-tracked PR and
+// branch facts and returns why the work looks undelivered, or "" when it looks
+// delivered or the check does not apply. It never fails the report and makes no
+// network calls: any lookup error means "no annotation".
+//
+// There is no durable review-only flag, so a report that lists a reviewed PR
+// stands in for review-only work.
+func (s *Service) unverifiedDoneReason(ctx context.Context, session domain.SessionRecord, outputs []domain.ReportOutput) string {
+	if session.ProjectID == "" || session.RequestedOutput == domain.RequestedOutputArtifact || session.OutputType == domain.SessionOutputArtifact {
+		return ""
+	}
+	for _, o := range outputs {
+		switch o.Kind {
+		case domain.ReportOutputPRCreated, domain.ReportOutputPRReviewed, domain.ReportOutputArtifact:
+			return ""
+		}
+	}
+	projects, ok := s.store.(projectReader)
+	prs, ok2 := s.store.(prLister)
+	if !ok || !ok2 {
+		return ""
+	}
+	project, found, err := projects.GetProject(ctx, string(session.ProjectID))
+	if err != nil || !found || project.RepoOriginURL == "" {
+		return ""
+	}
+	branch := session.BranchState
+	if branch != nil && branch.Unpushed > 0 {
+		return fmt.Sprintf("%d unpushed commit(s)", branch.Unpushed)
+	}
+	list, err := prs.ListPRsBySession(ctx, session.ID)
+	if err != nil {
+		return ""
+	}
+	if len(list) > 0 {
+		return ""
+	}
+	if branch != nil && branch.Commits == 0 {
+		return "" // no code changes, so there is nothing to put in a PR
+	}
+	return "no pull request recorded for this session"
+}
+
+// annotateUnverified appends the unverified marker, trimming the note so the
+// result still fits the report text limit.
+func annotateUnverified(note, reason string) string {
+	marker := "done (unverified: " + reason + ")"
+	room := domain.MaxReportTextCharacters - utf8.RuneCountInString(marker) - 2
+	if room < 0 {
+		return marker
+	}
+	if r := []rune(note); len(r) > room {
+		note = string(r[:room])
+	}
+	return note + "\n\n" + marker
 }

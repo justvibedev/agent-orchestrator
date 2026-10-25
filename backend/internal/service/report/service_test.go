@@ -2,8 +2,11 @@ package report
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 )
@@ -132,5 +135,99 @@ func TestCreateShowsEachReportedArtifactAfterTheReportIsStored(t *testing.T) {
 		SessionID: "ao-7", Outputs: []domain.ReportOutput{{Kind: domain.ReportOutputArtifact, Reference: "report.html"}},
 	}); err == nil || len(calls) != 0 {
 		t.Fatalf("unknown session: err = %v, recorded %q", err, calls)
+	}
+}
+
+type verifyStore struct {
+	fakeStore
+	project   domain.ProjectRecord
+	projectOK bool
+	prs       []domain.PullRequest
+	prErr     error
+}
+
+func (v *verifyStore) GetProject(context.Context, string) (domain.ProjectRecord, bool, error) {
+	return v.project, v.projectOK, nil
+}
+func (v *verifyStore) ListPRsBySession(context.Context, domain.SessionID) ([]domain.PullRequest, error) {
+	return v.prs, v.prErr
+}
+
+func TestCreateDoneAnnotatesUnverified(t *testing.T) {
+	pr := []domain.PullRequest{{URL: "https://github.com/o/r/pull/1"}}
+	tests := []struct {
+		name    string
+		mutate  func(*verifyStore)
+		state   domain.ReportState
+		outputs []domain.ReportOutput
+		want    string
+	}{
+		{name: "no PR", want: "x\n\ndone (unverified: no pull request recorded for this session)"},
+		{name: "PR with pushed head", mutate: func(v *verifyStore) { v.prs = pr }, want: "x"},
+		{name: "PR with unpushed head", mutate: func(v *verifyStore) {
+			v.prs = pr
+			v.session.BranchState = &domain.SessionBranchState{Commits: 3, Unpushed: 2, RemoteBranch: "origin/b"}
+		}, want: "x\n\ndone (unverified: 2 unpushed commit(s))"},
+		{name: "unpushed without PR", mutate: func(v *verifyStore) {
+			v.session.BranchState = &domain.SessionBranchState{Commits: 1, Unpushed: 1}
+		}, want: "x\n\ndone (unverified: 1 unpushed commit(s))"},
+		{name: "no commits needs no PR", mutate: func(v *verifyStore) { v.session.BranchState = &domain.SessionBranchState{} }, want: "x"},
+		{name: "needs-input is never annotated", state: domain.ReportNeedsInput, want: "x"},
+		{name: "review-only (reviewed PR output)", outputs: []domain.ReportOutput{{Kind: domain.ReportOutputPRReviewed, Reference: "https://github.com/o/r/pull/9"}}, want: "x"},
+		{name: "created PR output", outputs: []domain.ReportOutput{{Kind: domain.ReportOutputPRCreated, Reference: "https://github.com/o/r/pull/9"}}, want: "x"},
+		{name: "artifact output reported", outputs: []domain.ReportOutput{{Kind: domain.ReportOutputArtifact, Reference: "r"}}, want: "x"},
+		{name: "artifact requested", mutate: func(v *verifyStore) { v.session.RequestedOutput = domain.RequestedOutputArtifact }, want: "x"},
+		{name: "artifact output type", mutate: func(v *verifyStore) { v.session.OutputType = domain.SessionOutputArtifact }, want: "x"},
+		{name: "projectless", mutate: func(v *verifyStore) { v.session.ProjectID = "" }, want: "x"},
+		{name: "project missing", mutate: func(v *verifyStore) { v.projectOK = false }, want: "x"},
+		{name: "no remote", mutate: func(v *verifyStore) { v.project.RepoOriginURL = "" }, want: "x"},
+		{name: "PR lookup error never rejects", mutate: func(v *verifyStore) { v.prErr = errors.New("db down") }, want: "x"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			v := &verifyStore{
+				fakeStore: fakeStore{ok: true, session: domain.SessionRecord{ID: "s1", ProjectID: "p", Kind: domain.KindWorker}},
+				project:   domain.ProjectRecord{ID: "p", RepoOriginURL: "git@github.com:o/r.git"},
+				projectOK: true,
+			}
+			if tt.mutate != nil {
+				tt.mutate(v)
+			}
+			state := tt.state
+			if state == "" {
+				state = domain.ReportDone
+			}
+			got, err := New(Deps{Store: v}).Create(context.Background(), CreateInput{SessionID: "s1", State: state, Note: "x", Outputs: tt.outputs})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Note != tt.want {
+				t.Fatalf("note = %q, want %q", got.Note, tt.want)
+			}
+		})
+	}
+}
+
+func TestCreateDoneAnnotationStaysWithinTextLimit(t *testing.T) {
+	v := &verifyStore{
+		fakeStore: fakeStore{ok: true, session: domain.SessionRecord{ID: "s1", ProjectID: "p", Kind: domain.KindWorker}},
+		project:   domain.ProjectRecord{ID: "p", RepoOriginURL: "u"},
+		projectOK: true,
+	}
+	long := strings.Repeat("a", domain.MaxReportTextCharacters)
+	got, err := New(Deps{Store: v}).Create(context.Background(), CreateInput{SessionID: "s1", State: domain.ReportDone, Note: long})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := utf8.RuneCountInString(got.Note); n > domain.MaxReportTextCharacters || !strings.HasSuffix(got.Note, "recorded for this session)") {
+		t.Fatalf("note length %d, tail %q", n, got.Note[len(got.Note)-40:])
+	}
+}
+
+func TestCreateDoneSkipsVerificationWithoutStoreCapabilities(t *testing.T) {
+	st := &fakeStore{ok: true, session: domain.SessionRecord{ID: "s1", ProjectID: "p", Kind: domain.KindWorker}}
+	got, err := New(Deps{Store: st}).Create(context.Background(), CreateInput{SessionID: "s1", State: domain.ReportDone, Note: "x"})
+	if err != nil || got.Note != "x" {
+		t.Fatalf("note = %q err = %v", got.Note, err)
 	}
 }
