@@ -11,8 +11,7 @@ import (
 )
 
 // localOAuthTokenPath is where AO persists a captured Claude setup-token so the
-// SAME credential authenticates both local sessions and the cloud copy pushed to
-// the control plane ("one login for local + cloud"). It lives under the AO data
+// credential authenticates local sessions. It lives under the AO data
 // dir, never the user's ~/.claude. Written by the daemon's set-credential
 // endpoint; read here at launch.
 func localOAuthTokenPath(dataDir string) string {

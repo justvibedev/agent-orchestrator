@@ -8,7 +8,6 @@ import { ProjectBoardActions } from "./ProjectBoardActions";
 import { useBoardPresentation } from "../hooks/useBoardPresentation";
 import { useProjectOrchestratorAction } from "../hooks/useProjectOrchestratorAction";
 import {
-	CLOUD_PROJECT_KIND,
 	isOrchestratorSession,
 	resolveNextNavigationAfterSessionKill,
 	sessionIsActive,
@@ -37,7 +36,6 @@ import { isLinuxPlatform, isMacPlatform, usesBoardActionsInPanel } from "../lib/
 import { cn } from "../lib/utils";
 import { useWindowFullScreen } from "../hooks/useWindowFullScreen";
 import { StatusPill } from "./StatusPill";
-import { CoderWorkspaceTopbarButton } from "./CoderWorkspaceLinkButton";
 import { TopbarActionError, TopbarButton, topbarHeaderClass, topbarProjectLabelClass } from "./TopbarButton";
 import { SessionArchiveDialog, type SessionArchiveChoice } from "./SessionArchiveDialog";
 import { TopbarOpenEditorButton } from "./TopbarOpenEditorButton";
@@ -224,7 +222,7 @@ export function ShellTopbar({
 			>
 				{isProjectBoardRoute || isOrchestrator ? <ProjectTerminationFeedback projectId={projectId} hostId={hostId} /> : null}
 				{!boardActionsInPanel && isProjectBoardRoute ? (
-					<ProjectBoardActions actions={projectActions} placement="header" quiet={showProjectEmpty} cloud={project?.kind === CLOUD_PROJECT_KIND} style={noDragStyle} />
+					<ProjectBoardActions actions={projectActions} placement="header" quiet={showProjectEmpty} style={noDragStyle} />
 				) : null}
 				{isSessionRoute ? (
 					<>
@@ -279,7 +277,7 @@ export function ShellTopbar({
 						    have no local workspace to hand off to an editor: the local daemon
 						    has never heard of them, so querying it just surfaces its 404 as a
 						    confusing "Unknown session" error (see workspace.ts's `kind` doc). */}
-						{session && !hostId && project?.kind !== CLOUD_PROJECT_KIND ? (
+						{session && !hostId ? (
 							// Keyed per session so a stale launch error does not carry over
 							// when switching sessions. The prefix keeps it distinct from the
 							// kill button's key: identical sibling keys make React duplicate
@@ -290,15 +288,6 @@ export function ShellTopbar({
 								projectId={session.workspaceId}
 								sessionCreatedAt={session.createdAt}
 								sessionTerminated={session.isTerminated}
-								style={noDragStyle}
-							/>
-						) : null}
-						{/* A bring-your-own Coder session names the workspace it runs in, so
-						    the customer can find it in their own Coder. */}
-						{session?.cloud?.coderWorkspaceUrl ? (
-							<CoderWorkspaceTopbarButton
-								key={`coder-workspace-${session.id}`}
-								url={session.cloud.coderWorkspaceUrl}
 								style={noDragStyle}
 							/>
 						) : null}
@@ -315,14 +304,14 @@ export function ShellTopbar({
 						{/* Local worker actions share one tight control group. Navigation
 						    remains a separate visual target in the outer top-bar row. */}
 						{!isOrchestrator &&
-							(sessionAction || (session && !session.cloud && sessionIsActive(session))) ? (
+							(sessionAction || (session && sessionIsActive(session))) ? (
 							<div
 								className="inline-flex shrink-0 items-center gap-1"
 								data-testid="session-local-actions"
 								style={noDragStyle}
 							>
 								{sessionAction ? <div className="inline-flex shrink-0 items-center">{sessionAction}</div> : null}
-								{session && !session.cloud && sessionIsActive(session) ? (
+								{session && sessionIsActive(session) ? (
 									<TopbarArchiveButton
 										key={session.id}
 										session={session}

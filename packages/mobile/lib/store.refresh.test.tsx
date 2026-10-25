@@ -20,8 +20,6 @@ vi.mock("./hosts", () => ({
 	loadHosts: async () => [], sameHostConnections: () => true,
 	setActiveHost: async (id: string) => { state.selected = id; },
 }));
-vi.mock("./account", () => ({ loadAccount: async () => null }));
-vi.mock("./accountHosts", () => ({ syncAccountHosts: vi.fn(), cancelAccountHostSync: vi.fn() }));
 vi.mock("./installId", () => ({ primeInstallId: vi.fn() }));
 vi.mock("./chat/conversationEvents", () => ({ useConversationEventTransport: () => {} }));
 vi.mock("./otherHosts", () => ({ useOtherHosts: () => ({ snapshots: {}, refreshHost: vi.fn() }) }));

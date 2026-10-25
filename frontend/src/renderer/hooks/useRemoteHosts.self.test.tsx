@@ -33,11 +33,8 @@ const mocks = vi.hoisted(() => {
 vi.mock("../lib/bridge", () => ({ aoBridge: { remotes: mocks.remotes } }));
 vi.mock("../lib/api-client", () => ({ apiClient: { GET: mocks.localGet }, hasTrustedApiBaseUrl: () => true }));
 vi.mock("openapi-fetch", () => ({ default: ({ baseUrl }: { baseUrl: string }) => ({ GET: (path: string) => mocks.remoteGet(baseUrl, path) }) }));
-vi.mock("../lib/cloud-session", () => ({ useCloudSession: () => ({ status: "authenticated", session: { user: { id: "fixture-account" } } }) }));
 vi.mock("./useSettings", () => ({ useSettings: () => ({ settings: { cloudControlPlaneUrl: mocks.cloudBaseUrl } }) }));
 vi.mock("../lib/account-remote-hosts", () => ({ listAccountRemoteHosts: async () => [mocks.self, mocks.other].map((host) => ({ ...host, token: "fixture-only" })) }));
-vi.mock("./useCloudCp", () => ({ useCloudCp: () => ({ ready: false, client: {}, baseUrl: "" }) }));
-vi.mock("./useCloudOrg", () => ({ useCloudOrg: () => ({ ready: false, org: undefined }) }));
 
 import { useRemoteHosts } from "./useRemoteHosts";
 import { useRemoteWorkspaces, useWorkspaceQuery } from "./useWorkspaceQuery";
@@ -65,21 +62,14 @@ function renderWorkspaceSources() {
 	return renderHook(() => ({ hosts: useRemoteHosts(), local: useWorkspaceQuery(), remote: useRemoteWorkspaces() }), { wrapper });
 }
 
-it.each([true, false])("excludes this daemon from remote sidebar data while preserving another host (cloud sync: %s)", async (cloudSync) => {
-	if (!cloudSync) mocks.cloudBaseUrl = "";
-	else mocks.saved.splice(0);
+it("excludes this daemon from remote sidebar data while preserving another host", async () => {
 	const { result } = renderWorkspaceSources();
 	await waitFor(() => {
 		expect(mocks.remotes.list).toHaveBeenCalled();
-		if (cloudSync) expect(mocks.remotes.pruneAccountHosts).toHaveBeenCalled();
 		expect(result.current.local.isSuccess).toBe(true);
 		expect(result.current.hosts.hosts.every((host) => host.status === "connected")).toBe(true);
 		expect(result.current.remote.loadedSessionHostIds).toHaveLength(result.current.hosts.hosts.length);
 	});
-	if (cloudSync) {
-		expect(mocks.remotes.importAccountHost).toHaveBeenCalledWith("fixture-account", expect.objectContaining({ hostId: mocks.self.hostId }));
-		expect(mocks.remotes.pruneAccountHosts).toHaveBeenCalledWith("fixture-account", [mocks.self.hostId, mocks.other.hostId]);
-	}
 	expect(mocks.saved.map((host) => host.hostId)).toEqual([mocks.self.hostId, mocks.other.hostId]);
 	expect.soft(result.current.hosts.hosts.map((host) => host.hostId)).toEqual([mocks.other.hostId]);
 	expect.soft(connectedHosts()).toEqual([mocks.other.hostId]);

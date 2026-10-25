@@ -30,7 +30,7 @@ import { createLocalPathActions } from "./main/local-path-actions";
 import { discoverMacTerminalApps } from "./main/mac-terminal-apps";
 import { registerCliLinkIpc } from "./main/cli-link-ipc";
 import { launchCommand } from "./main/launch-command";
-import { blocksRenderFrameNavigation, cloudArtifactPrefix } from "./main/render-frame-guard";
+import { blocksRenderFrameNavigation } from "./main/render-frame-guard";
 import { agentPageRequestAllowed } from "./main/render-frame-network";
 import { isAgentPageUrl } from "./shared/agent-page-url";
 import {
@@ -65,7 +65,6 @@ import { toggleAppDevTools } from "./main/app-devtools";
 import { attachAppShortcuts } from "./main/app-shortcuts";
 import {
 	KEYBOARD_SHORTCUTS_HELP_CHANNEL,
-	OPEN_SETTINGS_SHORTCUT_CHANNEL,
 	QUIT_CONFIRM_REQUEST_CHANNEL,
 	QUIT_CONFIRM_RESULT_CHANNEL,
 	type QuitConfirmRequest,
@@ -111,16 +110,6 @@ import {
 import { DEFAULT_TERMINAL_SHELL, type TerminalShellPreference } from "./shared/ui-locale";
 import { bundledTmuxBinaryPath, stableBundledTmuxBinaryPath } from "./shared/bundled-tmux";
 import {
-	handleCloudDeepLink,
-	getCloudSession,
-	installCloudIPC,
-	registerCloudProtocol,
-	showCloudSignInFailure,
-} from "./main/cloud-auth";
-import { installCloudLocalAuthIPC } from "./main/cloud-auth-local";
-import { createCloudAgentProxy } from "./main/cloud-agent-proxy";
-import { installCloudCpProxy } from "./main/cloud-cp-proxy";
-import {
 	createBrowserViewHost,
 	shouldHandleAppShortcutInBrowserContext,
 	type BrowserViewHost,
@@ -132,7 +121,6 @@ import { BrowserHistoryStore } from "./main/browser-history-store";
 import { createAwakeDownloadBridge } from "./main/awake-download-bridge";
 import { createBrowserDownloadManager } from "./main/browser-download-manager";
 import { registerChatImageIpc } from "./main/chat-image-ipc";
-import { registerCloudArtifactIpc } from "./main/cloud-artifact-ipc";
 import { BrowserProfileImportService } from "./main/browser-profile-import";
 import {
 	registerBrowserProfileIpc,
@@ -462,9 +450,6 @@ protocol.registerSchemesAsPrivileged([
 	},
 ]);
 
-// Register ao-app:// as the deep-link protocol for WorkOS auth callbacks.
-// Must run before app.whenReady().
-registerCloudProtocol();
 if (!app.requestSingleInstanceLock()) {
 	app.exit(0);
 }
@@ -861,18 +846,6 @@ async function createWindowInternal(): Promise<void> {
 		if (blocksRenderFrameNavigation(event.frame.url, event.url)) event.preventDefault();
 	});
 
-	// A cloud artifact frame's page can open another file of its session; the
-	// renderer follows it (the file's name, a refused link) by its URL.
-	shellWebContents.on("did-frame-navigate", (_event, url, httpResponseCode, _statusText, isMainFrame) => {
-		if (isMainFrame) return;
-		try {
-			if (cloudArtifactPrefix(new URL(url)) === undefined) return;
-		} catch {
-			return;
-		}
-		shellWebContents.send("cloudArtifact:frameNavigated", { url, status: httpResponseCode });
-	});
-
 	// Agent pages framed in the chat (renders, HTML artifacts) stay off this
 	// computer and its network, as the render check's window does: they may
 	// load public addresses and their own files. A request is judged by the
@@ -964,9 +937,9 @@ async function createWindowInternal(): Promise<void> {
 
 	browserViewHost = createBrowserViewHost({
 		onTabCloseFailure: createBrowserCloseDiagnostics(browserProfileStateDir(), app.getVersion()),
-		// Agent tabs: only a connected host's or a cloud session's own
-		// agent-browser viewer may report the remote page a Browser tab shows.
-		isAgentBrowserUrl: (url) => remoteRegistry.isAgentBrowserUrl(url) || cloudAgentProxy.isAgentBrowserUrl(url),
+		// Agent tabs: only a connected host's own agent-browser viewer may
+		// report the remote page a Browser tab shows.
+		isAgentBrowserUrl: (url) => remoteRegistry.isAgentBrowserUrl(url),
 		mainWindow,
 		shellWebContents,
 		ipcMain,
@@ -2668,10 +2641,6 @@ const remoteRegistry = new RemoteRegistry((entry) => {
 registerRemotesIpc(ipcMain, {
 	file: remotesFilePath(),
 	registry: remoteRegistry,
-	requireAccount: async () => {
-		if (!await getCloudSession(cloudDataDir())) throw new Error("Sign in to AO Cloud to use remote hosts.");
-	},
-	getAccountId: async () => (await getCloudSession(cloudDataDir()))?.user.id ?? "",
 	localIdentity: createLocalHostIdentity(() => daemonStatus.state === "ready" && daemonStatus.port
 		? { port: daemonStatus.port, pid: daemonStatus.pid, generation: daemonAttachmentGeneration }
 		: null),
@@ -2810,7 +2779,6 @@ registerChatImageIpc({
 	dialog,
 	downloadsDirectory: () => app.getPath("downloads"),
 });
-registerCloudArtifactIpc({ ipcMain });
 
 // A file dropped onto the terminal is delivered as raw bytes (its original path
 // is unavailable to the sandboxed renderer on macOS — see webUtils.getPathForFile
@@ -3010,90 +2978,7 @@ ipcMain.on(TRAY_RENDERER_READY_CHANNEL, (event) => {
 	}
 });
 
-// Cloud auth IPC — cloud:getSession, cloud:signIn, cloud:signOut.
-// Data dir resolves to ~/.ao (prod) or ~/.ao/dev (dev) matching daemon conventions.
-function cloudDataDir(): string {
-	return isDev
-		? path.join(os.homedir(), ".ao", DEV_STATE_SUBDIR)
-		: path.join(os.homedir(), ".ao");
-}
-
-// Cloud sessions' agent browsers, served to the Browser panel's agent tabs.
-const cloudAgentProxy = createCloudAgentProxy(cloudDataDir);
-
-function notifyRenderersOfCloudSession(account: import("./shared/cloud-account").CloudAccount | null): void {
-	if (!account) {
-		void remoteRegistry.disconnectAll();
-		void cloudAgentProxy.close();
-	}
-	const contents = getShellWebContents();
-	if (!contents || contents.isDestroyed()) return;
-	contents.send("cloud:sessionChanged", account);
-}
-
-installCloudIPC(cloudDataDir, notifyRenderersOfCloudSession);
-
-// Dev-only local (email/password) sign-in against a loopback Docker control
-// plane running AO_CLOUD_LOCAL_AUTH. Gated to unpackaged/dev builds + loopback
-// CP inside the handlers; a no-op surface for production/WorkOS users.
-installCloudLocalAuthIPC(cloudDataDir, notifyRenderersOfCloudSession);
-
-// Cloud control-plane proxy IPC — cloudCp:request/openStream/closeStream.
-// CP calls go through main so the WorkOS bearer token never reaches a renderer.
-installCloudCpProxy(cloudDataDir);
-ipcMain.handle("cloudCp:agentBrowserUrl", (_event, baseUrl: unknown, orgId: unknown, sessionId: unknown) =>
-	cloudAgentProxy.agentBrowserUrl(baseUrl, orgId, sessionId));
-
-function focusCloudWindow(): void {
-	const window = BaseWindow.getAllWindows()[0];
-	if (!window) return;
-	if (window.isMinimized()) window.restore();
-	window.show();
-	window.focus();
-}
-
-async function handleCloudDeepLinkAndFocus(url: string): Promise<void> {
-	focusCloudWindow();
-	// Stripe Checkout and the Customer Portal return here (via the control
-	// plane's /billing/return page): open Settings on Billing, which re-reads
-	// the plan when it mounts.
-	if (isBillingDeepLink(url)) {
-		getShellWebContents()?.send(OPEN_SETTINGS_SHORTCUT_CHANNEL, "billing");
-		return;
-	}
-	try {
-		const session = await handleCloudDeepLink(url, cloudDataDir());
-		if (!session) return;
-		notifyRenderersOfCloudSession(session);
-	} catch (error) {
-		console.error("WorkOS callback failed:", error);
-		await showCloudSignInFailure(error);
-	}
-}
-
-function isBillingDeepLink(raw: string): boolean {
-	try {
-		const url = new URL(raw);
-		return url.protocol === "ao-app:" && url.hostname === "billing";
-	} catch {
-		return false;
-	}
-}
-
-// macOS: the OS sends the ao-app:// URL via the open-url event when the app is
-// already running. If the app is not running, the URL is passed in process.argv
-// on first launch (handled in app.whenReady below).
-app.on("open-url", (event, url) => {
-	event.preventDefault();
-	void handleCloudDeepLinkAndFocus(url);
-});
-
 app.on("second-instance", (_event, argv) => {
-	const deepLink = argv.find((value) => value.startsWith("ao-app://"));
-	if (deepLink) {
-		void handleCloudDeepLinkAndFocus(deepLink);
-		return;
-	}
 	// A folder dropped on the taskbar icon/shortcut while already running.
 	// Usually the renderer is already mounted and listening, so send directly
 	// — but this can still fire while the first instance is early in
@@ -3299,13 +3184,6 @@ app.whenReady().then(async () => {
 	if (browserQuitRequested) return;
 	if (!daemonStartsWithWindow) void startDaemon();
 
-	// Windows/Linux: on first launch, the deep-link URL may arrive as a
-	// process.argv entry (e.g. ao-app://callback?token=...).
-	const deepLinkArg = process.argv.find((a) => a.startsWith("ao-app://"));
-	if (deepLinkArg) {
-		void handleCloudDeepLinkAndFocus(deepLinkArg);
-	}
-
 	// Windows/Linux: a folder dropped on the taskbar icon/shortcut while the
 	// app was not running launches it with the folder's path in argv. The
 	// renderer isn't mounted yet — queue it, flushed on TRAY_RENDERER_READY_CHANNEL.
@@ -3364,7 +3242,6 @@ app.on("before-quit", (event) => {
 			const cleanup = Promise.all([
 				disposeAllBrowserViewHosts(),
 				remoteRegistry.closeAll(),
-				cloudAgentProxy.close(),
 				retireSides(),
 			]);
 			const finishQuit = () => {

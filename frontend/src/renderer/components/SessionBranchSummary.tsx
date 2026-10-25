@@ -74,7 +74,7 @@ export function SessionBranchSummary({
 	const clearPending = useSessionGitActionStore((state) => state.clear);
 	// Cloud sessions have no local workspace facts; orchestrators coordinate
 	// workers rather than shipping a branch of their own.
-	const showGit = !session.cloud && session.kind !== "orchestrator";
+	const showGit = session.kind !== "orchestrator";
 	const manifest = useQuery({ ...sessionWorkspaceFilesQueryOptions(session.id, undefined, hostId), enabled: showGit });
 
 	// Landed moves when the base ref or the commit count moves, not on file edits.

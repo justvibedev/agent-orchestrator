@@ -33,39 +33,8 @@ describe("FileMediaPreview", () => {
 		expect(screen.getByLabelText("logo.png")).toHaveAttribute("src", `${props.source.rawUrl}&v=2`);
 	});
 
-	it("plays a cloud video from its control-plane link and asks for a fresh link when it fails", () => {
-		const onAccessRefused = vi.fn();
-		const source = { kind: "artifact" as const, cloud: true, rawUrl: "https://cp.test/api/cloud/v1/artifact-files/t/demo.mp4?v=1", onAccessRefused };
-		render(<FileMediaPreview kind="video" path="demo.mp4" sessionId="session-1" source={source} version={1} />);
-		const video = screen.getByLabelText("demo.mp4");
-		expect(video.getAttribute("src")).toMatch(/^https:\/\/cp\.test\/api\/cloud\/v1\/artifact-files\/t\/demo\.mp4\?v=1/);
-		fireEvent.error(video);
-		expect(onAccessRefused).toHaveBeenCalledTimes(1);
-	});
 
-	it("takes one fresh link per file version, then shows a cloud file that still fails", () => {
-		const onAccessRefused = vi.fn();
-		const props = { kind: "video" as const, path: "broken.mp4", sessionId: "session-1", version: 1 };
-		const source = (token: string) => ({ kind: "artifact" as const, cloud: true, rawUrl: `https://cp.test/api/cloud/v1/artifact-files/${token}/broken.mp4?v=1`, onAccessRefused });
-		const view = render(<FileMediaPreview {...props} source={source("t1")} />);
-		fireEvent.error(screen.getByLabelText("broken.mp4"));
-		view.rerender(<FileMediaPreview {...props} source={source("t2")} />);
-		fireEvent.error(screen.getByLabelText("broken.mp4"));
-		view.rerender(<FileMediaPreview {...props} source={source("t3")} />);
-		expect(onAccessRefused).toHaveBeenCalledTimes(1);
 
-		// The fresh link failed too: the error shows, and Retry may take one more link.
-		view.rerender(<FileMediaPreview {...props} source={source("t2")} />);
-		fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-		fireEvent.error(screen.getByLabelText("broken.mp4"));
-		expect(onAccessRefused).toHaveBeenCalledTimes(2);
-	});
-
-	it("does not add a second version to a cloud file's URL", () => {
-		const source = { kind: "artifact" as const, cloud: true, rawUrl: "https://cp.test/api/cloud/v1/artifact-files/t/chart.png?v=1" };
-		render(<FileMediaPreview kind="image" path="chart.png" sessionId="session-1" source={source} version="2026-10-22T00:00:00Z" />);
-		expect(screen.getByLabelText("chart.png")).toHaveAttribute("src", source.rawUrl);
-	});
 
 	it("shows a cloud image from its control-plane link", () => {
 		const source = { kind: "artifact" as const, cloud: true, rawUrl: "https://cp.test/api/cloud/v1/artifact-files/t/chart.png?v=1" };

@@ -256,9 +256,6 @@ surface (`npm run sqlc`, `npm run api`).
 
 ## In flight / not yet a runtime feature
 
-- **Cloud availability**: public client and desktop integration exist, but usage
-  is gated by build configuration, account entitlement, and a reachable control
-  plane. This is not unconditional availability in every desktop release.
 - **Browser automation acceptance**: the runtime implementation is complete.
   AO packages one
   checksum-pinned Vercel `agent-browser` Rust binary and routes a deliberately

@@ -14,7 +14,6 @@ export function useSideChatsAvailable(session: WorkspaceSession | undefined, hos
 			session &&
 			!hostId &&
 			session.mode === "chat" &&
-			!session.cloud &&
 			!session.isTerminated,
 	);
 }

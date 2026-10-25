@@ -50,9 +50,7 @@ import { cn } from "../lib/utils";
 import { TopbarButton } from "./TopbarButton";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
-import { useCloudNotifications } from "../hooks/useCloudNotifications";
 import { clearRemoteNotification, clearRemoteNotifications, connectRemoteNotificationStreams, fetchRemoteNotificationsPage, markRemoteNotificationsRead, remoteNotificationsQueryKey, useRemoteNotificationHosts } from "../hooks/useRemoteNotifications";
-import type { CloudCpNotification } from "../lib/cloud-cp/types";
 
 type SessionMeta = { projectId: string; projectName: string; sessionName: string };
 
@@ -296,10 +294,6 @@ export function NotificationCenter({ style }: NotificationCenterProps) {
 	const allQuery = useNotificationsQuery("all", open);
 	const remoteUnread = useRemoteNotificationHosts("unread");
 	const remoteAll = useRemoteNotificationHosts("all", open);
-	// CloudNotificationRuntime keeps this list live; the panel only reads it.
-	// Its response also carries the server's total unread count for the badge.
-	const cloudAll = useCloudNotifications("all", { live: false });
-	const cloudItems = cloudAll.items ?? [];
 	const markAllRead = useMarkAllNotificationsReadMutation();
 	const clearAll = useClearAllNotificationsMutation();
 	const clearOne = useClearNotificationMutation();
@@ -331,26 +325,15 @@ export function NotificationCenter({ style }: NotificationCenterProps) {
 			setRemoteLoadingEarlierHost(null);
 		}
 	}, [remoteAll.hosts, remoteLoadingEarlierHost, remoteOlderPages]);
-	// Hold older Cloud rows until the local pagination window reaches them.
-	const localHasMore = Boolean(allQuery.hasNextPage);
-	const visibleCloudItems = useMemo(() => {
-		if (!localHasMore) return cloudItems;
-		const oldestLocal = notifications.reduce(
-			(min, item) => Math.min(min, Date.parse(item.createdAt)),
-			Number.POSITIVE_INFINITY,
-		);
-		return cloudItems.filter((item) => Date.parse(item.createdAt) >= oldestLocal);
-	}, [cloudItems, localHasMore, notifications]);
 	const entries = useMemo(() => [
 		...notifications.map((notification) => ({ hostId: LOCAL_HOST, label: "", notification })),
 		...remoteItems.flatMap((host) => host.notifications.map((notification) => ({
 			hostId: host.hostId, label: host.label, notification,
 		}))),
 	].sort((a, b) => b.notification.createdAt.localeCompare(a.notification.createdAt)), [notifications, remoteItems]);
-	const unreadCount = getCachedUnreadCount(unreadQuery.data) + remoteUnread.totalUnreadCount + (cloudAll.data?.unreadCount ?? 0);
+	const unreadCount = getCachedUnreadCount(unreadQuery.data) + remoteUnread.totalUnreadCount;
 	const confirmedClearSnapshot = isNotificationsCacheFromClear(queryClient);
 	const { openSession } = useNotificationTargetNavigation();
-	const navigateToSession = useNavigateToSession();
 	const markAllMutate = markAllRead.mutateAsync;
 
 	// Concrete ids only — never `[]` — so unread pages past the first stay
@@ -439,42 +422,6 @@ export function NotificationCenter({ style }: NotificationCenterProps) {
 		}
 	}, [ackRetryNonce, open, queryClient, t, visibleRemoteUnreadKey]);
 
-	// Cloud rows are acknowledged the same way: concrete loaded ids only, so a
-	// row that arrives mid-refresh is highlighted before it is marked read.
-	const openRef = useRef(open);
-	openRef.current = open;
-	const acknowledgedCloudIdsRef = useRef<Set<string>>(new Set());
-	const markCloudRead = cloudAll.markRead;
-	const cloudLoading = cloudAll.isLoading;
-	const cloudUnreadKey = useMemo(
-		() => visibleCloudItems.filter((item) => item.status === "unread").map((item) => item.id).join("|"),
-		[visibleCloudItems],
-	);
-	useEffect(() => {
-		if (!open) {
-			acknowledgedCloudIdsRef.current = new Set();
-			return;
-		}
-		if (cloudLoading) return;
-		const unreadIds = cloudUnreadKey === "" ? [] : cloudUnreadKey.split("|");
-		const newly = unreadIds.filter((id) => !acknowledgedCloudIdsRef.current.has(id));
-		if (newly.length === 0) return;
-
-		for (const id of newly) acknowledgedCloudIdsRef.current.add(id);
-		setHighlightedIds((current) => {
-			const next = new Set(current);
-			for (const id of newly) next.add(cloudRowKey(id));
-			return next;
-		});
-		setMarkReadError(null);
-		void markCloudRead(newly).catch((error: unknown) => {
-			for (const id of newly) acknowledgedCloudIdsRef.current.delete(id);
-			if (openRef.current) {
-				setMarkReadError(error instanceof Error ? error.message : t("notify.couldNotMarkAllRead"));
-			}
-		});
-	}, [ackRetryNonce, cloudLoading, cloudUnreadKey, markCloudRead, open, t]);
-
 	const setPanelOpen = useCallback((nextOpen: boolean) => {
 		setOpen(nextOpen);
 		if (!nextOpen) {
@@ -528,23 +475,6 @@ export function NotificationCenter({ style }: NotificationCenterProps) {
 		void restoreThenOpen(sessionId, hostId, sessionUiKey(sessionId, hostId), () => openSession(notification, hostId));
 	}, [openSession, restoreThenOpen]);
 
-	// Cloud sessions live in the same workspace tree as local ones, keyed by
-	// their cloud project, so they open through the same session route.
-	const openCloudSession = useCallback((projectId: string, sessionId: string) => {
-		navigateToSession(projectId, sessionId);
-	}, [navigateToSession]);
-
-	const openCloudSessionAndDismiss = useCallback((projectId: string, sessionId: string) => {
-		openCloudSession(projectId, sessionId);
-		setPanelOpen(false);
-	}, [openCloudSession, setPanelOpen]);
-
-	const restoreCloudAndOpen = useCallback((projectId: string, sessionId: string) => {
-		void restoreThenOpen(sessionId, undefined, cloudRowKey(sessionId), () => openCloudSession(projectId, sessionId));
-	}, [openCloudSession, restoreThenOpen]);
-
-	const clearCloud = cloudAll.clearAll;
-	const clearCloudOne = cloudAll.clearOne;
 	// Clear local history unless it is confirmed empty. A failed local load still
 	// clears server-side: the daemon's clear-all does not need rows loaded.
 	const clearLocal = notifications.length > 0 || !allQuery.isSuccess;
@@ -558,7 +488,6 @@ export function NotificationCenter({ style }: NotificationCenterProps) {
 		setRemoteEarlierError(null);
 		void Promise.allSettled([
 			...(clearLocal ? [clearAll.mutateAsync()] : []),
-			...(clearCloud ? [clearCloud()] : []),
 			...remoteAll.hosts.map(async (host) => {
 				await clearRemoteNotifications(host.hostId, queryClient).catch((error: unknown) => {
 					throw new Error(`${host.label}: ${error instanceof Error ? error.message : t("notify.couldNotClearAll")}`);
@@ -569,7 +498,7 @@ export function NotificationCenter({ style }: NotificationCenterProps) {
 			const failure = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
 			if (failure) setActionError(failure.reason instanceof Error ? failure.reason.message : t("notify.couldNotClearAll"));
 		}).finally(() => setClearingAll(false));
-	}, [clearAll, clearCloud, clearLocal, clearingAll, queryClient, remoteAll.hosts, t]);
+	}, [clearAll, clearLocal, clearingAll, queryClient, remoteAll.hosts, t]);
 
 	const handleClear = useCallback((notification: NotificationDTO, hostId: HostId) => {
 		setActionError(null);
@@ -598,23 +527,6 @@ export function NotificationCenter({ style }: NotificationCenterProps) {
 			});
 	}, [clearOne, queryClient, t]);
 
-	const handleClearCloud = useCallback((notification: CloudCpNotification) => {
-		const clearingId = cloudRowKey(notification.id);
-		setActionError(null);
-		setClearingNotificationIds((current) => new Set(current).add(clearingId));
-		void clearCloudOne(notification)
-			.catch((error: unknown) => {
-				setActionError(error instanceof Error ? error.message : t("notify.couldNotClearOne"));
-			})
-			.finally(() => {
-				setClearingNotificationIds((current) => {
-					const next = new Set(current);
-					next.delete(clearingId);
-					return next;
-				});
-			});
-	}, [clearCloudOne, t]);
-
 	const loadEarlierOnScroll = (event: React.UIEvent<HTMLDivElement>) => {
 		const list = event.currentTarget;
 		const remaining = list.scrollHeight - list.scrollTop - list.clientHeight;
@@ -639,22 +551,13 @@ export function NotificationCenter({ style }: NotificationCenterProps) {
 			if (generation === remoteHistoryGeneration.current) setRemoteLoadingEarlierHost(null);
 		}
 	};
-	// Local history only loads once the panel opens, while cloud rows are cached
-	// in the background. Hold the list until local arrives so rows don't pop in,
-	// and keep a local load failure visible even when cloud rows exist.
+	// Local history only loads once the panel opens. Hold the list until it arrives so rows don't pop in.
 	const localEmpty = notifications.length === 0;
 	const localLoadFailed = allQuery.isError && localEmpty && !confirmedClearSnapshot;
 	const localLoading = allQuery.isLoading && localEmpty;
 	const remoteLoadFailed = remoteAll.hosts.some((host) => host.isError);
 	const remoteLoading = remoteAll.hosts.some((host) => host.isLoading);
-	// Local, remote, and Cloud rows interleave by creation time.
-	const rows = useMemo(() => {
-		const merged = [
-			...entries.map((entry) => ({ kind: "host" as const, ...entry })),
-			...visibleCloudItems.map((item) => ({ kind: "cloud" as const, item })),
-		];
-		return merged.sort((a, b) => Date.parse(b.kind === "cloud" ? b.item.createdAt : b.notification.createdAt) - Date.parse(a.kind === "cloud" ? a.item.createdAt : a.notification.createdAt));
-	}, [entries, visibleCloudItems]);
+	const rows = entries;
 	const isEmpty = rows.length === 0;
 
 	return (
@@ -766,35 +669,6 @@ export function NotificationCenter({ style }: NotificationCenterProps) {
 						role="list"
 					>
 						{rows.map((row) => {
-							if (row.kind === "cloud") {
-								const cloud = row.item;
-								const cloudSessionId = cloud.sessionId ?? "";
-								const cloudSessionKey = cloudSessionId ? sessionUiKey(cloudSessionId) : undefined;
-								const cloudMeta = cloudSessionKey ? sessionMeta.get(cloudSessionKey) : undefined;
-								const cloudTerminated = Boolean(cloudMeta) && Boolean(cloudSessionKey && terminatedIds.has(cloudSessionKey));
-								const cloudOfferRestore = cloudTerminated && cloud.type === "needs_input";
-								const clearingKey = cloudRowKey(cloud.id);
-								return (
-									<CloudNotificationItem
-										highlighted={highlightedIds.has(clearingKey) || cloud.status === "unread"}
-										key={clearingKey}
-										notification={cloud}
-										onOpenSession={openCloudSessionAndDismiss}
-										onRestore={restoreCloudAndOpen}
-										onClear={handleClearCloud}
-										clearing={clearingNotificationIds.has(clearingKey)}
-										clearDisabled={clearingNotificationIds.has(clearingKey) || clearingAll || clearAll.isPending}
-										restoring={Boolean(cloudSessionId) && restoringSessionId === cloudRowKey(cloudSessionId)}
-										restoreDisabled={restoringSessionId !== undefined}
-										projectId={cloudMeta?.projectId}
-										projectName={cloudMeta?.projectName}
-										sessionName={cloudMeta?.sessionName}
-										sessionsReady={sessionsReady}
-										terminated={cloudTerminated}
-										offerRestore={cloudOfferRestore}
-									/>
-								);
-							}
 							const { hostId, label, notification } = row;
 							const sessionId = notification.target.sessionId || notification.sessionId;
 							const sessionKey = sessionId ? sessionUiKey(sessionId, hostId) : undefined;
@@ -1054,172 +928,6 @@ const NotificationItem = memo(function NotificationItem({
 						<TooltipTrigger asChild>
 							<button
 								aria-label={t("notify.clearOne", { title: hostLabel ? `${hostLabel}: ${copy.title}` : copy.title })}
-								title=""
-								className="grid size-notification-icon place-items-center rounded-md text-passive transition-colors hover:bg-interactive-active hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
-								disabled={clearDisabled}
-								onClick={(event) => {
-									event.stopPropagation();
-									onClear(notification);
-								}}
-								onKeyDown={(event) => event.stopPropagation()}
-								type="button"
-							>
-								{clearing ? (
-									<LoaderCircle className="size-icon-sm animate-spin" aria-hidden="true" />
-								) : (
-									<X className="size-icon-sm" aria-hidden="true" />
-								)}
-							</button>
-						</TooltipTrigger>
-						<TooltipContent side="top">{t("notify.clearOneShort")}</TooltipContent>
-					</Tooltip>
-				</div>
-			</div>
-		</div>
-	);
-});
-
-const cloudRowKey = (id: string) => `cloud:${id}`;
-
-/**
- * Cloud rows mirror NotificationItem exactly (open, restore, clear, meta line,
- * motion), plus a small "Cloud" tag. A cloud row opens only once its session is
- * in the workspace tree; otherwise the route would have nothing to render.
- */
-const CloudNotificationItem = memo(function CloudNotificationItem({
-	highlighted,
-	notification,
-	offerRestore,
-	onOpenSession,
-	onRestore,
-	onClear,
-	projectId,
-	projectName,
-	clearing,
-	clearDisabled,
-	restoring,
-	restoreDisabled,
-	sessionName,
-	sessionsReady,
-	terminated,
-}: {
-	highlighted: boolean;
-	notification: CloudCpNotification;
-	offerRestore: boolean;
-	onOpenSession: (projectId: string, sessionId: string) => void;
-	onRestore: (projectId: string, sessionId: string) => void;
-	onClear: (notification: CloudCpNotification) => void;
-	projectId?: string;
-	projectName?: string;
-	clearing: boolean;
-	clearDisabled: boolean;
-	restoring: boolean;
-	restoreDisabled: boolean;
-	sessionName?: string;
-	sessionsReady: boolean;
-	terminated: boolean;
-}) {
-	const { t } = useTranslation();
-	const Icon = notificationIcon(notification.type);
-	const sessionId = notification.sessionId ?? "";
-	const canOpenSession = Boolean(sessionId && projectId) && sessionsReady && (!terminated || !offerRestore);
-	const showSessionMeta = Boolean(sessionName) && !notificationMentions(notification, sessionName ?? "");
-	const openRow = () => {
-		if (canOpenSession && projectId) onOpenSession(projectId, sessionId);
-	};
-	return (
-		<div data-notification-source="cloud" role="listitem">
-			<div
-				className={cn(
-					"group grid grid-cols-notification items-start gap-3 px-4 py-3 text-left transition-[background-color,opacity,transform] duration-fast will-change-transform",
-					highlighted && "notification-row-enter",
-					canOpenSession
-						? "cursor-pointer hover:bg-interactive-hover active:scale-[0.99] active:bg-interactive-active"
-						: "cursor-default",
-					!highlighted && "opacity-55 hover:opacity-80",
-				)}
-				onClick={openRow}
-				onKeyDown={(event) => {
-					if (!canOpenSession || event.target !== event.currentTarget) return;
-					if (event.key !== "Enter" && event.key !== " ") return;
-					event.preventDefault();
-					openRow();
-				}}
-				role={canOpenSession ? "button" : undefined}
-				tabIndex={canOpenSession ? 0 : undefined}
-				// Row actions set title="" so this native tooltip does not show over them.
-				title={canOpenSession ? t("notify.openSessionTitle") : undefined}
-			>
-				<div
-					className={cn(
-						"grid size-notification-icon shrink-0 place-items-center transition-transform duration-fast group-hover:brightness-110 group-active:scale-90",
-						notificationIconClass(notification.type),
-					)}
-				>
-					<Icon className="size-5" strokeWidth={2} aria-hidden="true" />
-				</div>
-				<div className="min-w-0">
-					{/* Match the 26px icon band so the title centers with the left glyph. */}
-					<div className="flex min-h-notification-icon items-center gap-1.5">
-						<span
-							aria-label={notification.title}
-							className={cn(
-								"min-w-0 break-words text-control leading-snug text-foreground",
-								highlighted && "font-medium",
-							)}
-						>
-							{notification.title}
-						</span>
-						<span className="shrink-0 rounded-sm border border-border px-1 py-px text-[9px] font-medium uppercase leading-none tracking-wide text-passive">
-							{t("notify.cloud")}
-						</span>
-					</div>
-					{notification.body ? (
-						<p className="mt-0.5 whitespace-pre-wrap break-words text-caption leading-snug text-muted-foreground">
-							{notification.body}
-						</p>
-					) : null}
-					{projectName || showSessionMeta ? (
-						<p className="mt-1 flex min-w-0 items-center gap-1.5 text-caption leading-none text-passive">
-							{projectName ? (
-								<span className="truncate font-medium text-muted-foreground">{projectName}</span>
-							) : null}
-							{projectName && showSessionMeta ? <span aria-hidden="true">·</span> : null}
-							{showSessionMeta ? <span className="truncate">{sessionName}</span> : null}
-						</p>
-					) : null}
-				</div>
-				{/* Time and row actions share the same icon-height band. */}
-				<div className="flex h-notification-icon shrink-0 items-center gap-1">
-					<time className="shrink-0 font-mono text-[9px] leading-none text-passive" dateTime={notification.createdAt}>
-						{formatTimeCompact(notification.createdAt)}
-					</time>
-					{offerRestore && sessionId && projectId ? (
-						<Tooltip delayDuration={0}>
-							<TooltipTrigger asChild>
-								<button
-									aria-label={t("shell.restoreSession")}
-									title=""
-									className="grid size-notification-icon place-items-center rounded-md text-passive transition-colors hover:bg-interactive-active hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
-									disabled={restoreDisabled}
-									onClick={(event) => {
-										event.stopPropagation();
-										onRestore(projectId, sessionId);
-									}}
-									type="button"
-								>
-									<RotateCcw className={cn("size-icon-md", restoring && "animate-spin")} aria-hidden="true" />
-								</button>
-							</TooltipTrigger>
-							<TooltipContent side="top">
-								{restoring ? t("shell.restoringSession") : t("shell.restoreSession")}
-							</TooltipContent>
-						</Tooltip>
-					) : null}
-					<Tooltip delayDuration={0}>
-						<TooltipTrigger asChild>
-							<button
-								aria-label={t("notify.clearOne", { title: notification.title })}
 								title=""
 								className="grid size-notification-icon place-items-center rounded-md text-passive transition-colors hover:bg-interactive-active hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
 								disabled={clearDisabled}

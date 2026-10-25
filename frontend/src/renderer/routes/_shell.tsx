@@ -38,11 +38,8 @@ import { agentModelsQueryOptions } from "../hooks/useAgentModelsQuery";
 import { useDaemonStatus } from "../hooks/useDaemonStatus";
 import { useOpenShellTerminal } from "../hooks/useShellTerminals";
 import { useWindowFullScreen } from "../hooks/useWindowFullScreen";
-import { cloudProjectsQueryKey, cloudSessionsQueryKey, useRemoteWorkspaces, useWorkspacePolling, useWorkspaceQuery, workspaceQueryKey, toWorkspaceSession, workspaceQueryOptions } from "../hooks/useWorkspaceQuery";
-import { useCloudCp } from "../hooks/useCloudCp";
-import { useCloudOrg } from "../hooks/useCloudOrg";
+import { useRemoteWorkspaces, useWorkspacePolling, useWorkspaceQuery, workspaceQueryKey, toWorkspaceSession, workspaceQueryOptions } from "../hooks/useWorkspaceQuery";
 import { apiClient, apiErrorCode, apiErrorDetails, apiErrorMessage, apiErrorRequestId, hasTrustedApiBaseUrl } from "../lib/api-client";
-import { cachedCloudBillingMode } from "../lib/cloud-offering";
 import { resolveCssColorToHex } from "../lib/css-color";
 import { refreshDaemonStatus } from "../lib/daemon-status";
 import { usesPreviewWorkspaceData } from "../lib/preview-mode";
@@ -62,13 +59,11 @@ import {
 	hidesShellTopbar,
 } from "../lib/platform";
 import { sidebarIsVisible, sidebarOccupiesLayout, useUiStore } from "../stores/ui-store";
-import { CLOUD_PROJECT_KIND, hasConfiguredOrchestratorAgent, newestActiveOrchestrator, sessionIsActive, STANDALONE_WORKSPACE_ID, toProjectKind, type WorkspaceSession, type WorkspaceSummary } from "../types/workspace";
+import { hasConfiguredOrchestratorAgent, newestActiveOrchestrator, sessionIsActive, STANDALONE_WORKSPACE_ID, toProjectKind, type WorkspaceSession, type WorkspaceSummary } from "../types/workspace";
 import type { components } from "../../api/schema";
 import { useSessionSwitchSnap } from "../hooks/useSessionSwitchSnap";
 import { remoteWorkspaceQueryKey } from "../hooks/useWorkspaceQuery";
 import { clientForHost } from "../lib/host-clients";
-import { useCloudSession } from "../lib/cloud-session";
-import { useCloudAccountSwitchReset } from "../hooks/useCloudAccountSwitchReset";
 import { openRemoteOrchestrator } from "../lib/remote-orchestrator";
 import { projectNavigateTarget, sessionNavigateTarget } from "../lib/navigate-to-session";
 import { sessionUiKey } from "../lib/hosts";
@@ -161,13 +156,12 @@ function LocalSessionHost() {
 		shouldThrow: false,
 		select: (match) => match.params,
 	});
-	const { org } = useCloudOrg();
 	const sessionId = projectSession?.sessionId ?? scratchpadSessionId;
 	if (!sessionId) return null;
 	return (
 		<CatchBoundary errorComponent={LazyChunkErrorPanel} getResetKey={() => sessionId} onCatch={captureSessionViewCrash}>
 			<Suspense fallback={null}>
-				<SessionView cloudOrgId={org?.id} projectId={projectSession?.projectId} sessionId={sessionId} />
+				<SessionView projectId={projectSession?.projectId} sessionId={sessionId} />
 			</Suspense>
 		</CatchBoundary>
 	);
@@ -226,17 +220,13 @@ const ShellCenter = memo(function ShellCenter({
 	isSessionRoute,
 	selfFramedCenterPanel,
 	startingOrchestrator,
-	startingCloudOrchestrator,
 	startingSteps,
-	startingCoderWorkspaceUrl,
 }: {
 	hideShellTopbar: boolean;
 	isSessionRoute: boolean;
 	selfFramedCenterPanel: boolean;
 	startingOrchestrator: boolean;
-	startingCloudOrchestrator: boolean;
 	startingSteps?: WorkspaceSession["provisionSteps"];
-	startingCoderWorkspaceUrl?: string;
 }) {
 	const panelClassName = isSessionRoute || startingOrchestrator ? "center-panel-shell--session" : undefined;
 	// Linux retains an outer drag strip. macOS uses the shared header itself;
@@ -244,7 +234,7 @@ const ShellCenter = memo(function ShellCenter({
 	// Windows already owns a separate WindowTitlebar.
 	const draggableSessionFrame = (isSessionRoute || startingOrchestrator) && isLinux;
 	const settingsOpen = useUiStore((state) => state.settingsModal?.scope === "global");
-	const startingChat = startingOrchestrator ? <LazyChunkBoundary><Suspense fallback={null}><OrchestratorStartingChat steps={startingSteps} cloud={startingCloudOrchestrator} coderWorkspaceUrl={startingCoderWorkspaceUrl} /></Suspense></LazyChunkBoundary> : null;
+	const startingChat = startingOrchestrator ? <LazyChunkBoundary><Suspense fallback={null}><OrchestratorStartingChat steps={startingSteps} /></Suspense></LazyChunkBoundary> : null;
 	// Settings is a self-framed route, so its starting chat gets its own panel.
 	const selfFramedOutlet = <>
 		<div className={startingOrchestrator ? "absolute inset-0 invisible pointer-events-none" : "contents"} inert={startingOrchestrator || undefined}><Outlet /></div>
@@ -284,8 +274,6 @@ function ShellLayout() {
 	const router = useRouter();
 	const matchRoute = useMatchRoute();
 	const queryClient = useQueryClient();
-	const { client: cloudClient } = useCloudCp();
-	const { org: cloudOrg } = useCloudOrg();
 	useWorkspacePolling();
 	const workspaceQuery = useWorkspaceQuery();
 	const workspaces = workspaceQuery.data ?? [];
@@ -392,18 +380,9 @@ function ShellLayout() {
 	const routeParamsRef = useRef(routeParams);
 	routeParamsRef.current = routeParams;
 	const remoteHostsEnabled = useUiStore((state) => state.developerMode && state.remoteHosts);
-	const { status: accountStatus, session: cloudAccount } = useCloudSession();
 	useEffect(() => {
-		if ((!remoteHostsEnabled || accountStatus === "unauthenticated") && routeParams.hostId) void navigate({ to: "/", replace: true });
-	}, [accountStatus, navigate, remoteHostsEnabled, routeParams.hostId]);
-	useCloudAccountSwitchReset({
-		userId: cloudAccount?.user.id ?? null,
-		ready: accountStatus !== "loading",
-		queryClient,
-		onLocalPage: !routeParams.projectId ||
-			workspaces.some((workspace) => workspace.id === routeParams.projectId && workspace.kind !== CLOUD_PROJECT_KIND),
-		leavePage: () => void navigate({ to: "/", replace: true }),
-	});
+		if (!remoteHostsEnabled && routeParams.hostId) void navigate({ to: "/", replace: true });
+	}, [navigate, remoteHostsEnabled, routeParams.hostId]);
 	const linkSession = routeParams.hostId ? undefined : workspaces.flatMap((workspace) => workspace.sessions).find((session) => session.id === routeParams.sessionId);
 	const openBrowserLink = useSessionBrowserLink(linkSession);
 	const canOpenBrowserLink = linkSession?.kind === "worker" && sessionIsActive(linkSession);
@@ -727,7 +706,7 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 				if (failure.code === "PATH_ALREADY_REGISTERED") {
 					const existingProjectId = failure.details?.existingProjectId;
 					const findRegisteredWorkspace = (items: WorkspaceSummary[]) => {
-						const local = items.filter((workspace) => workspace.kind !== "cloud");
+						const local = items;
 						// The daemon resolves symlinks/canonical paths. Prefer its identity
 						// over renderer path spelling, but only open a known local project.
 						return typeof existingProjectId === "string" && existingProjectId !== ""
@@ -890,36 +869,6 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 		async (projectId: string) => {
 			const isLastWorkspace =
               workspaces.length === 1 && workspaces[0]?.id === projectId;
-			// Cloud projects live in the control plane, not the local daemon: route
-			// their delete to the CP (which archives the project and all its
-			// sessions) instead of the local project endpoint.
-			const isCloudProject =
-				workspaces.find((item) => item.id === projectId)?.kind === CLOUD_PROJECT_KIND;
-			if (isCloudProject) {
-				if (!cloudOrg?.id) {
-					const failure = new Error("The cloud control plane is not ready. Sign in and try again.") as Error & {
-						code?: string;
-					};
-					failure.code = "cloud_not_ready";
-					throw failure;
-				}
-				try {
-					await cloudClient.deleteProject(cloudOrg.id, projectId);
-				} catch (error) {
-					const failure = new Error(
-						error instanceof Error ? error.message : "Unable to delete cloud project",
-					) as Error & { code?: string };
-					throw failure;
-				}
-				// The archive is asynchronous (202); refresh the cloud queries so the
-				// merged board drops the project and its sessions on the next fetch.
-				await queryClient.invalidateQueries({ queryKey: cloudProjectsQueryKey });
-				await queryClient.invalidateQueries({ queryKey: cloudSessionsQueryKey });
-				if (isLastWorkspace) {
-					void navigate({ to: "/" });
-				}
-				return;
-			}
 			const { error } = await apiClient.DELETE("/api/v1/projects/{id}", {
 				params: { path: { id: projectId } },
 			});
@@ -933,7 +882,7 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
               void navigate({ to: "/" });
 }
 		},
-		[cloudClient, cloudOrg?.id, navigate, queryClient, updateWorkspaces, workspaces],
+		[navigate, updateWorkspaces, workspaces],
 	);
 	const removeRemoteProject = useCallback(async (hostId: string, projectId: string) => {
 		const selectedProject = routeParams.hostId === hostId && (
@@ -1223,7 +1172,6 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 		const shell = openShellTerminal.open({
 			projectId: scopedProjectId,
 			sessionId: routeParams.sessionId,
-			cloud: scopedSession?.cloud,
 		});
 		if (!shell) return;
 		setActiveShellTerminal(shell.handleId);
@@ -1234,21 +1182,15 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 		newShellTerminalNonce,
 		openShellTerminal,
 		scopedProjectId,
-		scopedSession?.cloud,
 		routeParams.sessionId,
 		routeParams.hostId,
 		navigate,
 		setActiveShellTerminal,
 	]);
 
-	// ao-app://billing (Stripe's return page) opens Upgrade only for a
-	// self-serve org; any other org has no plans and lands on general settings.
 	useEffect(
-		() => aoBridge.app.onOpenSettingsShortcut((section) =>
-			useUiStore.getState().openGlobalSettings(
-				section === "billing" && cachedCloudBillingMode(queryClient) === "self_serve" ? "billing" : undefined,
-			)),
-		[queryClient],
+		() => aoBridge.app.onOpenSettingsShortcut(() => useUiStore.getState().openGlobalSettings()),
+		[],
 	);
 
 	useEffect(() => {
@@ -1425,9 +1367,7 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 								isSessionRoute={Boolean(routeParams.sessionId)}
 								selfFramedCenterPanel={selfFramedCenterPanel}
 								startingOrchestrator={openingOrchestrator}
-								startingCloudOrchestrator={!routeParams.hostId && startingWorkspace?.kind === CLOUD_PROJECT_KIND}
 								startingSteps={startingSteps}
-								startingCoderWorkspaceUrl={startingOrchestratorSession?.cloud?.coderWorkspaceUrl}
 							/>
 						</div>
 						</main>

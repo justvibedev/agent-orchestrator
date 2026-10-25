@@ -34,8 +34,6 @@ import { pollIntervalFor } from "./pollInterval";
 import { rejectedEndpointNeedsRace, type ConnectOptions } from "./connectRuntime";
 import type { Endpoint } from "./endpoints";
 import { activeHost, loadHosts, sameHostConnections, setActiveHost, type Host } from "./hosts";
-import { loadAccount } from "./account";
-import { cancelAccountHostSync, syncAccountHosts } from "./accountHosts";
 import { shouldReRace } from "./reRace";
 import { shouldRaceForUpgrade, UPGRADE_RACE_CHECK_MS } from "./upgradeRace";
 import { pollResultIsCurrent, sameServerConfig } from "./sameConfig";
@@ -439,7 +437,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
 			pollActiveRef.current = active;
 			if (!active) {
 				primaryLoadRef.current?.controller.abort();
-				cancelAccountHostSync();
 				// A LAN address can point at a different machine when the phone wakes.
 				// Keep display rows, but never reuse its old bearer connection.
 				configResolution.current++;
@@ -529,34 +526,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
 	useEffect(() => {
 		void reloadConfig();
 	}, [reloadConfig]);
-
-	useEffect(() => {
-		if (!appActive) return;
-		let current = true;
-		const sync = () => {
-			void loadAccount().then(async (account) => {
-				if (!current || !account) return;
-				const previousSelected = await activeHost();
-				await syncAccountHosts(account);
-				if (!current) return;
-				const hosts = await loadHosts();
-				if (!current) return;
-				setPairedHosts((previous) => sameHostConnections(previous, hosts) ? previous : hosts);
-				const selected = await activeHost();
-				if (!current) return;
-				// Reconcile removal and credential/route rotation, but do not tear
-				// down a working connection on unchanged directory polls. A selected
-				// host with no config yet is either mid-race (launch, resume) or
-				// offline; the reconnect timer below owns that, and racing again here
-				// would discard the in-flight attempt.
-				if (!sameHostConnections(previousSelected ? [previousSelected] : [], selected ? [selected] : []) ||
-					(cfgRef.current?.hostId && !hosts.some((host) => host.id === cfgRef.current?.hostId))) void reloadConfig();
-			}).catch(() => {});
-		};
-		sync();
-		const timer = setInterval(sync, 30_000);
-		return () => { current = false; clearInterval(timer); cancelAccountHostSync(); };
-	}, [appActive, reloadConfig]);
 
 	// An offline selected host still needs to reconnect when its network returns.
 	// Without this, a failed initial endpoint race leaves it closed until a tap.

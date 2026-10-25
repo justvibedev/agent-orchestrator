@@ -114,7 +114,6 @@ export function EnvironmentMachineRow({ host, activeConfig, isDefault, expanded,
 	const [error, setError] = useState<string>();
 	const [showPassword, setShowPassword] = useState(false);
 
-	const accountManaged = Boolean(host.accountUserId);
 	const canForget = !editing && !saving && !forgetDisabled && !forgetting;
 	const swipeEnabled = !expanded && canForget;
 	useEffect(() => {
@@ -388,13 +387,7 @@ export function EnvironmentMachineRow({ host, activeConfig, isDefault, expanded,
 							</View>
 						) : null}
 					</View>
-					{accountManaged ? (
-						// Account sync rewrites the route and credential from AO Cloud, so an
-						// edit here would silently revert. Name and icon stay phone-local.
-						<Text testID={`environment-account-managed-${host.id}`} style={styles.accountManagedNote}>
-							This machine's address and password come from your Orchestrator Cloud account and update automatically. To connect another way, use Reconnect to scan a new code.
-						</Text>
-					) : <>
+					<>
 						<EditField label="Host" testID={`environment-host-${host.id}`} value={config.host} onChangeText={set("host")} autoCapitalize="none" autoCorrect={false} keyboardType="url" editable={!saving} />
 						<View style={styles.editorPair}>
 							<View style={styles.portField}>
@@ -414,7 +407,7 @@ export function EnvironmentMachineRow({ host, activeConfig, isDefault, expanded,
 								</Pressable>
 							</View>
 						</View>
-					</>}
+					</>
 					{!onEditorStateChange ? <EnvironmentEditorActions editor={{ hostId: host.id, canSave, saving, error, onSave: () => void save(), onCancel: cancelEditing }} /> : null}
 				</View>
 			) : null}
@@ -475,7 +468,6 @@ const makeStyles = (t: Theme) => StyleSheet.create({
 	activeRouteTitle: { fontFamily: "Geist_600SemiBold", color: t.textSecondary, fontSize: type.caption1.fontSize, lineHeight: type.caption1.lineHeight, fontWeight: "600" },
 	activeAddressSurface: { minHeight: 36, justifyContent: "center", paddingHorizontal: space.sm, backgroundColor: t.bgSubtle, borderRadius: radius.sm, borderCurve: "continuous" },
 	activeAddress: { fontFamily: t.fontMono, color: t.textPrimary, fontSize: type.subheadline.fontSize, lineHeight: type.subheadline.lineHeight },
-	accountManagedNote: { fontFamily: "Geist_400Regular", color: t.textSecondary, fontSize: type.footnote.fontSize, lineHeight: type.footnote.lineHeight },
 	noRoutes: { fontFamily: "Geist_400Regular", color: t.textTertiary, fontSize: type.footnote.fontSize, lineHeight: type.footnote.lineHeight, padding: space.md, borderTopWidth: rowDividerWidth, borderTopColor: t.borderDefault },
 	otherRoutesSection: { borderTopWidth: rowDividerWidth, borderTopColor: t.borderDefault },
 	otherRoutesToggle: { minHeight: 62, flexDirection: "row", alignItems: "center", gap: space.sm, paddingHorizontal: space.md, paddingVertical: space.sm },

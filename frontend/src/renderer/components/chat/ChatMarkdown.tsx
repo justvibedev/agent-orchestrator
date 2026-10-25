@@ -110,7 +110,6 @@ const OpenChatLink = createContext<{
 	openFile?: (path: string, line?: number) => void;
 	remoteHost?: boolean;
 	sessionLinkHostId?: string;
-	sessionLinkSourceKind?: "cloud";
 	openSession?: (url: string) => void;
 	workspacePaths: string[];
 }>({ workspacePaths: [] });
@@ -121,7 +120,6 @@ export function ChatLinkProvider({
 	onFileOpen,
 	remoteHost,
 	sessionLinkHostId,
-	sessionLinkSourceKind,
 	onSessionLinkOpen,
 	workspacePaths = EMPTY_WORKSPACE_PATHS,
 	children,
@@ -130,14 +128,13 @@ export function ChatLinkProvider({
 	onFileOpen?: (path: string, line?: number) => void;
 	remoteHost?: boolean;
 	sessionLinkHostId?: string;
-	sessionLinkSourceKind?: "cloud";
 	onSessionLinkOpen?: (url: string) => void;
 	workspacePaths?: string[];
 	children: ReactNode;
 }) {
 	const value = useMemo(
-		() => ({ open: onLinkOpen, openFile: onFileOpen, openSession: onSessionLinkOpen, remoteHost, sessionLinkHostId, sessionLinkSourceKind, workspacePaths }),
-		[onLinkOpen, onFileOpen, onSessionLinkOpen, remoteHost, sessionLinkHostId, sessionLinkSourceKind, workspacePaths],
+		() => ({ open: onLinkOpen, openFile: onFileOpen, openSession: onSessionLinkOpen, remoteHost, sessionLinkHostId, workspacePaths }),
+		[onLinkOpen, onFileOpen, onSessionLinkOpen, remoteHost, sessionLinkHostId, workspacePaths],
 	);
 	return <OpenChatLink.Provider value={value}>{children}</OpenChatLink.Provider>;
 }
@@ -309,7 +306,7 @@ function compactEmoji(children: ReactNode): ReactNode {
 
 function MarkdownLink({ href, children, className }: { href?: string; children?: ReactNode; className?: string }) {
 	const safeOriginContent = useContext(SafeOriginContent);
-	const { open: onLinkOpen, openFile: onFileOpen, openSession: onSessionLinkOpen, remoteHost, sessionLinkHostId, sessionLinkSourceKind, workspacePaths } = useContext(OpenChatLink);
+	const { open: onLinkOpen, openFile: onFileOpen, openSession: onSessionLinkOpen, remoteHost, sessionLinkHostId, workspacePaths } = useContext(OpenChatLink);
 	const filePath = href && onFileOpen
 		? workspaceFilePath(href, workspacePaths) ?? findWorkspaceFilePath(href, workspacePaths) ?? explicitWorkspaceFilePath(href)
 		: undefined;
@@ -331,8 +328,8 @@ function MarkdownLink({ href, children, className }: { href?: string; children?:
 			onFileOpen={onFileOpen}
 			hoverPreview={sessionLink
 				? () => isSessionLink(href!)
-					? <SessionLinkPreviewCard href={href!} sourceHostId={sessionLinkHostId} sourceKind={sessionLinkSourceKind} />
-					: <ArtifactLinkPreviewCard href={href!} sourceHostId={sessionLinkHostId} sourceKind={sessionLinkSourceKind} />
+					? <SessionLinkPreviewCard href={href!} sourceHostId={sessionLinkHostId} />
+					: <ArtifactLinkPreviewCard href={href!} sourceHostId={sessionLinkHostId} />
 				: undefined}
 			onClick={(event) => {
 				if (href && sessionLink) {
@@ -450,8 +447,8 @@ function MermaidFence({ code }: { code: string }) {
 
 /** The workspaces this chat's session links resolve against: the local daemon's, a remote host's, or Cloud's. */
 export function useChatLinkWorkspaces() {
-	const { sessionLinkHostId, sessionLinkSourceKind } = useContext(OpenChatLink);
-	return useSessionLinkSource(sessionLinkHostId, sessionLinkSourceKind).workspaces;
+	const { sessionLinkHostId } = useContext(OpenChatLink);
+	return useSessionLinkSource(sessionLinkHostId).workspaces;
 }
 
 /** Inline code naming a listed session artifact, linked to that artifact. */

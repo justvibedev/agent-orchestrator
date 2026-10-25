@@ -24,7 +24,6 @@ vi.mock("@tanstack/react-router", async (importOriginal) => ({
 	...await importOriginal<typeof import("@tanstack/react-router")>(),
 	useNavigate: () => vi.fn(),
 }));
-vi.mock("../hooks/useCloudCp", () => ({ useCloudCp: () => ({ ready: false, baseUrl: "", client: {} }) }));
 
 function session(hostId: string): WorkspaceSession {
 	return {

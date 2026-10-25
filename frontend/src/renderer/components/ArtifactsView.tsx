@@ -1,8 +1,7 @@
-import { ChevronDown, Cloud, File, FileText, Folder, Globe, Loader2, Plus, Search } from "lucide-react";
+import { ChevronDown, File, FileText, Folder, Globe, Loader2, Plus, Search } from "lucide-react";
 import { ScrollArea } from "radix-ui";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useCloudOffering } from "../hooks/useCloudOffering";
 import { useCreateArtifactSession } from "../hooks/useCreateArtifactSession";
 import { useWorkspaceQuery } from "../hooks/useWorkspaceQuery";
 import {
@@ -17,7 +16,7 @@ import { useNavigateToSession } from "../lib/navigate-to-session";
 import { hidesShellTopbar } from "../lib/platform";
 import { cn } from "../lib/utils";
 import { useUiStore } from "../stores/ui-store";
-import { CLOUD_PROJECT_KIND, STANDALONE_WORKSPACE_ID, type WorkspaceSummary } from "../types/workspace";
+import { STANDALONE_WORKSPACE_ID, type WorkspaceSummary } from "../types/workspace";
 import { NAV_ROW_HIGHLIGHT_HOST_CLASS, NavRowHighlight } from "./NavRowHighlight";
 import { TopbarButton, topbarProjectLabelClass } from "./TopbarButton";
 import { Button } from "./ui/button";
@@ -29,14 +28,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 const ALL_PROJECTS = "all";
 
 /**
- * Every artifact agents have written, grouped by project: on this machine, and
- * in cloud sessions when the control plane keeps artifacts.
+ * Every artifact agents have written, grouped by project: on this machine.
  */
 export function ArtifactsView() {
 	const { t } = useTranslation();
 	const showPageTitle = hidesShellTopbar();
-	const cloudArtifacts = useCloudOffering().artifacts;
-	const workspaceQuery = useWorkspaceQuery({ includeCloud: cloudArtifacts });
+	const workspaceQuery = useWorkspaceQuery();
 	const workspaces = workspaceQuery.data;
 	const groups = useMemo(() => groupArtifactsByProject(workspaces ?? []), [workspaces]);
 	const [query, setQuery] = useState("");
@@ -141,7 +138,7 @@ export function ArtifactsView() {
 function ArtifactGroupSection({ group }: { group: ArtifactGroup }) {
 	const { t } = useTranslation();
 	const name = group.isScratchpad ? t("standalone.workspaceName") : group.name;
-	const GroupIcon = group.isScratchpad ? File : group.cloud ? Cloud : Folder;
+	const GroupIcon = group.isScratchpad ? File : Folder;
 	return (
 		<section aria-label={name}>
 			<h2 className="flex h-8 items-center gap-2 px-3 text-xs font-medium text-muted-foreground">
@@ -204,10 +201,8 @@ function EmptyArtifacts({ workspaces }: { workspaces: readonly WorkspaceSummary[
 	// Developer mode moves account management to the Harness page.
 	const agentsSection = useUiStore((state) => state.developerMode) ? "harness" : "agents";
 	const { agentReady, create, pending } = useCreateArtifactSession();
-	const hasCloudProject = workspaces.some((workspace) => workspace.kind === CLOUD_PROJECT_KIND && Boolean(workspace.cloudOrgId));
 
-	// Without a local agent a cloud project, which runs its own, can still start one.
-	if (!agentReady && !hasCloudProject) {
+	if (!agentReady) {
 		return (
 			<div className="flex flex-col items-center gap-1 py-24 text-center">
 				<h2 className="text-heading-sm font-semibold text-foreground">{t("artifacts.noAgent.title")}</h2>
@@ -248,25 +243,18 @@ function CreateArtifactMenu({
 	localDisabledReason,
 }: {
 	workspaces: readonly WorkspaceSummary[];
-	create: (projectId?: string, cloudOrgId?: string) => Promise<void>;
+	create: (projectId?: string) => Promise<void>;
 	pending: boolean;
 	label?: "create" | "new";
 	align: "center" | "end";
 	className?: string;
-	/** Why Scratchpad and local projects cannot start a session; cloud projects run their own agent. */
+	/** Why Scratchpad and local projects cannot start a session; */
 	localDisabledReason?: string;
 }) {
 	const { t } = useTranslation();
-	// Cloud workspaces are listed only when the control plane keeps artifacts.
-	const projects = workspaces.filter(
-		(workspace) =>
-			workspace.id !== STANDALONE_WORKSPACE_ID &&
-			!workspace.hostId &&
-			(workspace.kind !== CLOUD_PROJECT_KIND || Boolean(workspace.cloudOrgId)),
-	);
+	const projects = workspaces.filter((workspace) => workspace.id !== STANDALONE_WORKSPACE_ID && !workspace.hostId);
 	const localBlocked = Boolean(localDisabledReason);
-	const hasCloudProject = projects.some((project) => project.kind === CLOUD_PROJECT_KIND);
-	const disabledReason = localBlocked && !hasCloudProject ? localDisabledReason : undefined;
+	const disabledReason = localDisabledReason;
 	const disabled = pending || Boolean(disabledReason);
 	const trigger =
 		label === "new" ? (
@@ -307,7 +295,6 @@ function CreateArtifactMenu({
 		<DropdownMenu>
 			<DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
 			<DropdownMenuContent align={align} className="min-w-56">
-				{/* Says why Scratchpad and local projects are disabled while cloud ones are not. */}
 				{localBlocked ? <DropdownMenuLabel className="max-w-64 text-xs font-normal text-muted-foreground">{localDisabledReason}</DropdownMenuLabel> : null}
 				<DropdownMenuItem disabled={localBlocked} onSelect={() => void create()}>
 					<File aria-hidden="true" className="size-icon-sm" />
@@ -317,14 +304,10 @@ function CreateArtifactMenu({
 				{projects.map((project) => (
 					<DropdownMenuItem
 						key={project.id}
-						disabled={localBlocked && project.kind !== CLOUD_PROJECT_KIND}
-						onSelect={() => void create(project.id, project.kind === CLOUD_PROJECT_KIND ? project.cloudOrgId : undefined)}
+						disabled={localBlocked}
+						onSelect={() => void create(project.id)}
 					>
-						{project.kind === CLOUD_PROJECT_KIND ? (
-							<Cloud aria-hidden="true" className="size-icon-sm" />
-						) : (
-							<Folder aria-hidden="true" className="size-icon-sm" />
-						)}
+						<Folder aria-hidden="true" className="size-icon-sm" />
 						<span className="truncate">{project.name}</span>
 					</DropdownMenuItem>
 				))}

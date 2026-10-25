@@ -78,8 +78,6 @@ type CenterPaneProps = {
 	terminalBooting?: boolean;
 	/** An account move is restarting the worker agent; see TerminalPane. */
 	terminalSwitchingLabel?: string;
-	/** Reports attachment of the session's own agent terminal. */
-	onSessionTerminalAttached?: (attached: boolean) => void;
 };
 
 export type CenterPaneWorkspaceTab = {
@@ -156,7 +154,6 @@ export function CenterPane({
 	agentInputDisabled = false,
 	terminalBooting = false,
 	terminalSwitchingLabel,
-	onSessionTerminalAttached,
 }: CenterPaneProps) {
 	const { t } = useTranslation();
 	const paneRef = useRef<HTMLDivElement | null>(null);
@@ -597,7 +594,6 @@ export function CenterPane({
 							booting={terminalBooting && target.kind === "worker"}
 							switchingLabel={target.kind === "worker" ? terminalSwitchingLabel : undefined}
 							onChangeFontSize={updateFontSize}
-							onTerminalContentReadyChange={target.kind === "worker" && session?.cloud ? onSessionTerminalAttached : undefined}
 							onToggleFullscreen={toggleFullscreen}
 							session={session}
 							terminalGeneration={terminalGeneration}
@@ -649,7 +645,7 @@ export function SessionPaneTab({
 	const tabIcon = session ? <AgentAvatar className="size-terminal-agent-icon" decorative provider={session.provider} /> : icon;
 	const connected = appearance === "connected";
 	// A session object supplies the tab presentation; refresh wiring explicitly
-	// opts the owning surface into rename so shared preview/cloud tabs cannot
+	// opts the owning surface into rename so shared preview tabs cannot
 	// persist a title without updating their query cache. The project
 	// orchestrator's tab shows its role, not a name, so it is never renamable.
 	const renameSession = onRenamed && session && !isOrchestratorSession(session) ? session : undefined;

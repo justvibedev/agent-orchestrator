@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -18,10 +17,7 @@ import (
 type invalidGitHubPATService struct{}
 
 func (invalidGitHubPATService) StorePAT(context.Context, string) error { return nil }
-func (invalidGitHubPATService) StoreOAuthToken(context.Context, string, string, time.Time, time.Time) error {
-	return nil
-}
-func (invalidGitHubPATService) HasPAT(context.Context) bool { return true }
+func (invalidGitHubPATService) HasPAT(context.Context) bool            { return true }
 
 func (invalidGitHubPATService) Login(context.Context) string { return "" }
 

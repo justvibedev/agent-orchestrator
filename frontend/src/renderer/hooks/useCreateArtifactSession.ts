@@ -4,13 +4,10 @@ import { useTranslation } from "react-i18next";
 import type { components } from "../../api/schema";
 import { apiClient, apiErrorMessage } from "../lib/api-client";
 import { buildRankedAgentOptions, DEFAULT_AGENT_PRIORITY_RANK, isReadyAgent } from "../lib/agent-select-options";
-import { cloudDefaultInterfaceMode, createCloudSession } from "../lib/cloud-session-create";
 import { useNavigateToSession } from "../lib/navigate-to-session";
 import { useUiStore } from "../stores/ui-store";
 import { useAgentReadinessQuery } from "./useAgentReadinessQuery";
-import { useCloudCp } from "./useCloudCp";
-import { useSettings } from "./useSettings";
-import { cloudSessionsQueryKey, workspaceQueryKey } from "./useWorkspaceQuery";
+import { workspaceQueryKey } from "./useWorkspaceQuery";
 
 type Harness = components["schemas"]["SpawnSessionRequest"]["harness"];
 type ProjectAgents = { agent?: string; config?: { worker?: { agent?: string } } };
@@ -18,17 +15,13 @@ type ProjectAgents = { agent?: string; config?: { worker?: { agent?: string } } 
 /**
  * Starts a worker session whose output kind is artifact, in a project or the
  * Scratchpad (no projectId), and opens it. The agent is the project's worker
- * agent, then the daemon-wide default, then the first ready agent. A cloud
- * project (cloudOrgId set) starts the session on the control plane with the
- * project's worker agent, else Claude Code.
+ * agent, then the daemon-wide default, then the first ready agent.
  */
 export function useCreateArtifactSession() {
 	const { t } = useTranslation();
 	const queryClient = useQueryClient();
-	const { client: cloudClient } = useCloudCp();
 	const navigateToSession = useNavigateToSession();
 	const agentsQuery = useAgentReadinessQuery();
-	const { settings } = useSettings();
 	const [pending, setPending] = useState(false);
 	const readyAgent = useMemo(
 		() =>
@@ -41,27 +34,9 @@ export function useCreateArtifactSession() {
 	);
 
 	const create = useCallback(
-		async (projectId?: string, cloudOrgId?: string) => {
+		async (projectId?: string) => {
 			setPending(true);
 			try {
-				if (cloudOrgId && projectId) {
-					const { project } = await cloudClient.getProject(cloudOrgId, projectId);
-					// Started like a task: in the user's default session interface,
-					// through createCloudSession, which retries without it for a
-					// control plane that predates the field.
-					const { session } = await createCloudSession(cloudClient, cloudOrgId, {
-						projectId,
-						kind: "worker",
-						harness: project.config?.worker?.agent || "claude-code",
-						displayName: t("artifacts.newSessionName"),
-						prompt: "",
-						requestedOutput: "artifact",
-						defaultInterfaceMode: cloudDefaultInterfaceMode(settings),
-					});
-					await queryClient.invalidateQueries({ queryKey: cloudSessionsQueryKey });
-					navigateToSession(projectId, session.id);
-					return;
-				}
 				const harness = projectId ? (await projectWorkerAgent(queryClient, projectId)) || readyAgent : readyAgent;
 				const { data, error } = await apiClient.POST("/api/v1/sessions", {
 					body: {
@@ -84,7 +59,7 @@ export function useCreateArtifactSession() {
 				setPending(false);
 			}
 		},
-		[cloudClient, navigateToSession, queryClient, readyAgent, settings, t],
+		[navigateToSession, queryClient, readyAgent, t],
 	);
 
 	return {

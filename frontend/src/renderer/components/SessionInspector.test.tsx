@@ -14,7 +14,6 @@ import { SessionInspector } from "./SessionInspector";
 import { TooltipProvider } from "./ui/tooltip";
 import type { SessionPRSummary } from "../hooks/useSessionScmSummary";
 import { sessionScmSummaryQueryKey } from "../hooks/useSessionScmSummary";
-import { settingsQueryKey } from "../hooks/useSettings";
 import { sessionWorkspaceFilesQueryKey } from "../hooks/useSessionWorkspaceFiles";
 import { sessionInterfaceTransitionQueryKey } from "../hooks/useSessionInterfaceTransition";
 import { workspaceQueryKey } from "../hooks/useWorkspaceQuery";
@@ -31,21 +30,8 @@ import type {
 } from "../types/workspace";
 import { STANDALONE_WORKSPACE_ID } from "../types/workspace";
 
-const { cloudCpMock, getMock, navigateMock, patchMock, putMock, postMock } = vi.hoisted(
+const { getMock, navigateMock, patchMock, putMock, postMock } = vi.hoisted(
   () => ({
-    cloudCpMock: {
-      cancelSessionReviews: vi.fn(),
-      getSessionReviewState: vi.fn(),
-      inspectSessionReviewerHarnesses: vi.fn(),
-      installSessionReviewerHarness: vi.fn(),
-      listChatEvents: vi.fn(),
-      listSessionPullRequests: vi.fn(),
-      mergePullRequest: vi.fn(),
-      sendSessionMessage: vi.fn(),
-      sendSessionReviewToWorker: vi.fn(),
-      triggerSessionReviews: vi.fn(),
-      updateSessionPreferences: vi.fn(),
-    },
     getMock: vi.fn(),
     navigateMock: vi.fn(),
     patchMock: vi.fn(),
@@ -92,20 +78,6 @@ vi.mock("../lib/api-client", () => ({
     return fallback;
   },
 }));
-
-// Only the Cloud reviews suite swaps in a ready control-plane client; other
-// suites exercise the real hook through the desktop bridge.
-const cloudCpMockState = vi.hoisted(() => ({ enabled: false }));
-vi.mock("../hooks/useCloudCp", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../hooks/useCloudCp")>();
-  return {
-    ...actual,
-    useCloudCp: () =>
-      cloudCpMockState.enabled
-        ? { client: cloudCpMock, ready: true, baseUrl: "https://cloud.example.test" }
-        : actual.useCloudCp(),
-  };
-});
 
 vi.mock("../lib/host-clients", async (importOriginal) => ({
   ...await importOriginal<typeof import("../lib/host-clients")>(),
@@ -316,41 +288,6 @@ const reviewState = (n: number, status: string, targetSha = `sha-${n}`) => ({
 });
 
 beforeEach(() => {
-  cloudCpMock.cancelSessionReviews.mockReset();
-  cloudCpMock.getSessionReviewState.mockReset();
-  cloudCpMock.inspectSessionReviewerHarnesses.mockReset();
-  cloudCpMock.installSessionReviewerHarness.mockReset();
-  cloudCpMock.listSessionPullRequests.mockReset();
-  cloudCpMock.mergePullRequest.mockReset();
-  cloudCpMock.sendSessionMessage.mockReset();
-  cloudCpMock.sendSessionReviewToWorker.mockReset();
-  cloudCpMock.triggerSessionReviews.mockReset();
-  cloudCpMock.updateSessionPreferences.mockReset();
-  cloudCpMock.listSessionPullRequests.mockResolvedValue({
-    sessionId: "sess-1",
-    pullRequests: [],
-  });
-  cloudCpMock.getSessionReviewState.mockResolvedValue({
-    sessionId: "sess-1",
-    reviews: [],
-    runs: [],
-  });
-  cloudCpMock.inspectSessionReviewerHarnesses.mockResolvedValue({
-    harnesses: [
-      { harness: "claude-code", status: "ready" },
-      { harness: "codex", status: "ready" },
-      { harness: "cursor", status: "ready" },
-    ],
-  });
-  cloudCpMock.updateSessionPreferences.mockResolvedValue({
-    session: { harness: "claude-code", reviewerHarness: "claude-code" },
-  });
-  cloudCpMock.sendSessionMessage.mockResolvedValue({
-    event: { id: "event-1" },
-  });
-  cloudCpMock.sendSessionReviewToWorker.mockResolvedValue({
-    event: { id: "event-1" },
-  });
   getMock.mockReset();
   navigateMock.mockReset();
   patchMock.mockReset();
@@ -479,29 +416,6 @@ describe("SessionInspector tabs", () => {
     );
   });
 
-  it("does not query the local workspace files endpoint for a cloud session", async () => {
-    renderWithQuery(
-      <SessionInspector
-        session={session([], {
-          id: "cloud-session-1",
-          cloud: {
-            orgId: "cloud-org-1",
-            sandboxProvider: "docker",
-            desiredState: "running",
-            observedState: "running",
-          },
-        })}
-      />,
-    );
-
-    await waitFor(() => expect(getMock.mock.calls.length).toBeGreaterThan(0));
-
-    expect(
-      getMock.mock.calls.some(
-        ([path]) => path === "/api/v1/sessions/{sessionId}/workspace/manifest",
-      ),
-    ).toBe(false);
-  });
 
   it("shows a live changed-file count on the Files tab once the shared cache is populated", () => {
     renderWithQuery(
@@ -758,39 +672,6 @@ describe("SessionInspector PR section", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("merges a ready cloud pull request through the control plane", async () => {
-    const requests: Array<{ path: string; method: string; body?: string }> = [];
-    const originalBridge = (window as unknown as { aoBridge?: unknown }).aoBridge;
-    (window as unknown as { aoBridge?: unknown }).aoBridge = {
-      cloudCp: { request: async (request: { path: string; method: string; body?: string }) => {
-        requests.push(request);
-        return { status: 202, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "merge_accepted" }) };
-      } },
-    };
-    try {
-      const readyPR = prSummary(7, "open", { headSha: "abc123" });
-      renderWithQuery(
-        <SessionInspector session={session([pr(7, "open")], { cloud: {
-          orgId: "cloud-org-1", sandboxProvider: "docker", desiredState: "running", observedState: "running",
-        } })} />,
-        undefined,
-        (client) => {
-          client.setQueryData(settingsQueryKey, {
-            defaultSessionMode: "tui", chatHarnesses: [], client: "", localEnabled: true,
-            cloudOffering: true, cloudEnabled: true, cloudControlPlaneUrl: "https://staging-api.aoagents.dev",
-          });
-          client.setQueryData(["cloud-session-scm-summary", "https://staging-api.aoagents.dev", "cloud-org-1", "sess-1"], { prs: [readyPR], linkedPrs: [] });
-        },
-      );
-      fireEvent.click(screen.getByRole("button", { name: "Merge PR #7" }));
-      await waitFor(() => expect(requests.some((request) => request.method === "POST" && request.path.endsWith("/pull-requests/7/merge"))).toBe(true));
-      const merge = requests.find((request) => request.method === "POST" && request.path.endsWith("/pull-requests/7/merge"));
-      expect(JSON.parse(merge?.body ?? "{}")) .toEqual({ prUrl: readyPR.url, expectedHeadSha: "abc123" });
-      expect(postCallsFor("/api/v1/prs/{id}/merge")).toHaveLength(0);
-    } finally {
-      (window as unknown as { aoBridge?: unknown }).aoBridge = originalBridge;
-    }
-  });
 
   it("does not offer Merge when the pull request is not ready", () => {
     renderWithQuery(
@@ -4312,387 +4193,6 @@ describe("SessionInspector summary reviews", () => {
   });
 });
 
-describe("SessionInspector Cloud reviews", () => {
-  beforeEach(() => {
-    cloudCpMockState.enabled = true;
-    cloudCpMock.listChatEvents.mockReset();
-    cloudCpMock.listChatEvents.mockResolvedValue({ events: [], hasMore: false, nextAfter: 0 });
-  });
-  afterEach(() => {
-    cloudCpMockState.enabled = false;
-  });
-  it("keeps the latest Setup and Cleanup runs in collapsed Summary sections", async () => {
-    cloudCpMock.listSessionPullRequests.mockResolvedValue({ sessionId: "sess-1", pullRequests: [] });
-    const step = (sequence: number, payload: Record<string, unknown>) => ({
-      sessionId: "sess-1", sequence, type: "workspace.script.step", createdAt: "2026-10-18T10:00:00Z",
-      payload: { phase: "setup", total: 1, step: 1, repository: "", ...payload },
-    });
-    cloudCpMock.listChatEvents.mockResolvedValue({
-      events: [
-        step(1, { runId: "old", status: "failed", command: "make old", exitCode: 1 }),
-        step(2, { runId: "new", status: "succeeded", command: "make setup", exitCode: 0, durationMs: 3000 }),
-        step(3, { runId: "c", phase: "cleanup", status: "succeeded", command: "make teardown", exitCode: 0, durationMs: 1000 }),
-      ],
-      hasMore: false,
-      nextAfter: 3,
-    });
-    renderWithQuery(<SessionInspector session={session([], { cloud: { orgId: "org-1" } })} />);
-    const setup = await screen.findByRole("button", { name: "Setup" });
-    const cleanup = screen.getByRole("button", { name: "Cleanup" });
-    expect(setup).toHaveAttribute("aria-expanded", "false");
-    expect(cleanup).toHaveAttribute("aria-expanded", "false");
-    await userEvent.click(setup);
-    expect(await screen.findByText("make setup")).toBeInTheDocument();
-    expect(screen.queryByText("make old")).not.toBeInTheDocument();
-    expect(screen.queryByText("make teardown")).not.toBeInTheDocument();
-  });
-  it("does not report an already-reviewed commit while a cloud review handle is pending", async () => {
-    cloudCpMock.listSessionPullRequests.mockResolvedValue({
-      sessionId: "sess-1",
-      pullRequests: [
-        {
-          url: "https://github.com/acme/repo/pull/7",
-          number: 7,
-          state: "open",
-          updatedAt: "2026-06-15T00:00:00Z",
-        },
-      ],
-    });
-    cloudCpMock.getSessionReviewState.mockResolvedValue({
-      sessionId: "sess-1",
-      reviewerHarness: "claude-code",
-      reviews: [
-        {
-          pullRequestUrl: "https://github.com/acme/repo/pull/7",
-          pullRequestNumber: 7,
-          title: "Cloud review",
-          targetSha: "head-7",
-          status: "needs_review",
-        },
-      ],
-      runs: [],
-    });
-    cloudCpMock.triggerSessionReviews.mockResolvedValue({
-      sessionId: "sess-1",
-      reviewerHandleId: "",
-      reviewerHarness: "claude-code",
-      reviews: [
-        {
-          pullRequestUrl: "https://github.com/acme/repo/pull/7",
-          pullRequestNumber: 7,
-          title: "Cloud review",
-          targetSha: "head-7",
-          status: "running",
-        },
-      ],
-      runs: [],
-    });
-    const onOpenReviewerTerminal = vi.fn();
-
-    renderWithQuery(
-      <SessionInspector
-        onOpenReviewerTerminal={onOpenReviewerTerminal}
-        session={session([], { cloud: { orgId: "org-1" } })}
-      />,
-    );
-
-    await userEvent.click(screen.getByRole("tab", { name: "Reviews" }));
-    await userEvent.click(
-      screen.getByRole("button", { name: "Review latest commit" }),
-    );
-
-    await waitFor(() =>
-      expect(cloudCpMock.triggerSessionReviews).toHaveBeenCalledWith(
-        "org-1",
-        "sess-1",
-      ),
-    );
-    expect(
-      screen.queryByRole("button", {
-        name: "This commit has already been reviewed. Push a new commit to run another review.",
-      }),
-    ).not.toBeInTheDocument();
-    expect(onOpenReviewerTerminal).not.toHaveBeenCalled();
-  });
-  it("installs a missing cloud reviewer harness before selecting it", async () => {
-    cloudCpMock.listSessionPullRequests.mockResolvedValue({
-      sessionId: "sess-1",
-      pullRequests: [
-        {
-          url: "https://github.com/acme/repo/pull/7",
-          number: 7,
-          state: "open",
-          updatedAt: "2026-06-15T00:00:00Z",
-        },
-      ],
-    });
-    cloudCpMock.getSessionReviewState.mockResolvedValue({
-      sessionId: "sess-1",
-      reviewerHarness: "claude-code",
-      availableReviewerHarnesses: ["claude-code", "cursor"],
-      reviews: [],
-      runs: [],
-    });
-    cloudCpMock.inspectSessionReviewerHarnesses.mockResolvedValue({
-      harnesses: [
-        { harness: "claude-code", status: "ready" },
-        { harness: "codex", status: "ready" },
-        { harness: "cursor", status: "missing" },
-      ],
-    });
-    cloudCpMock.installSessionReviewerHarness.mockResolvedValue({
-      harness: "cursor",
-      status: "ready",
-      version: "2026.08.11",
-    });
-    cloudCpMock.updateSessionPreferences.mockResolvedValue({
-      session: { harness: "claude-code", reviewerHarness: "cursor" },
-    });
-
-    renderWithQuery(
-      <SessionInspector session={session([], { cloud: { orgId: "org-1" } })} />,
-    );
-
-    await userEvent.click(screen.getByRole("tab", { name: "Reviews" }));
-    await userEvent.click(
-      await screen.findByRole("combobox", { name: /Select reviewer agent/ }),
-    );
-    await userEvent.click(
-      await screen.findByRole("option", {
-        name: /^Cursor$/i,
-      }),
-    );
-
-    const install = await screen.findByRole("button", { name: "Install" });
-    expect(cloudCpMock.updateSessionPreferences).not.toHaveBeenCalled();
-    await userEvent.click(install);
-
-    await waitFor(() =>
-      expect(cloudCpMock.installSessionReviewerHarness).toHaveBeenCalledWith(
-        "org-1",
-        "sess-1",
-        "cursor",
-      ),
-    );
-    await waitFor(() =>
-      expect(cloudCpMock.updateSessionPreferences).toHaveBeenCalledWith(
-        "org-1",
-        "sess-1",
-        {
-          reviewerHarness: "cursor",
-        },
-      ),
-    );
-  });
-  it("sends a cloud review summary to the worker through the control plane", async () => {
-    cloudCpMock.listSessionPullRequests.mockResolvedValue({
-      sessionId: "sess-1",
-      pullRequests: [
-        {
-          url: "https://github.com/acme/repo/pull/7",
-          number: 7,
-          state: "open",
-          updatedAt: "2026-06-15T00:00:00Z",
-        },
-      ],
-    });
-    cloudCpMock.getSessionReviewState.mockResolvedValue({
-      sessionId: "sess-1",
-      reviewerHarness: "codex",
-      availableReviewerHarnesses: ["codex"],
-      reviews: [
-        {
-          pullRequestUrl: "https://github.com/acme/repo/pull/7",
-          pullRequestNumber: 7,
-          title: "Cloud review",
-          targetSha: "head-7",
-          status: "up_to_date",
-          latestRun: {
-            id: "run-7",
-            reviewId: "review-7",
-            sessionId: "sess-1",
-            batchId: "batch-7",
-            harness: "codex",
-            triggerSource: "manual",
-            pullRequestUrl: "https://github.com/acme/repo/pull/7",
-            targetSha: "head-7",
-            status: "delivered",
-            verdict: "approved",
-            body: "Cloud review is ready for the worker.",
-            providerReviewId: "98765",
-            createdAt: "2026-06-15T00:00:00Z",
-            deliveredAt: "2026-06-15T00:01:00Z",
-            autoInjectReview: false,
-          },
-        },
-      ],
-      runs: [
-        {
-          id: "run-7",
-          reviewId: "review-7",
-          sessionId: "sess-1",
-          batchId: "batch-7",
-          harness: "codex",
-          triggerSource: "manual",
-          pullRequestUrl: "https://github.com/acme/repo/pull/7",
-          targetSha: "head-7",
-          status: "delivered",
-          verdict: "approved",
-          body: "Cloud review is ready for the worker.",
-          providerReviewId: "98765",
-          createdAt: "2026-06-15T00:00:00Z",
-          deliveredAt: "2026-06-15T00:01:00Z",
-          autoInjectReview: false,
-        },
-      ],
-    });
-
-    const view = renderWithQuery(
-      <SessionInspector session={session([], { cloud: { orgId: "org-1" } })} />,
-    );
-
-    await userEvent.click(screen.getByRole("tab", { name: "Reviews" }));
-    await waitFor(() => expect(cloudCpMock.getSessionReviewState).toHaveBeenCalled());
-    await view.queryClient.refetchQueries({
-      queryKey: ["cloud-session-reviews", "https://cloud.example.test", "org-1", "sess-1"],
-    });
-    await userEvent.click(await screen.findByTestId("review-pr-row"));
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Review actions" }),
-    );
-    await userEvent.click(
-      screen.getByRole("button", { name: "Send to worker agent" }),
-    );
-
-    await waitFor(() =>
-      expect(cloudCpMock.sendSessionReviewToWorker).toHaveBeenCalledWith(
-        "org-1",
-        "sess-1",
-        "run-7",
-      ),
-    );
-    expect(cloudCpMock.sendSessionMessage).not.toHaveBeenCalled();
-    expect(
-      postCallsFor("/api/v1/sessions/{sessionId}/send"),
-    ).toHaveLength(0);
-  });
-  it("updates cloud auto review immediately and rolls back a failed save", async () => {
-    cloudCpMock.listSessionPullRequests.mockResolvedValue({
-      sessionId: "sess-1",
-      pullRequests: [
-        {
-          url: "https://github.com/acme/repo/pull/7",
-          number: 7,
-          state: "open",
-          updatedAt: "2026-06-15T00:00:00Z",
-        },
-      ],
-    });
-    let rejectSave: (error: Error) => void = () => {};
-    cloudCpMock.updateSessionPreferences.mockReturnValue(
-      new Promise((_resolve, reject) => {
-        rejectSave = reject;
-      }),
-    );
-
-    renderWithQuery(
-      <SessionInspector
-        session={session([], {
-          autoReviewEnabled: false,
-          cloud: { orgId: "org-1" },
-        })}
-      />,
-    );
-
-    await userEvent.click(screen.getByRole("tab", { name: "Reviews" }));
-    const autoReview = await screen.findByRole("switch", {
-      name: "Auto review",
-    });
-    expect(autoReview).not.toBeChecked();
-
-    await userEvent.click(autoReview);
-
-    expect(autoReview).toBeChecked();
-    expect(cloudCpMock.updateSessionPreferences).toHaveBeenCalledWith(
-      "org-1",
-      "sess-1",
-      { autoReviewEnabled: true },
-    );
-
-    act(() => rejectSave(new Error("save failed")));
-    await waitFor(() => expect(autoReview).not.toBeChecked());
-  });
-  it("uses the same review panel and Cloud control-plane actions for cloud sessions", async () => {
-    cloudCpMock.listSessionPullRequests.mockResolvedValue({
-      sessionId: "sess-1",
-      pullRequests: [
-        {
-          url: "https://github.com/acme/repo/pull/7",
-          number: 7,
-          state: "open",
-          updatedAt: "2026-06-15T00:00:00Z",
-        },
-      ],
-    });
-    cloudCpMock.getSessionReviewState.mockResolvedValue({
-      sessionId: "sess-1",
-      reviewerHarness: "claude-code",
-      reviews: [
-        {
-          pullRequestUrl: "https://github.com/acme/repo/pull/7",
-          pullRequestNumber: 7,
-          title: "Cloud review",
-          targetSha: "head-7",
-          status: "needs_review",
-        },
-      ],
-      runs: [],
-    });
-    cloudCpMock.triggerSessionReviews.mockResolvedValue({
-      sessionId: "sess-1",
-      reviewerHandleId: "cloud-reviewer-7",
-      reviewerHarness: "claude-code",
-      reviews: [
-        {
-          pullRequestUrl: "https://github.com/acme/repo/pull/7",
-          pullRequestNumber: 7,
-          title: "Cloud review",
-          targetSha: "head-7",
-          status: "running",
-        },
-      ],
-      runs: [],
-    });
-    const onOpenReviewerTerminal = vi.fn();
-
-    renderWithQuery(
-      <SessionInspector
-        onOpenReviewerTerminal={onOpenReviewerTerminal}
-        session={session([], { cloud: { orgId: "org-1" } })}
-      />,
-    );
-
-    expect(screen.getByRole("tab", { name: "Reviews" })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("tab", { name: "Reviews" }));
-    expect(await screen.findByText("Review controls")).toBeInTheDocument();
-
-    await userEvent.click(
-      screen.getByRole("button", { name: "Review latest commit" }),
-    );
-
-    await waitFor(() =>
-      expect(cloudCpMock.triggerSessionReviews).toHaveBeenCalledWith(
-        "org-1",
-        "sess-1",
-      ),
-    );
-    expect(onOpenReviewerTerminal).toHaveBeenCalledWith({
-      handleId: "cloud-reviewer-7",
-      harness: "claude-code",
-    });
-  });
-});
-
 describe("SessionInspector branch summary", () => {
   const changedFile = (path: string, additions: number, deletions: number) => ({
     path,
@@ -4821,7 +4321,7 @@ describe("SessionInspector branch summary", () => {
 
     expect(await screen.findByText("2 commits")).toBeInTheDocument();
     expect(screen.getByText("not pushed")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Push & create PR" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Push & create PR" })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "More git actions" }));
     expect(await screen.findByRole("menuitem", { name: "Push" })).toBeInTheDocument();
@@ -4903,7 +4403,7 @@ describe("SessionInspector branch summary", () => {
     );
 
     expect(await screen.findByText("1 not pushed")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Push to #7" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Push to #7" }));
     expect(await screen.findByRole("button", { name: "Pushing…" })).toBeDisabled();
 
     rerender(

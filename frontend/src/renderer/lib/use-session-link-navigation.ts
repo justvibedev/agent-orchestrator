@@ -1,7 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo, useSyncExternalStore } from "react";
-import { useCloudProjectsQuery, useCloudSessionsQuery, remoteWorkspaceQueryKey, toCloudWorkspace, useWorkspaceQuery } from "../hooks/useWorkspaceQuery";
-import { useCloudOrg } from "../hooks/useCloudOrg";
+import { useCallback, useSyncExternalStore } from "react";
+import { remoteWorkspaceQueryKey, useWorkspaceQuery } from "../hooks/useWorkspaceQuery";
 import { useUiStore } from "../stores/ui-store";
 import type { WorkspaceSummary } from "../types/workspace";
 import { LOCAL_HOST } from "./hosts";
@@ -16,24 +15,8 @@ export type SessionLinkSource = {
 };
 
 function useLocalLinkSource(_hostId: string): SessionLinkSource {
-	const query = useWorkspaceQuery({ includeCloud: false });
+	const query = useWorkspaceQuery();
 	return { ready: query.isSuccess, isLoading: query.isLoading, isError: query.isError, workspaces: query.data ?? [] };
-}
-
-function useCloudLinkSource(_hostId: string): SessionLinkSource {
-	const projects = useCloudProjectsQuery();
-	const sessions = useCloudSessionsQuery();
-	const { org, ready: orgReady } = useCloudOrg();
-	const workspaces = useMemo(() => {
-		if (!org?.id) return [];
-		return (projects.data ?? []).map((project) => toCloudWorkspace(project, sessions.data ?? [], org.id));
-	}, [org?.id, projects.data, sessions.data]);
-	return {
-		ready: orgReady && Boolean(org?.id) && projects.isSuccess && sessions.isSuccess,
-		isLoading: !orgReady || projects.isLoading || sessions.isLoading,
-		isError: projects.isError || sessions.isError,
-		workspaces,
-	};
 }
 
 function useRemoteLinkSource(hostId: string): SessionLinkSource {
@@ -51,15 +34,15 @@ function useRemoteLinkSource(hostId: string): SessionLinkSource {
 	};
 }
 
-export function useSessionLinkSource(sourceHostId?: string, sourceKind?: "cloud"): SessionLinkSource {
+export function useSessionLinkSource(sourceHostId?: string): SessionLinkSource {
 	const remoteHostId = sourceHostId && sourceHostId !== LOCAL_HOST ? sourceHostId : undefined;
-	const useSource = remoteHostId ? useRemoteLinkSource : sourceKind === "cloud" ? useCloudLinkSource : useLocalLinkSource;
+	const useSource = remoteHostId ? useRemoteLinkSource : useLocalLinkSource;
 	return useSource(remoteHostId ?? "");
 }
 
-export function useSessionLinkNavigation(sourceHostId?: string, sourceKind?: "cloud"): (url: string) => boolean {
+export function useSessionLinkNavigation(sourceHostId?: string): (url: string) => boolean {
 	const remoteHostId = sourceHostId && sourceHostId !== LOCAL_HOST ? sourceHostId : undefined;
-	const source = useSessionLinkSource(sourceHostId, sourceKind);
+	const source = useSessionLinkSource(sourceHostId);
 	const navigateToSession = useNavigateToSession();
 	const showGlobalToast = useUiStore((state) => state.showGlobalToast);
 	const requestWorkspaceFileOpen = useUiStore((state) => state.requestWorkspaceFileOpen);
@@ -76,7 +59,7 @@ export function useSessionLinkNavigation(sourceHostId?: string, sourceKind?: "cl
 			return false;
 		}
 		if (!source.ready) {
-			showGlobalToast(`AO could not verify that session. Check the ${remoteHostId ? "host" : sourceKind === "cloud" ? "Cloud" : "daemon"} connection and try again.`, undefined, {
+			showGlobalToast(`AO could not verify that session. Check the ${remoteHostId ? "host" : "daemon"} connection and try again.`, undefined, {
 				tone: "error",
 				placement: "top-center",
 				dismissible: true,
@@ -108,5 +91,5 @@ export function useSessionLinkNavigation(sourceHostId?: string, sourceKind?: "cl
 		if (remoteHostId) navigateToSession(resolved.projectId, resolved.sessionId, remoteHostId);
 		else navigateToSession(resolved.projectId, resolved.sessionId);
 		return true;
-	}, [navigateToSession, remoteHostId, requestWorkspaceFileOpen, showGlobalToast, source, sourceKind]);
+	}, [navigateToSession, remoteHostId, requestWorkspaceFileOpen, showGlobalToast, source]);
 }

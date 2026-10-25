@@ -20,7 +20,7 @@ import { EnvironmentEditorActions, EnvironmentMachineRow, type EnvironmentEditor
 import { haptics } from "../../lib/haptics";
 import { activeHost, activeHostMetadata, loadHosts, renameHost, saveHost, updateHostAppearance, type Host as PairedHost } from "../../lib/hosts";
 import { Feather } from "../../lib/icons";
-import { AccountManagedHostError, DifferentMachineError, persistManualHostEdit } from "../../lib/manualConnect";
+import { DifferentMachineError, persistManualHostEdit } from "../../lib/manualConnect";
 import { machineAppearance } from "../../lib/machineAppearance";
 import { NativeHeaderButton } from "../../lib/native-header-button";
 import { IncompatibleHostVersionError } from "../../lib/race";
@@ -113,7 +113,7 @@ export default function EnvironmentsScreen() {
 			});
 			if (appearanceChanged) await updateHostAppearance(host.id, draft.appearance);
 		} catch (error) {
-			if (error instanceof DifferentMachineError || error instanceof AccountManagedHostError) throw error;
+			if (error instanceof DifferentMachineError) throw error;
 			const status = error instanceof IncompatibleHostVersionError ? 426 : error instanceof ApiError ? error.status : undefined;
 			const copy = describeConnectionFailure(classifyConnectionFailure(status), {
 				host: draft.config.host,

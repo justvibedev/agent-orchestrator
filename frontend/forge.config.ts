@@ -20,11 +20,6 @@ import { BUNDLED_TMUX_VERSION } from "./scripts/tmux-version.mjs";
 // shortcut/launcher at the SAME name. Drift here means a broken Start menu
 // shortcut on Windows (#2414) or "could not find the Electron app binary" on deb.
 const EXECUTABLE_NAME = "agent-orchestrator";
-const AUTH_PROTOCOL = {
-	name: "Agent Orchestrator authentication callback",
-	schemes: ["ao-app"],
-};
-const AUTH_PROTOCOL_MIME_TYPE = "x-scheme-handler/ao-app";
 const PACKAGED_EXTERNAL_DEPENDENCIES = [
 	"/node_modules/better-sqlite3",
 	"/node_modules/bindings",
@@ -107,7 +102,6 @@ const config: ForgeConfig = {
 		appBundleId: "dev.agent-orchestrator.desktop",
 		name: "Agent Orchestrator",
 		executableName: EXECUTABLE_NAME,
-		protocols: [AUTH_PROTOCOL],
 		appCategoryType: "public.app-category.developer-tools",
 		// App icon. electron-packager appends the per-platform extension
 		// (.icns on macOS, .ico on Windows); Linux menu icons come from the
@@ -283,8 +277,7 @@ const config: ForgeConfig = {
 				appId: "dev.agent-orchestrator.desktop",
 				productName: "Agent Orchestrator",
 				icon: "assets/icon.png",
-				protocols: [AUTH_PROTOCOL],
-			},
+					},
 			["linux"],
 		),
 		{
@@ -298,7 +291,6 @@ const config: ForgeConfig = {
 					icon: "assets/icon.png",
 					maintainer: "Agent Orchestrator",
 					homepage: "https://github.com/justvibedev/agent-orchestrator",
-					mimeType: [AUTH_PROTOCOL_MIME_TYPE],
 				},
 			},
 		},
@@ -310,7 +302,6 @@ const config: ForgeConfig = {
 					// rpmbuild rejects a spec with an empty License field.
 					license: "MIT",
 					homepage: "https://github.com/justvibedev/agent-orchestrator",
-					mimeType: [AUTH_PROTOCOL_MIME_TYPE],
 				},
 			},
 		},

@@ -297,7 +297,7 @@ export function HarnessUpdateNotice({ enabled }: { enabled: boolean }) {
 						return;
 					}
 					// A login runs in a terminal on the Harness page, which starts it once on open.
-					openSettings("harness", { focusAgentId: agentId, harnessView: "local", preserveProject: true, startLogin: true });
+					openSettings("harness", { focusAgentId: agentId, preserveProject: true, startLogin: true });
 				};
 				return <article key={key} aria-label={agentLabel(agentId)} className="group/notice relative rounded-xl border border-border bg-card px-2.5 py-2">
 					{dismissButton(t("settings.harness.dismissAgentUpdate", { agent: agentLabel(agentId) }), () => dismiss(key))}
@@ -315,12 +315,12 @@ export function HarnessUpdateNotice({ enabled }: { enabled: boolean }) {
 							<TooltipTrigger asChild><Button size="sm" variant="outline" className="h-7 shrink-0 px-2 text-xs" onClick={() => void aoBridge.app.openExternal(plan.documentationUrl)}>{t("settings.harness.manualUpdate")}</Button></TooltipTrigger>
 							<TooltipContent side="bottom" className="max-w-64">{method?.updateReason || t("settings.harness.ownershipUnknown")}</TooltipContent>
 						</Tooltip>
-						: <Button size="sm" variant="outline" className="h-7 shrink-0 px-2 text-xs" onClick={() => openSettings("harness", { focusAgentId: agentId, harnessView: "local", preserveProject: true })}>{t("settings.harness.viewDetails")}</Button>}
+						: <Button size="sm" variant="outline" className="h-7 shrink-0 px-2 text-xs" onClick={() => openSettings("harness", { focusAgentId: agentId, preserveProject: true })}>{t("settings.harness.viewDetails")}</Button>}
 					</div>
 					{/* One click to the Harness page with this failure's diagnostics open, ready to copy. */}
 					{error && !busy ? <div className="mt-1 flex flex-col items-start gap-1">
 						<p role="alert" className="line-clamp-3 break-words text-caption text-error">{error}</p>
-						<Button type="button" size="sm" variant="outline" className="h-6 px-2 text-[length:var(--font-size-caption)]" onClick={() => openSettings("harness", { focusAgentId: agentId, harnessView: "local", preserveProject: true, showDiagnostics: { jobStartedAt: failedJobStartedAt, error } })}>{t("settings.harness.showDiagnostics")}</Button>
+						<Button type="button" size="sm" variant="outline" className="h-6 px-2 text-[length:var(--font-size-caption)]" onClick={() => openSettings("harness", { focusAgentId: agentId, preserveProject: true, showDiagnostics: { jobStartedAt: failedJobStartedAt, error } })}>{t("settings.harness.showDiagnostics")}</Button>
 					</div> : null}
 					{job && isWaitingForIdleJob(job) ? <IdleUpdateStatus agentId={agentId} job={job} onViewSessions={(waiting) => setSessionsView({ agentId, inUse: waiting })} /> : null}
 					{!error && !busy && inUse[agentId] ? <p role="status" className="mt-1 break-words text-caption text-settings-muted">

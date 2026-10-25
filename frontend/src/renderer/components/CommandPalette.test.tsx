@@ -110,14 +110,6 @@ vi.mock("../hooks/useCommandPaletteEnabled", () => ({
 	useAppVersion: () => "0.0.0-test",
 }));
 
-vi.mock("../hooks/useCloudCp", () => ({
-	useCloudCp: () => ({
-		client: { searchWorkspaceReview: cloudSearchMock },
-		ready: true,
-		baseUrl: "https://cloud.example.test",
-		userId: "user-1",
-	}),
-}));
 
 vi.mock("../hooks/useWorkspaceQuery", () => ({
 	useWorkspaceQuery: (options: { subscribed?: boolean }) => {
@@ -257,7 +249,6 @@ beforeEach(() => {
 	delete ctx.workspaces[1].hostId;
 	delete ctx.workspaces[1].kind;
 	for (const session of ctx.workspaces.flatMap((workspace) => workspace.sessions)) {
-		delete session.cloud;
 		delete session.hostId;
 	}
 	ctx.workspaces[0].sessions[0].prs = [];
@@ -375,29 +366,6 @@ describe("CommandPalette workspace file search", () => {
 		));
 	});
 
-	it("uses Cloud workspace search for a Cloud session", async () => {
-		ctx.params = { projectId: "proj-1", sessionId: "w-fix" };
-		ctx.workspaces[0].kind = "cloud";
-		ctx.workspaces[0].sessions[1]!.cloud = { orgId: "org-1" };
-		cloudSearchMock.mockResolvedValue({
-			query: "cloud",
-			results: [{ path: "src/cloud.ts", status: "added", size: 10, binary: false, fileFingerprint: "v1" }],
-			truncated: false,
-		});
-		renderPalette();
-		act(() => useUiStore.getState().setCommandPaletteOpen(true));
-		const input = await screen.findByPlaceholderText(/search projects/i);
-		fireEvent.change(input, { target: { value: "cloud" } });
-
-		expect(await screen.findByText("cloud.ts", {}, { timeout: 2_000 })).toBeInTheDocument();
-		expect(cloudSearchMock).toHaveBeenCalledWith(
-			"org-1",
-			"w-fix",
-			{ query: "cloud", limit: 20 },
-			expect.objectContaining({ signal: expect.any(AbortSignal) }),
-		);
-		expect(getMock).not.toHaveBeenCalledWith(expect.stringContaining("/workspace/search"), expect.anything());
-	});
 
 	it("navigates to the selected connected-host worktree before opening its file", async () => {
 		ctx.params = { hostId: "host-a", projectId: "proj-1" };

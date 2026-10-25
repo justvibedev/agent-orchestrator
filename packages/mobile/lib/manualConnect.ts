@@ -17,15 +17,6 @@ export type PersistManualHostEditDeps = {
 	renameHost: (id: string, name: string) => Promise<void>;
 };
 
-/** Account sync rewrites this machine's route and credential from the AO
- * Cloud directory, so a hand edit would silently revert within one sync. */
-export class AccountManagedHostError extends Error {
-	constructor() {
-		super("This machine's address and password come from your Orchestrator Cloud account. Scan a new code with Reconnect to connect another way.");
-		this.name = "AccountManagedHostError";
-	}
-}
-
 /** A typed address answered, but it was not the paired machine being edited. */
 export class DifferentMachineError extends Error {
 	constructor() {
@@ -108,7 +99,6 @@ export async function persistManualHostEdit(
 	const after = edited.endpoints[endpointIndex];
 	const connectionChanged = !before || before.host !== after.host || before.port !== after.port ||
 		before.secure !== after.secure || host.token !== target.password;
-	if (connectionChanged && host.accountUserId) throw new AccountManagedHostError();
 	if (connectionChanged) {
 		const { hostId } = await deps.probe(after);
 		if (host.id && hostId !== host.id) throw new DifferentMachineError();

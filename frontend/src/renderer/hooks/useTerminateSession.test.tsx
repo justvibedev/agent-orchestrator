@@ -3,7 +3,6 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkspaceSession, WorkspaceSummary } from "../types/workspace";
-import { settingsQueryKey } from "./useSettings";
 
 const { createCloudClientMock, deleteSessionMock, postMock, remotePostMock } = vi.hoisted(() => ({
 	createCloudClientMock: vi.fn(),
@@ -17,9 +16,6 @@ vi.mock("../lib/api-client", () => ({
 	apiErrorMessage: (_error: unknown, fallback: string) => fallback,
 }));
 
-vi.mock("./useCloudCp", () => ({
-	createRendererCloudCpClient: createCloudClientMock,
-}));
 vi.mock("../lib/host-clients", () => ({
 	clientForHost: (hostId: string) => ({ POST: (...args: unknown[]) => remotePostMock(hostId, ...args) }),
 }));
@@ -126,30 +122,7 @@ describe("useTerminateSession", () => {
 		await act(async () => finishKill?.());
 	});
 
-	it("routes cloud sessions to their control-plane organization", async () => {
-		const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-		queryClient.setQueryData(settingsQueryKey, { cloudControlPlaneUrl: "https://cp.example.com" });
-		const cloudSession: WorkspaceSession = { ...localSession, cloud: { orgId: "org-1" } };
-		const { result } = renderHook(() => useTerminateSession(), { wrapper: wrapper(queryClient) });
 
-		await act(async () => result.current.mutateAsync(cloudSession));
-
-		expect(createCloudClientMock).toHaveBeenCalledWith("https://cp.example.com");
-		expect(deleteSessionMock).toHaveBeenCalledWith("org-1", "session-1");
-		expect(postMock).not.toHaveBeenCalled();
-	});
-
-	it("fails closed when a cloud session has no configured control plane", async () => {
-		const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-		const cloudSession: WorkspaceSession = { ...localSession, cloud: { orgId: "org-1" } };
-		const { result } = renderHook(() => useTerminateSession(), { wrapper: wrapper(queryClient) });
-
-		await expect(act(async () => result.current.mutateAsync(cloudSession))).rejects.toThrow(
-			"The cloud control plane is not configured.",
-		);
-		expect(deleteSessionMock).not.toHaveBeenCalled();
-		expect(postMock).not.toHaveBeenCalled();
-	});
 
 	// Success waits for the workspace refresh so a CDC/refetch cannot resurrect
 	// the row after optimisticKillIds clears. The kill API itself has already

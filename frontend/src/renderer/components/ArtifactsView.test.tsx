@@ -3,7 +3,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useUiStore } from "../stores/ui-store";
-import { CLOUD_PROJECT_KIND, STANDALONE_WORKSPACE_ID, type WorkspaceSession, type WorkspaceSummary } from "../types/workspace";
+import { STANDALONE_WORKSPACE_ID, type WorkspaceSession, type WorkspaceSummary } from "../types/workspace";
 import { ArtifactsView } from "./ArtifactsView";
 import { TooltipProvider } from "./ui/tooltip";
 
@@ -85,7 +85,6 @@ const withArtifacts: WorkspaceSummary[] = [
 const withoutArtifacts: WorkspaceSummary[] = [
 	{ id: "ao", name: "agent-orchestrator", path: "/code/ao", sessions: [] },
 	{ id: "px0", name: "px0", path: "/code/px0", sessions: [] },
-	{ id: "cloud", name: "cloud-project", path: "", kind: CLOUD_PROJECT_KIND, sessions: [] },
 	{ id: STANDALONE_WORKSPACE_ID, name: "Standalone", path: "", sessions: [] },
 ];
 

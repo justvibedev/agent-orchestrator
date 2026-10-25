@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ServerConfig } from "./config";
 import {
-	AccountManagedHostError,
 	adoptManualConnection,
 	DifferentMachineError,
 	editedManualHost,
@@ -123,19 +122,6 @@ describe("persisting an inline machine edit", () => {
 		};
 	}
 
-	it("refuses route or password edits on an account-synced machine but still renames it", async () => {
-		const managed = { ...host, accountUserId: "user-a" };
-		for (const edit of [{ host: "10.0.0.9", password: "old" }, { host: "192.168.1.42", password: "new" }]) {
-			const d = editDeps();
-			await expect(persistManualHostEdit(managed, { ...cfg, ...edit }, "Studio Mac", 0, d)).rejects.toBeInstanceOf(AccountManagedHostError);
-			expect(d.probe).not.toHaveBeenCalled();
-			expect(d.ping).not.toHaveBeenCalled();
-			expect(d.saveHost).not.toHaveBeenCalled();
-		}
-		const d = editDeps();
-		await persistManualHostEdit(managed, { ...cfg, host: "192.168.1.42", password: "old" }, "Studio Mac", 0, d);
-		expect(d.renameHost).toHaveBeenCalledWith("h_manual", "Studio Mac");
-	});
 
 	it("renames locally without probing an unchanged connection", async () => {
 		const d = editDeps();

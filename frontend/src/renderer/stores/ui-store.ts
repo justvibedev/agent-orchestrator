@@ -27,9 +27,7 @@ export type GlobalSettingsSection =
 	| "general"
 	| "harness"
 	| "agents"
-	| "billing"
 	| "remoteHosts"
-	| "coder"
 	| "mobile"
 	| "shortcuts"
 	| "browserProfiles"
@@ -37,7 +35,7 @@ export type GlobalSettingsSection =
 	| "help";
 
 /** Project settings pages: the project form sections plus the cues manager. */
-export type ProjectSettingsSection = ProjectFormSection | "environment" | "scripts" | "cues" | "repositories" | "instructions";
+export type ProjectSettingsSection = ProjectFormSection | "environment" | "scripts" | "cues";
 
 /** Which failure a "Show diagnostics" shortcut is about: the job it produced,
  * if any, and the error the user saw. */
@@ -49,8 +47,6 @@ export type SettingsModal =
 			section?: GlobalSettingsSection;
 			focusAgentId?: string;
 			hostId?: string;
-			/** Which Harness page view (local or cloud logins) to open. */
-			harnessView?: "local" | "cloud";
 			/** Start focusAgentId's login flow as soon as the Harness page can. */
 			startLogin?: boolean;
 			/** Open the diagnostics of focusAgentId's failed install or update, ready to copy. */
@@ -64,7 +60,6 @@ export type SettingsModal =
 			hostId?: string;
 			/** Page to open on, so callers can deep-link a project setting. */
 			section?: ProjectSettingsSection;
-			cloudOrgId?: string;
 	};
 
 /** Worker detail view toggles — Changes (Git rail) is the default. */
@@ -195,9 +190,9 @@ export type UiState = {
 	setWindowTranslucency: (enabled: boolean) => void;
 	setTerminalCopyOnSelect: (enabled: boolean) => void;
 	/** True while the restart-to-update confirmation is open. */
-	openGlobalSettings: (section?: GlobalSettingsSection, options?: { focusAgentId?: string; hostId?: string; harnessView?: "local" | "cloud"; startLogin?: boolean; showDiagnostics?: HarnessDiagnosticsRequest; preserveProject?: boolean }) => void;
+	openGlobalSettings: (section?: GlobalSettingsSection, options?: { focusAgentId?: string; hostId?: string; startLogin?: boolean; showDiagnostics?: HarnessDiagnosticsRequest; preserveProject?: boolean }) => void;
 	/** `options` as a string is the owning daemon's host ID (remote projects). */
-	openProjectSettings: (projectId: string, options?: string | { section?: ProjectSettingsSection; cloudOrgId?: string }) => void;
+	openProjectSettings: (projectId: string, options?: string | { section?: ProjectSettingsSection }) => void;
 	closeSettings: () => void;
 	/** Refresh resolvedTheme from OS without writing light/dark to storage. */
 	syncSystemTheme: () => void;
@@ -411,7 +406,6 @@ export const useUiStore = create<UiState>((set, get) => ({
 			section,
 			...(options?.focusAgentId ? { focusAgentId: options.focusAgentId } : {}),
 			...(options?.hostId && options.hostId !== "local" ? { hostId: options.hostId } : {}),
-			...(options?.harnessView ? { harnessView: options.harnessView } : {}),
 			...(options?.startLogin && options.focusAgentId ? { startLogin: true } : {}),
 			...(options?.showDiagnostics && options.focusAgentId ? { showDiagnostics: options.showDiagnostics } : {}),
 			...(options?.preserveProject && state.settingsModal?.scope === "project"
@@ -427,7 +421,6 @@ export const useUiStore = create<UiState>((set, get) => ({
 			projectId,
 			...(typeof options === "string" && options !== "local" ? { hostId: options } : {}),
 			...(typeof options === "object" && options?.section ? { section: options.section } : {}),
-			...(typeof options === "object" && options?.cloudOrgId !== undefined ? { cloudOrgId: options.cloudOrgId } : {}),
 		},
 	}),
 	closeSettings: () => set((state) => ({

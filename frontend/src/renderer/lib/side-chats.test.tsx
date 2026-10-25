@@ -26,7 +26,7 @@ it("keeps side conversations accessible while their parent is idle", () => {
 });
 
 const restrictions: Array<Partial<WorkspaceSession> & { host?: string }> = [
-	{ host: "remote" }, { mode: "tui" }, { cloud: { orgId: "org" } }, { isTerminated: true },
+	{ host: "remote" }, { mode: "tui" }, { isTerminated: true },
 ];
 it.each(restrictions)("keeps local live Chat restrictions: %j", (restriction) => {
 	const { result } = renderHook(() => useSideChatsAvailable({ ...session, ...restriction }, restriction.host));

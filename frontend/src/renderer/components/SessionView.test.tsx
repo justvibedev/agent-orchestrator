@@ -12,7 +12,6 @@ import { TooltipProvider } from "./ui/tooltip";
 import type { SessionInterfaceTransitionStatus } from "../hooks/useSessionInterfaceTransition";
 import type { BrowserTabsState, BrowserAgentActivityState } from "../../main/browser-view-host";
 import { inspectorIsOpen, rememberedFileDisplayMode, useUiStore, type InspectorView } from "../stores/ui-store";
-import { useTerminalResetStore } from "../stores/terminal-reset-store";
 import type { WorkspaceSession, WorkspaceSummary } from "../types/workspace";
 import { setChatDraftBoundary } from "../lib/chat-draft-boundary";
 import { chatDraftScopeKey } from "../lib/chat-drafts";
@@ -115,19 +114,6 @@ vi.mock("../lib/platform", () => ({
 }));
 vi.mock("../hooks/useWindowFullScreen", () => ({
 	useWindowFullScreen: () => nativeFullScreenMock(),
-}));
-vi.mock("../hooks/useCloudGate", () => ({
-	useCloudGate: () => ({ cloudEnabled: cloudGateState.cloudEnabled, localEnabled: true, client: "" }),
-}));
-vi.mock("../hooks/useCloudCp", () => ({
-	useCloudCp: () => ({
-		baseUrl: "https://cloud.example.test",
-		client: cloudCpClientMock,
-		ready: true,
-	}),
-}));
-vi.mock("../lib/cloud-cp/stream-bridge", () => ({
-	subscribeSessionEventsBridged: subscribeSessionEventsMock,
 }));
 vi.mock("../hooks/useSessionInterfaceTransition", async (importOriginal) => ({
 	...await importOriginal<typeof import("../hooks/useSessionInterfaceTransition")>(),
@@ -429,18 +415,6 @@ vi.mock("./chat/SessionChatSurface", async () => {
 	};
 });
 
-vi.mock("./chat/CloudSessionChatSurface", async (importOriginal) => ({
-	...await importOriginal<typeof import("./chat/CloudSessionChatSurface")>(),
-	CloudSessionChatSurface: ({ sessionTabAction, controllerTransitioning, newWorkDisabled, onConversationWorkChange, reviewerTerminal, reviewerTarget, onOpenReviewerTerminal, onSelectChat }: { sessionTabAction?: ReactNode; controllerTransitioning?: boolean; newWorkDisabled?: boolean; onConversationWorkChange?: (state: typeof chatSurfaceWorkState) => void; reviewerTerminal?: { handleId: string; harness: string }; reviewerTarget?: { handleId: string; harness: string }; onOpenReviewerTerminal?: (target: { handleId: string; harness: string }) => void; onSelectChat?: () => void }) => (
-		<div data-testid="cloud-chat-surface" data-transitioning={controllerTransitioning ? "true" : "false"} data-new-work-disabled={newWorkDisabled ? "true" : "false"}>
-			{sessionTabAction}
-			<button type="button" onClick={() => onConversationWorkChange?.({ ...chatSurfaceWorkState })}>report cloud chat work</button>
-			<button type="button" onClick={() => onSelectChat?.()}>cloud chat tab</button>
-			{reviewerTerminal ? <button type="button" onClick={() => onOpenReviewerTerminal?.(reviewerTerminal)}>cloud reviewer tab</button> : null}
-			<span data-testid="cloud-chat-target">{reviewerTarget ? `reviewer:${reviewerTarget.handleId}:${reviewerTarget.harness}` : "chat"}</span>
-		</div>
-	),
-}));
 // The session tab's menu is stood in for by the switch control it wraps.
 vi.mock("./TerminalAgentControls", () => ({
 	SessionTabMenu:({ switchControl }: { switchControl?: ReactNode }) => (
@@ -463,7 +437,6 @@ vi.mock("./CenterPane", () => ({
 		onCloseShellTerminal,
 		onSelectShellTerminal,
 		onSelectSessionTerminal,
-		onSessionTerminalAttached,
 		onSelectReviewerTerminal,
 		topbarActions,
 		sessionTabAction,
@@ -482,7 +455,6 @@ vi.mock("./CenterPane", () => ({
 		onCloseShellTerminal?: (handleId: string) => void;
 		onSelectShellTerminal?: (handleId: string) => void;
 		onSelectSessionTerminal?: () => void;
-		onSessionTerminalAttached?: (attached: boolean) => void;
 		onSelectReviewerTerminal?: (target: { handleId: string; harness: string }) => void;
 		topbarActions?: ReactNode;
 		sessionTabAction?: ReactNode;
@@ -494,11 +466,6 @@ vi.mock("./CenterPane", () => ({
 		terminalTarget?: { kind: string; handleId?: string };
 		auxiliaryTabOrder?: string[];
 	}) => {
-		useEffect(() => {
-			if (autoAttachSessionTerminal.current && session?.cloud && session.runtimeConnected && (session.cloud.observedState === "running" || session.terminalGeneration)) {
-				onSessionTerminalAttached?.(true);
-			}
-		}, [onSessionTerminalAttached, session?.cloud, session?.runtimeConnected, session?.terminalGeneration]);
 		return (
 		<div data-testid="terminal-center" data-agent-input-disabled={agentInputDisabled ? "true" : "false"} data-terminal-generation={terminalGeneration ?? ""}>
 
@@ -632,12 +599,6 @@ vi.mock("./SessionFileWorkspace", () => ({
 			</div>
 		);
 	},
-}));
-vi.mock("./CloudWorkspaceDiff", () => ({
-	CloudFileContentPane: ({ path }: { path: string }) => <div data-testid="cloud-file-workspace">{path}</div>,
-	CloudWorkspaceDiff: ({ onOpenFile }: { onOpenFile?: (path: string) => void }) => (
-		<button onClick={() => onOpenFile?.("src/cloud.ts")} type="button">open cloud file</button>
-	),
 }));
 const { browserDestroy, browserViewOptions, browserViewState } = vi.hoisted(() => ({
 	browserDestroy: vi.fn(),
@@ -933,16 +894,12 @@ describe("SessionView", () => {
 		window.localStorage.clear();
 		for (const session of workspaces.flatMap((workspace) => workspace.sessions)) {
 			delete session.activity;
-			delete session.cloud;
 			delete session.previewUrl;
 			delete session.previewRevision;
 			delete session.isTerminated;
-			delete session.runtimeConnected;
-			delete session.cloud;
 			session.status = "working";
 			session.provider = "claude-code";
 			delete session.mode;
-			delete session.cloud;
 			session.prs = [];
 		}
 		workspaceQueryState.data = workspaces;
@@ -962,7 +919,6 @@ describe("SessionView", () => {
 			isSidebarOpen: true,
 			visibleTerminalKindBySession: {},
 		});
-		useTerminalResetStore.setState({ baselineEpoch: {}, nonces: {}, reconnecting: {} });
 		browserDestroy.mockReset();
 		browserViewOptions.current = undefined;
 		browserViewState.url = "";
@@ -1143,81 +1099,9 @@ describe("SessionView", () => {
 		expect(resumeAgentPostMock).toHaveBeenCalledTimes(1);
 	});
 
-	it("keeps a newly selected Cloud session mounted while its row resolves", () => {
-		workspaceQueryState.data = [];
-		cloudSessionQueryState.isLoading = true;
-		workspaceSessionLookup.mockClear();
 
-		render(<SessionView cloudOrgId="cloud-org" projectId="cloud-project" sessionId="cloud-session" />);
 
-		expect(screen.queryByText("session not found")).not.toBeInTheDocument();
-		expect(screen.queryByRole("button", { name: "Switch to chat UI" })).not.toBeInTheDocument();
-		expect(workspaceSessionLookup).toHaveBeenCalledWith("cloud-session", undefined, false);
-		expect(screen.getByTestId("cloud-session-loader-screen")).toBeInTheDocument();
-	});
 
-	it("polls the direct Cloud lookup only while the session list does not have it", () => {
-		// Opened before the list has it (created through the API, or in a project
-		// the list has not fetched yet), the view shows the direct lookup, which
-		// must keep refreshing or its lifecycle stays where it was at open.
-		workspaceQueryState.data = [];
-		cloudSessionPoll.mockClear();
-		const view = render(<SessionView cloudOrgId="cloud-org" projectId="cloud-project" sessionId="sess-1" />);
-		expect(cloudSessionPoll).toHaveBeenLastCalledWith(true);
-
-		workspaceQueryState.data = [
-			...workspaces,
-			{
-				id: "cloud-project", name: "Cloud project", kind: "cloud", path: "",
-				sessions: [{ ...workerSession("sess-1"), workspaceId: "cloud-project", cloud: { orgId: "cloud-org" } }],
-			},
-		];
-		view.rerender(<SessionView cloudOrgId="cloud-org" projectId="cloud-project" sessionId="sess-1" />);
-		expect(cloudSessionPoll).toHaveBeenLastCalledWith(false);
-	});
-
-	it("uses the project route to distinguish local and Cloud sessions with the same ID", () => {
-		const cloudSession: WorkspaceSession = {
-			...workerSession("sess-1"),
-			workspaceId: "cloud-project",
-			workspaceName: "Cloud project",
-			title: "Cloud twin",
-			mode: "chat",
-			cloud: { orgId: "cloud-org" },
-		};
-		workspaceQueryState.data = [
-			...workspaces,
-			{ id: "cloud-project", name: "Cloud project", kind: "cloud", path: "", sessions: [cloudSession] },
-		];
-		cloudSessionLookup.mockClear();
-
-		const cloudView = render(<SessionView cloudOrgId="cloud-org" projectId="cloud-project" sessionId="sess-1" />);
-		expect(screen.getByTestId("cloud-chat-surface")).toBeInTheDocument();
-		expect(screen.queryByTestId("terminal-center")).not.toBeInTheDocument();
-		expect(workspaceSessionLookup).toHaveBeenCalledWith("sess-1", undefined, false);
-		// Its Browser panel shows the sandbox's agent browser, from the control plane.
-		expect(browserViewOptions.current).toMatchObject({ cloudAgentBrowser: { baseUrl: "https://cloud.example.test", orgId: "cloud-org", sessionId: "sess-1" } });
-		cloudView.unmount();
-
-		const localView = render(<SessionView cloudOrgId="cloud-org" projectId="proj-1" sessionId="sess-1" />);
-		expect(screen.getByTestId("terminal-center")).toBeInTheDocument();
-		expect(screen.queryByTestId("cloud-chat-surface")).not.toBeInTheDocument();
-		expect(browserViewOptions.current).toMatchObject({ cloudAgentBrowser: undefined });
-		expect(cloudSessionLookup).toHaveBeenLastCalledWith("cloud-org", "sess-1", false);
-		localView.unmount();
-
-		render(<SessionView cloudOrgId="cloud-org" sessionId="sess-1" />);
-		expect(screen.getByTestId("terminal-center")).toBeInTheDocument();
-		expect(screen.queryByTestId("cloud-chat-surface")).not.toBeInTheDocument();
-		expect(cloudSessionLookup).toHaveBeenLastCalledWith("cloud-org", "sess-1", false);
-	});
-
-	it("keeps an unscoped local session available when Cloud is offline", () => {
-		cloudSessionQueryState.isError = true;
-		render(<SessionView cloudOrgId="cloud-org" sessionId="sess-1" />);
-		expect(screen.getByTestId("terminal-center")).toBeInTheDocument();
-		expect(cloudSessionLookup).toHaveBeenLastCalledWith("cloud-org", "sess-1", false);
-	});
 
 	it("waits for the direct session lookup after the workspace list has loaded", () => {
 		workspaceQueryState.data = [];
@@ -1553,587 +1437,30 @@ describe("SessionView", () => {
 		expect(useUiStore.getState().activeShellTerminalHandleId).toBe("pending-shell:test");
 	});
 
-	it("routes a cloud session's new terminal through its control-plane identity", () => {
-		const session = workerSession("sess-2");
-		session.cloud = { orgId: "cloud-org" };
 
-		render(<SessionView sessionId="sess-2" />);
-		fireEvent.click(screen.getByRole("button", { name: "New terminal" }));
 
-		expect(openShellTerminalMock).toHaveBeenCalledWith(
-			{ projectId: "proj-1", sessionId: "sess-2", cloud: { orgId: "cloud-org" } },
-		);
-	});
 
-	it("opens a newly running Cloud reviewer terminal in the session view", async () => {
-		const session = workerSession("sess-2");
-		session.mode = "chat";
-		session.cloud = { orgId: "cloud-org" };
-		cloudReviewGetMock.mockResolvedValue({
-			sessionId: "sess-2",
-			reviewerHandleId: "cloud-reviewer-7",
-			reviewerHarness: "codex",
-			reviews: [{ status: "running" }],
-			runs: [],
-		});
 
-		render(<SessionView sessionId="sess-2" />);
 
-		// The reviewer opens as a tab inside the Cloud chat, not the local chat surface.
-		await waitFor(() => expect(screen.getByTestId("cloud-chat-target")).toHaveTextContent("reviewer:cloud-reviewer-7:codex"));
-		expect(screen.queryByTestId("chat-surface")).not.toBeInTheDocument();
-		// Chat stays reachable while the review runs, and the Reviewer tab reopens it.
-		fireEvent.click(screen.getByRole("button", { name: "cloud chat tab" }));
-		await waitFor(() => expect(screen.getByTestId("cloud-chat-target")).toHaveTextContent("chat"));
-		await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
-		expect(screen.getByTestId("cloud-chat-target")).toHaveTextContent("chat");
-		fireEvent.click(screen.getByRole("button", { name: "cloud reviewer tab" }));
-		await waitFor(() => expect(screen.getByTestId("cloud-chat-target")).toHaveTextContent("reviewer:cloud-reviewer-7:codex"));
-	});
 
-	it("adds an automatic Cloud review as a tab without taking over the chat", async () => {
-		const session = workerSession("sess-2");
-		session.mode = "chat";
-		session.cloud = { orgId: "cloud-org" };
-		cloudReviewGetMock.mockResolvedValue({
-			sessionId: "sess-2",
-			reviewerHandleId: "cloud-reviewer-8",
-			reviewerHarness: "codex",
-			reviews: [{ status: "running" }],
-			runs: [{ id: "run-8", reviewerTerminalId: "cloud-reviewer-8", status: "running", triggerSource: "auto" }],
-		});
 
-		render(<SessionView sessionId="sess-2" />);
 
-		expect(await screen.findByRole("button", { name: "cloud reviewer tab" })).toBeInTheDocument();
-		expect(screen.getByTestId("cloud-chat-target")).toHaveTextContent("chat");
-	});
 
-	it("keeps a delivered Cloud reviewer terminal selected long enough to show its completion", async () => {
-		const session = workerSession("sess-2");
-		session.cloud = { orgId: "cloud-org" };
-		cloudReviewGetMock.mockResolvedValue({
-			sessionId: "sess-2",
-			reviewerHandleId: "cloud-reviewer-7",
-			reviewerHarness: "codex",
-			reviews: [{ status: "running" }],
-			runs: [{ id: "run-7", reviewerTerminalId: "cloud-reviewer-7", status: "running" }],
-		});
 
-		const view = render(<SessionView sessionId="sess-2" />);
-		await waitFor(() => expect(screen.getByTestId("terminal-target")).toHaveTextContent("reviewer"));
 
-		act(() => {
-			view.client.setQueryData(["cloud-session-reviews", "https://cloud.example.test", "cloud-org", "sess-2"], {
-				sessionId: "sess-2",
-				reviewerHandleId: "",
-				reviewerHarness: "codex",
-				reviews: [{ status: "up_to_date" }],
-				runs: [{ id: "run-7", reviewerTerminalId: "cloud-reviewer-7", status: "delivered" }],
-			});
-		});
 
-		await waitFor(() => expect(screen.getByTestId("terminal-target")).toHaveTextContent("reviewer"));
-		expect(screen.getByTestId("reviewer-harness")).toHaveTextContent("codex");
-	});
 
-	it("resumes a cloud session only after its detail view is opened", async () => {
-		const session = workerSession("sess-2");
-		session.runtimeConnected = false;
-		session.cloud = {
-			orgId: "cloud-org",
-			sandboxProvider: "coder",
-			desiredState: "paused",
-			observedState: "stopped",
-		};
 
-		render(<SessionView sessionId="sess-2" />);
 
-		expect(screen.getByRole("status")).toHaveTextContent("Paused by Coder");
-		await waitFor(() => expect(cloudResumeMock).toHaveBeenCalledWith("cloud-org", "sess-2"));
-		expect(cloudResumeMock).toHaveBeenCalledTimes(1);
-	});
 
-	it("asks the worker to prepare the workspace on open, but never re-runs a failed Setup just for viewing it", async () => {
-		const checkout = cloudCpClientMock.requestWorkspaceCheckout;
-		const id = "sess-2";
-		for (const [code, prepares] of [
-			["repository_checkout_failed", true],
-			["project_setup_failed", false],
-		] as const) {
-			checkout.mockClear();
-			cloudResumeMock.mockClear();
-			const session = workerSession(id);
-			session.cloud = {
-				orgId: "cloud-org",
-				sandboxProvider: "freestyle",
-				desiredState: "running",
-				observedState: "running",
-				startupError: { code, message: "Setup step 1 failed: exit status 3.", at: "2026-10-19T13:21:45Z" },
-			};
-			const view = render(<SessionView sessionId={id} />);
-			await waitFor(() => expect(cloudResumeMock).toHaveBeenCalledWith("cloud-org", id));
-			if (prepares) {
-				await waitFor(() => expect(checkout).toHaveBeenCalledWith("cloud-org", id));
-			} else {
-				// The checkout would follow the resume; let that chain settle first.
-				await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
-				expect(checkout).not.toHaveBeenCalled();
-			}
-			view.unmount();
-		}
-	});
 
-	it("shows only the multi-step loader while a cloud workspace is connecting", () => {
-		const session = workerSession("sess-2");
-		session.runtimeConnected = false;
-		session.cloud = {
-			orgId: "cloud-org",
-			sandboxProvider: "coder",
-			desiredState: "running",
-			// The workspace exists and AO is starting its worker inside it.
-			observedState: "bootstrapping",
-		};
 
-		render(<SessionView sessionId="sess-2" />);
 
-		const loaderScreen = screen.getByTestId("cloud-session-loader-screen");
-		const loader = within(loaderScreen).getByRole("status", { name: "Session setup activity" });
-		expect(loaderScreen).toHaveClass("absolute", "inset-0", "grid", "place-items-center", "bg-background");
-		// The loader covers the session pane but MUST stay within the app z-scale,
-		// below the overlay layer (dialogs/dropdowns at z-overlay). A raw high z
-		// (previously z-[200]) painted over any shell modal opened while a cloud
-		// session loads (New Task, the project three-dots menu), hiding it while
-		// its Radix modal still locked body pointer-events and froze the whole UI.
-		expect(loaderScreen).toHaveClass("z-chrome");
-		expect(loaderScreen.className).not.toMatch(/z-\[\d+\]/);
-		expect(loaderScreen.children).toHaveLength(1);
-		expect(loader).toHaveTextContent("Connecting to the worker");
-		expect(loader).toHaveTextContent("Creating the workspace");
-		expect(loader).toHaveTextContent("Preparing your repository and agent");
-		expect(loader).toHaveTextContent("Connecting your terminal");
-		expect(within(loader).getByTestId("multi-step-loader-step").querySelector(".multi-step-loader__shimmer")).toBeInTheDocument();
-		expect(within(loader).queryByRole("progressbar")).not.toBeInTheDocument();
-		expect(loader).not.toHaveTextContent("Coder");
-		expect(loader).not.toHaveClass("right-4", "top-4");
-		expect(document.querySelector("[data-cloud-lifecycle-stage]")).not.toBeInTheDocument();
-	});
 
-	it("replays confirmed startup progress and opens a live event stream", async () => {
-		const session = workerSession("sess-2");
-		session.runtimeConnected = false;
-		session.cloud = {
-			orgId: "cloud-org",
-			sandboxProvider: "coder",
-			desiredState: "running",
-			observedState: "provisioning",
-		};
-		const recent = new Date(Date.now() - 5_000).toISOString();
-		listSessionEventsMock.mockResolvedValueOnce({
-			events: [
-				{ type: "agent.ready", createdAt: new Date(Date.now() - 12 * 60 * 60 * 1_000).toISOString(), sequence: 1 },
-				{ type: "sandbox.provisioning", createdAt: recent, sequence: 2 },
-				{ type: "worker.ready", createdAt: recent, sequence: 3 },
-			],
-			hasMore: false,
-			nextAfter: 3,
-		});
-		render(<SessionView sessionId="sess-2" />);
-		await waitFor(() => expect(screen.getByTestId("multi-step-loader-step")).toHaveTextContent("Preparing your repository and agent"));
-		expect(listSessionEventsMock).toHaveBeenCalledWith("cloud-org", "sess-2", { after: 0, limit: 500 }, expect.any(Object));
-		expect(subscribeSessionEventsMock).toHaveBeenCalledWith(expect.objectContaining({ orgId: "cloud-org", sessionId: "sess-2", after: 0 }));
-	});
 
-	it("advances the active phrase when a later startup event arrives", async () => {
-		const session = workerSession("sess-2");
-		session.runtimeConnected = false;
-		session.cloud = {
-			orgId: "cloud-org",
-			sandboxProvider: "coder",
-			desiredState: "running",
-			observedState: "requested",
-		};
-		listSessionEventsMock
-			.mockResolvedValueOnce({ events: [], hasMore: false, nextAfter: 0 })
-			.mockResolvedValueOnce({
-				events: [{ type: "worker.connected", createdAt: new Date().toISOString(), sequence: 1 }],
-				hasMore: false,
-				nextAfter: 1,
-			});
-		render(<SessionView sessionId="sess-2" />);
-		expect(screen.getByTestId("multi-step-loader-step")).toHaveTextContent("Creating the workspace");
-		await waitFor(() => expect(screen.getByTestId("multi-step-loader-step")).toHaveTextContent("Preparing your repository and agent"), { timeout: 3_000 });
-		expect(listSessionEventsMock).toHaveBeenLastCalledWith("cloud-org", "sess-2", { after: 0, limit: 500 }, expect.any(Object));
-	});
 
-	it("moves past worker connection when the worker checks in before worker.ready", async () => {
-		const session = workerSession("sess-2");
-		session.runtimeConnected = false;
-		session.cloud = {
-			orgId: "cloud-org",
-			sandboxProvider: "coder",
-			desiredState: "running",
-			observedState: "bootstrapping",
-		};
-		listSessionEventsMock.mockResolvedValueOnce({
-			events: [
-				{ type: "sandbox.provisioning", createdAt: new Date().toISOString(), sequence: 1 },
-				{ type: "worker.connected", createdAt: new Date().toISOString(), sequence: 2 },
-			],
-			hasMore: false,
-			nextAfter: 2,
-		});
 
-		render(<SessionView sessionId="sess-2" />);
 
-		await waitFor(() => expect(screen.getByTestId("multi-step-loader-step")).toHaveTextContent("Preparing your repository and agent"));
-	});
-
-	it("advances from session facts when event replay has no startup events", async () => {
-		const session = workerSession("sess-2");
-		session.runtimeConnected = false;
-		session.cloud = {
-			orgId: "cloud-org",
-			sandboxProvider: "coder",
-			desiredState: "running",
-			observedState: "provisioning",
-		};
-		const view = render(<SessionView sessionId="sess-2" />);
-		// Provisioning is still creating the workspace.
-		await waitFor(() => expect(screen.getByTestId("multi-step-loader-step")).toHaveTextContent("Creating the workspace"));
-
-		// Bootstrapping: the workspace exists and its worker is starting.
-		session.cloud.observedState = "bootstrapping";
-		view.rerender(<SessionView sessionId="sess-2" />);
-		await waitFor(() => expect(screen.getByTestId("multi-step-loader-step")).toHaveTextContent("Connecting to the worker"));
-
-		session.runtimeConnected = true;
-		view.rerender(<SessionView sessionId="sess-2" />);
-		await waitFor(() => expect(screen.getByTestId("multi-step-loader-step")).toHaveTextContent("Preparing your repository and agent"));
-	});
-
-	it("polls worker connection without treating sandbox running as agent readiness", async () => {
-		const session = workerSession("sess-2");
-		session.runtimeConnected = false;
-		session.cloud = {
-			orgId: "cloud-org",
-			sandboxProvider: "coder",
-			desiredState: "running",
-			observedState: "provisioning",
-		};
-		getCloudSessionMock
-			.mockResolvedValueOnce({ session: { observedState: "bootstrapping", runtimeConnected: true } })
-			.mockResolvedValue({ session: { observedState: "running", runtimeConnected: true } });
-
-		render(<SessionView sessionId="sess-2" />);
-
-		await waitFor(() => expect(screen.getByTestId("multi-step-loader-step")).toHaveTextContent("Preparing your repository and agent"));
-		await waitFor(() => expect(getCloudSessionMock).toHaveBeenCalledTimes(2), { timeout: 3_000 });
-		expect(screen.getByTestId("multi-step-loader-step")).toHaveTextContent("Preparing your repository and agent");
-		expect(getCloudSessionMock).toHaveBeenCalledWith("cloud-org", "sess-2", expect.any(Object));
-	});
-
-	it("shows the latest confirmed startup phrase when replay returns several milestones together", async () => {
-		const session = workerSession("sess-2");
-		session.runtimeConnected = false;
-		session.cloud = {
-			orgId: "cloud-org",
-			sandboxProvider: "coder",
-			desiredState: "running",
-			observedState: "requested",
-		};
-		const now = new Date().toISOString();
-		listSessionEventsMock.mockResolvedValueOnce({
-			events: [
-				{ type: "sandbox.provisioning", createdAt: now, sequence: 1 },
-				{ type: "worker.connected", createdAt: now, sequence: 2 },
-				{ type: "agent.ready", createdAt: now, sequence: 3 },
-			],
-			hasMore: false,
-			nextAfter: 3,
-		});
-
-		render(<SessionView sessionId="sess-2" />);
-		expect(screen.getByTestId("multi-step-loader-step")).toHaveTextContent("Creating the workspace");
-		await waitFor(() => expect(screen.getByTestId("multi-step-loader-step")).toHaveTextContent("Connecting your terminal"));
-	});
-
-	it("advances on live startup events without waiting for another HTTP poll", async () => {
-		const session = workerSession("sess-2");
-		session.runtimeConnected = false;
-		session.cloud = { orgId: "cloud-org", sandboxProvider: "coder", desiredState: "running", observedState: "requested" };
-		render(<SessionView sessionId="sess-2" />);
-		await waitFor(() => expect(subscribeSessionEventsMock).toHaveBeenCalled());
-		const onEvent = subscribeSessionEventsMock.mock.calls[0][0].onEvent;
-		for (const [type, sequence, phrase] of [
-			// The start of workspace creation does not complete the workspace step.
-			["sandbox.provisioning", 1, "Creating the workspace"],
-			["worker.connected", 2, "Preparing your repository and agent"],
-			["agent.ready", 3, "Connecting your terminal"],
-		] as const) {
-			act(() => onEvent({ type, sequence, sessionId: "sess-2", createdAt: new Date().toISOString(), payload: {} }));
-			expect(screen.getByTestId("multi-step-loader-step")).toHaveTextContent(phrase);
-		}
-		expect(listSessionEventsMock).toHaveBeenCalledTimes(1);
-	});
-
-	it("removes the cloud lifecycle badge once the session is connected", () => {
-		const session = workerSession("sess-2");
-		session.runtimeConnected = true;
-		session.cloud = {
-			orgId: "cloud-org",
-			sandboxProvider: "coder",
-			desiredState: "running",
-			observedState: "running",
-		};
-
-		render(<SessionView sessionId="sess-2" />);
-
-		expect(document.querySelector("[data-cloud-lifecycle-stage]")).not.toBeInTheDocument();
-		expect(screen.queryByText("Connected")).not.toBeInTheDocument();
-	});
-
-	it("keeps the multi-step loader visible while a restored cloud session reconnects", () => {
-		const session = workerSession("sess-2");
-		session.runtimeConnected = true;
-		session.cloud = {
-			orgId: "cloud-org",
-			sandboxProvider: "coder",
-			desiredState: "running",
-			observedState: "running",
-		};
-		useTerminalResetStore.setState({ reconnecting: { "sess-2": true } });
-
-		render(<SessionView sessionId="sess-2" />);
-
-		expect(screen.getByTestId("cloud-session-loader-screen")).toBeInTheDocument();
-		expect(screen.getByTestId("multi-step-loader-step")).toHaveTextContent("Connecting your terminal");
-	});
-
-	it("never covers a restored Chat-mode cloud session with the terminal reconnect loader", () => {
-		// Restore marks the session reconnecting; only its terminal pane clears
-		// that, and a Chat-mode session never mounts one.
-		const session = workerSession("sess-2");
-		session.mode = "chat";
-		session.runtimeConnected = true;
-		session.cloud = {
-			orgId: "cloud-org",
-			sandboxProvider: "freestyle",
-			desiredState: "running",
-			observedState: "running",
-		};
-		useTerminalResetStore.getState().bump("sess-2", 1);
-
-		render(<SessionView sessionId="sess-2" />);
-
-		expect(screen.queryByTestId("cloud-session-loader-screen")).not.toBeInTheDocument();
-		expect(screen.getByTestId("cloud-chat-surface")).toBeInTheDocument();
-		// The flag is kept: a later switch to the terminal still waits for the
-		// fresh worker's terminal.
-		expect(useTerminalResetStore.getState().reconnecting["sess-2"]).toBe(true);
-	});
-
-	it("keeps the restored Chat-mode session's loader while its workspace comes back", () => {
-		const session = workerSession("sess-2");
-		session.mode = "chat";
-		session.runtimeConnected = false;
-		session.cloud = {
-			orgId: "cloud-org",
-			sandboxProvider: "freestyle",
-			desiredState: "running",
-			observedState: "restoring",
-		};
-		useTerminalResetStore.getState().bump("sess-2", 1);
-
-		render(<SessionView sessionId="sess-2" />);
-
-		expect(screen.getByTestId("cloud-session-loader-screen")).toBeInTheDocument();
-		expect(screen.getByTestId("multi-step-loader-step")).not.toHaveTextContent("Connecting your terminal");
-	});
-
-	it("does not skip agent preparation just because the worker reports running", async () => {
-		autoAttachSessionTerminal.current = false;
-		const session = workerSession("sess-2");
-		session.mode = "tui";
-		session.runtimeConnected = true;
-		session.cloud = {
-			orgId: "cloud-org",
-			sandboxProvider: "coder",
-			desiredState: "running",
-			observedState: "running",
-		};
-
-		render(<SessionView sessionId="sess-2" />);
-
-		expect(screen.getByTestId("multi-step-loader-step")).toHaveTextContent("Preparing your repository and agent");
-		await waitFor(() => expect(subscribeSessionEventsMock).toHaveBeenCalled());
-		act(() => subscribeSessionEventsMock.mock.calls[0][0].onEvent({
-			type: "agent.ready", sessionId: "sess-2", sequence: 1, createdAt: new Date().toISOString(), payload: {},
-		}));
-		expect(screen.getByTestId("multi-step-loader-step")).toHaveTextContent("Connecting your terminal");
-	});
-
-	it("waits for a Cloud orchestrator's terminal content after the worker connects", () => {
-		autoAttachSessionTerminal.current = false;
-		const session = workerSession("sess-orch");
-		session.mode = "tui";
-		session.runtimeConnected = true;
-		session.cloud = { orgId: "cloud-org", sandboxProvider: "freestyle", desiredState: "running", observedState: "running" };
-		const view = render(<SessionView sessionId="sess-orch" />);
-		expect(screen.getByTestId("cloud-session-loader-screen")).toBeInTheDocument();
-		autoAttachSessionTerminal.current = true;
-		session.terminalGeneration = "ready";
-		view.rerender(<SessionView sessionId="sess-orch" />);
-		expect(screen.queryByTestId("cloud-session-loader-screen")).not.toBeInTheDocument();
-	});
-
-	it("checks the final step when terminal content is ready, then reveals it", () => {
-		vi.useFakeTimers();
-		try {
-			autoAttachSessionTerminal.current = false;
-			const session = workerSession("sess-2");
-			session.mode = "tui";
-			session.runtimeConnected = true;
-			session.cloud = { orgId: "cloud-org", sandboxProvider: "coder", desiredState: "running", observedState: "running" };
-			const view = render(<SessionView sessionId="sess-2" />);
-			act(() => vi.advanceTimersByTime(200));
-			autoAttachSessionTerminal.current = true;
-			session.terminalGeneration = "ready";
-			view.rerender(<SessionView sessionId="sess-2" />);
-			expect(screen.getAllByTestId("multi-step-loader-check")).toHaveLength(4);
-			expect(screen.getByTestId("cloud-session-loader-screen")).toHaveClass("cloud-session-loader--complete");
-			act(() => vi.advanceTimersByTime(360));
-			expect(screen.queryByTestId("cloud-session-loader-screen")).not.toBeInTheDocument();
-			view.unmount();
-		} finally {
-			vi.useRealTimers();
-		}
-	});
-
-	it("does not re-raise the full-screen loader when a connected cloud session's runtime relay drops mid-turn", () => {
-		const session = workerSession("sess-2");
-		session.runtimeConnected = true;
-		session.cloud = {
-			orgId: "cloud-org",
-			sandboxProvider: "coder",
-			desiredState: "running",
-			observedState: "running",
-		};
-		const view = render(<SessionView sessionId="sess-2" />);
-		// Connected: no lifecycle loader over the terminal.
-		expect(screen.queryByTestId("cloud-session-loader-screen")).not.toBeInTheDocument();
-
-		// The worker relay row lapses mid-turn: runtimeConnected flips false while the
-		// sandbox stays running (stage -> "restoring_agent"). The connect latch must
-		// keep the terminal visible instead of re-raising the full-screen loader.
-		session.runtimeConnected = false;
-		view.rerender(<SessionView sessionId="sess-2" />);
-		expect(screen.queryByTestId("cloud-session-loader-screen")).not.toBeInTheDocument();
-	});
-
-	it("shows the live agent terminal (not the loader) while the sandbox is still bootstrapping", () => {
-		// Fresh spawn: the agent runs its first turn while observed is still
-		// "bootstrapping" (flips to "running" only afterwards). Once the agent
-		// terminal is minted (terminalGeneration set) and the relay is connected,
-		// the terminal is streaming and must be visible, not covered by the loader.
-		const session = workerSession("sess-2");
-		session.runtimeConnected = true;
-		session.terminalGeneration = "6234";
-		session.cloud = {
-			orgId: "cloud-org",
-			sandboxProvider: "coder",
-			desiredState: "running",
-			observedState: "bootstrapping",
-		};
-		render(<SessionView sessionId="sess-2" />);
-		expect(screen.queryByTestId("cloud-session-loader-screen")).not.toBeInTheDocument();
-	});
-
-	it("keeps the loader while bootstrapping before the agent terminal is minted", () => {
-		const session = workerSession("sess-2");
-		session.runtimeConnected = true;
-		session.terminalGeneration = undefined;
-		session.cloud = {
-			orgId: "cloud-org",
-			sandboxProvider: "coder",
-			desiredState: "running",
-			observedState: "bootstrapping",
-		};
-		render(<SessionView sessionId="sess-2" />);
-		expect(screen.getByTestId("cloud-session-loader-screen")).toBeInTheDocument();
-	});
-
-	describe("cloud startup errors", () => {
-		const startupError = {
-			code: "workspace_not_ready",
-			message: "Your Coder workspace wasn't ready after 20 minutes.",
-			at: "2026-10-08T00:00:00Z",
-		};
-		function failedCloudSession(cloud: Partial<NonNullable<WorkspaceSession["cloud"]>>) {
-			const session = workerSession("sess-2");
-			session.runtimeConnected = false;
-			session.cloud = { orgId: "cloud-org", sandboxProvider: "coder", desiredState: "running", observedState: "terminated", ...cloud };
-			return session;
-		}
-
-		it("replaces the pane with the server's reason and retries startup once AO gives up", async () => {
-			failedCloudSession({ runtimeState: "terminated", startupError });
-			const view = render(<SessionView sessionId="sess-2" />);
-			const invalidate = vi.spyOn(view.client, "invalidateQueries");
-
-			const errorState = screen.getByTestId("cloud-session-startup-error");
-			expect(within(errorState).getByRole("heading", { name: "This session couldn't start" })).toBeInTheDocument();
-			expect(errorState).toHaveTextContent(startupError.message);
-			expect(screen.queryByTestId("cloud-session-loader-screen")).not.toBeInTheDocument();
-			// The topbar stays usable above the error state.
-			expect(screen.getByTestId("session-topbar-host").contains(errorState)).toBe(false);
-
-			fireEvent.click(within(errorState).getByRole("button", { name: "Retry" }));
-			await waitFor(() => expect(cloudRetryStartupMock).toHaveBeenCalledWith("cloud-org", "sess-2"));
-			await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ["cloud-sessions"] }));
-		});
-
-		it("keeps a transiently failed runtime on the loader with its startup reason", () => {
-			// "failed" is retried by the reconciler with backoff, so it is not final.
-			failedCloudSession({ runtimeState: "failed", observedState: "failed", startupError });
-			render(<SessionView sessionId="sess-2" />);
-			expect(screen.getByTestId("cloud-session-loader-screen")).toBeInTheDocument();
-			expect(screen.getByTestId("cloud-session-startup-note")).toHaveTextContent(startupError.message);
-			expect(screen.queryByTestId("cloud-session-startup-error")).not.toBeInTheDocument();
-		});
-
-		it("keeps the loader with a still-retrying note while AO keeps trying", () => {
-			failedCloudSession({ runtimeState: "bootstrapping", observedState: "bootstrapping", startupError });
-			render(<SessionView sessionId="sess-2" />);
-			expect(screen.getByTestId("cloud-session-loader-screen")).toBeInTheDocument();
-			expect(screen.getByTestId("cloud-session-startup-note")).toHaveTextContent(
-				`${startupError.message} AO is still retrying.`,
-			);
-			expect(screen.queryByTestId("cloud-session-startup-error")).not.toBeInTheDocument();
-		});
-
-		it("never leaves an ended cloud session blank without a startup reason", () => {
-			failedCloudSession({ runtimeState: "terminated", runtimeError: "sandbox was deleted" });
-			render(<SessionView sessionId="sess-2" />);
-			const errorState = screen.getByTestId("cloud-session-startup-error");
-			expect(within(errorState).getByRole("heading", { name: "This session isn't running" })).toBeInTheDocument();
-			expect(errorState).toHaveTextContent("sandbox was deleted");
-			expect(within(errorState).queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
-		});
-
-		it("falls back to a generic message when the runtime reports no error", () => {
-			failedCloudSession({ runtimeState: "terminated" });
-			render(<SessionView sessionId="sess-2" />);
-			expect(screen.getByTestId("cloud-session-startup-error")).toHaveTextContent("Its cloud workspace is no longer running.");
-		});
-
-		it("shows startup progress instead of a blank pane while a failed runtime is retried", () => {
-			failedCloudSession({ runtimeState: "failed", observedState: "failed" });
-			render(<SessionView sessionId="sess-2" />);
-			expect(screen.getByTestId("cloud-session-loader-screen")).toBeInTheDocument();
-			expect(screen.queryByTestId("cloud-session-startup-error")).not.toBeInTheDocument();
-		});
-	});
 
 	it("activates a new terminal opened while a file tab is selected", async () => {
 		const shell = {
@@ -2583,263 +1910,19 @@ describe("SessionView", () => {
 		expect(interfaceTransitionMock.start).toHaveBeenCalledWith({ targetMode, policy: "drain", historyPolicy: "strict" });
 	});
 
-	it.each([
-		["tui", "chat", "Switch to chat UI"],
-		["chat", "tui", "Switch to terminal UI"],
-	] as const)("shows one Cloud %s to %s switch control", async (mode, targetMode, action) => {
-		interfaceTransitionState.status = { supported: true, targetMode };
-		const session = workerSession("sess-1");
-		session.cloud = { orgId: "org-1" };
-		session.mode = mode;
-		session.status = "idle";
-		session.activity = { state: "idle", lastActivityAt: "2026-08-06T00:00:00Z" };
-
-		render(<SessionView sessionId="sess-1" />);
-
-		expect(screen.getAllByRole("button", { name: action })).toHaveLength(1);
-	});
-
-	it.each(["codex", "claude-code"] as const)("passes a pending Cloud %s model and effort into Chat-to-terminal handoff", async (provider) => {
-		interfaceTransitionState.status = { supported: true, targetMode: "tui" };
-		const session = workerSession("sess-1");
-		session.cloud = { orgId: "org-1" };
-		session.provider = provider;
-		session.mode = "chat";
-		session.status = "idle";
-		session.activity = { state: "idle", lastActivityAt: "2026-08-06T00:00:00Z" };
-		localStorage.setItem(`cloud-chat-settings:org-1:${session.id}:${session.provider}`, JSON.stringify({ model: "selected-in-chat", reasoningEffort: "xhigh" }));
-		render(<SessionView sessionId="sess-1" />);
-		fireEvent.click(screen.getByRole("button", { name: "report cloud chat work" }));
-		await chooseSessionAction("Switch to terminal UI");
-		await waitFor(() => expect(interfaceTransitionMock.start).toHaveBeenCalledWith({
-			targetMode: "tui", policy: "drain", historyPolicy: "strict",
-			model: "selected-in-chat", reasoningEffort: "xhigh",
-		}));
-	});
-
-	it("keeps the Cloud terminal's worker epoch after Chat to Terminal completes", () => {
-		const session = workerSession("sess-1");
-		session.cloud = { orgId: "org-1" };
-		session.mode = "tui";
-		session.terminalGeneration = "23";
-		interfaceTransitionState.status = {
-			supported: true,
-			targetMode: "chat",
-			transition: {
-				id: "completed-chat-to-terminal",
-				sessionId: session.id,
-				sourceMode: "chat",
-				targetMode: "tui",
-				phase: "completed",
-			} as NonNullable<SessionInterfaceTransitionStatus["transition"]>,
-		};
-
-		render(<SessionView sessionId="sess-1" />);
-
-		expect(screen.getByTestId("terminal-center")).toHaveAttribute("data-terminal-generation", "");
-	});
-
-	it.each(["working"] as const)(
-		"asks how to switch a Cloud Terminal that appears %s",
-		async (status) => {
-			interfaceTransitionState.status = { supported: true, targetMode: "chat" };
-			const session = workerSession("sess-1");
-			session.cloud = { orgId: "org-1", sandboxProvider: "docker" };
-			session.mode = "tui";
-			session.status = status;
-			session.activity = {
-				state: "active",
-				lastActivityAt: "2026-08-06T00:00:00Z",
-			};
-
-			render(<SessionView sessionId="sess-1" />);
-			await chooseSessionAction("Switch to chat UI");
-
-			const dialog = screen.getByRole("dialog", { name: "Switch to Chat UI?" });
-			expect(within(dialog).getByRole("button", { name: /^Finish work, then switch/ })).toBeInTheDocument();
-			expect(interfaceTransitionMock.start).not.toHaveBeenCalled();
-			fireEvent.click(within(dialog).getByRole("button", { name: /^Stop now and switch/ }));
-			expect(interfaceTransitionMock.start).toHaveBeenCalledWith({ targetMode: "chat", policy: "interrupt", historyPolicy: "strict" });
-		},
-	);
-
-	it("switches an idle Cloud Terminal with interrupt without a termination prompt", async () => {
-		interfaceTransitionState.status = { supported: true, targetMode: "chat" };
-		const session = workerSession("sess-1");
-		session.cloud = { orgId: "org-1", sandboxProvider: "docker" };
-		session.mode = "tui";
-		session.status = "idle";
-		session.activity = { state: "idle", lastActivityAt: "2026-08-06T00:00:00Z" };
-
-		render(<SessionView sessionId="sess-1" />);
-		await chooseSessionAction("Switch to chat UI");
-
-		expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-		expect(interfaceTransitionMock.start).toHaveBeenCalledWith({
-			targetMode: "chat", policy: "interrupt", historyPolicy: "strict",
-		});
-	});
-
-	it("asks for a switch policy when fresh Cloud activity is busy despite an idle session list", async () => {
-		interfaceTransitionState.status = { supported: true, targetMode: "chat" };
-		const session = workerSession("sess-1");
-		session.cloud = { orgId: "org-1", sandboxProvider: "docker" };
-		session.mode = "tui";
-		session.status = "idle";
-		session.activity = { state: "idle", lastActivityAt: "2026-08-06T00:00:00Z" };
-		cloudGetSessionMock.mockResolvedValueOnce({ session: { activityState: "active", status: "working" } });
-
-		render(<SessionView sessionId="sess-1" />);
-		await chooseSessionAction("Switch to chat UI");
-
-		expect(cloudGetSessionMock).toHaveBeenCalledWith("org-1", "sess-1");
-		const dialog = screen.getByRole("dialog", { name: "Switch to Chat UI?" });
-		expect(within(dialog).getByRole("button", { name: /^Finish work, then switch/ })).toBeInTheDocument();
-		expect(within(dialog).getByRole("button", { name: /^Stop now and switch/ })).toBeInTheDocument();
-		expect(interfaceTransitionMock.start).not.toHaveBeenCalled();
-	});
-
-	it("ignores a Cloud activity check after navigating to another session", async () => {
-		interfaceTransitionState.status = { supported: true, targetMode: "chat" };
-		const session = workerSession("sess-1");
-		session.cloud = { orgId: "org-1", sandboxProvider: "docker" };
-		session.mode = "tui";
-		session.status = "idle";
-		session.activity = { state: "idle", lastActivityAt: "2026-08-06T00:00:00Z" };
-		let finishCheck!: (value: { session: { activityState: string; status: string } }) => void;
-		cloudGetSessionMock.mockImplementationOnce(() => new Promise((resolve) => { finishCheck = resolve; }));
-
-		const view = render(<SessionView sessionId="sess-1" />);
-		await chooseSessionAction("Switch to chat UI");
-		view.rerender(<SessionView sessionId="sess-2" />);
-		await act(async () => finishCheck({ session: { activityState: "idle", status: "idle" } }));
-
-		expect(interfaceTransitionMock.start).not.toHaveBeenCalled();
-		expect(screen.queryByRole("dialog", { name: "Switch to Chat UI?" })).not.toBeInTheDocument();
-	});
 
 
-	it.each([
-		["tui", "chat", "Switching to Chat UI"],
-		["chat", "tui", "Switching to Terminal UI"],
-	] as const)("shows the full-page loader during a Cloud %s to %s switch", (mode, targetMode, label) => {
-		const session = workerSession("sess-1");
-		session.cloud = { orgId: "org-1", sandboxProvider: "docker" };
-		session.mode = mode;
-		interfaceTransitionState.status = {
-			supported: true,
-			targetMode,
-			transition: {
-				id: "switching-cloud-interface",
-				sessionId: session.id,
-				sourceMode: mode,
-				targetMode,
-				policy: "interrupt",
-				historyPolicy: "strict",
-				phase: "source_stopping",
-				createdAt: "2026-09-28T00:00:00Z",
-				updatedAt: "2026-09-28T00:00:01Z",
-			},
-		};
 
-		render(<SessionView sessionId="sess-1" />);
-		const loader = screen.getByTestId("cloud-interface-switch-loader-screen");
-		expect(loader).toBeInTheDocument();
-		expect(within(loader).getByRole("status", { name: label })).toBeInTheDocument();
-		expect(loader).not.toHaveTextContent("Stopping controller");
-		expect(loader.querySelector(".lucide-loader-circle.animate-spin")).not.toBeNull();
-		expect(loader.querySelector("[data-testid='multi-step-loader']")).toBeNull();
-		expect(loader.querySelector(".text-success")).toBeNull();
-	});
 
-	it.each([
-		["tui", "chat", "Waiting to switch… Switching to Chat UI."],
-		["chat", "tui", "Waiting to switch… Switching to Terminal UI."],
-	] as const)("keeps the Cloud %s surface usable while work finishes before switching to %s", (mode, targetMode, label) => {
-		const session = workerSession("sess-1");
-		session.cloud = { orgId: "org-1", sandboxProvider: "docker" };
-		session.mode = mode;
-		interfaceTransitionState.status = {
-			supported: true,
-			targetMode,
-			transition: {
-				id: "waiting-cloud-interface", sessionId: session.id, sourceMode: mode, targetMode,
-				policy: "drain", historyPolicy: "strict", phase: "draining",
-				createdAt: "2026-09-28T00:00:00Z", updatedAt: "2026-09-28T00:00:01Z",
-			},
-		};
 
-		const view = render(<SessionView sessionId="sess-1" />);
-		expect(screen.queryByTestId("cloud-interface-switch-loader-screen")).not.toBeInTheDocument();
-		expect(screen.getByRole("status", { name: label })).toBeInTheDocument();
-		if (mode === "tui") {
-			expect(screen.getByTestId("terminal-center")).toHaveAttribute("data-agent-input-disabled", "false");
-		} else {
-			expect(screen.getByTestId("cloud-chat-surface")).toHaveAttribute("data-transitioning", "false");
-		}
 
-		interfaceTransitionState.status.transition!.phase = "source_stopping";
-		view.rerender(<SessionView sessionId="sess-1" />);
-		expect(screen.getByTestId("cloud-interface-switch-loader-screen")).toBeInTheDocument();
-	});
 
-	it("shows the compact wait spinner while a Cloud drain request is pending", () => {
-		const session = workerSession("sess-1");
-		session.cloud = { orgId: "org-1", sandboxProvider: "docker" };
-		session.mode = "tui";
-		interfaceTransitionState.status = { supported: true, targetMode: "chat" };
-		interfaceTransitionState.starting = true;
-		interfaceTransitionState.startingPolicy = "drain";
-		render(<SessionView sessionId="sess-1" />);
-		expect(screen.queryByTestId("cloud-interface-switch-loader-screen")).not.toBeInTheDocument();
-		expect(screen.getByTestId("terminal-center")).toHaveAttribute("data-agent-input-disabled", "false");
-		expect(screen.getByRole("button", { name: "Switch to chat UI" }).querySelector(".animate-spin")).not.toBeNull();
-	});
 
-	it("shows the full-page Cloud switch loader while the request is starting", () => {
-		const session = workerSession("sess-1");
-		session.cloud = { orgId: "org-1", sandboxProvider: "docker" };
-		session.mode = "tui";
-		interfaceTransitionState.status = { supported: true, targetMode: "chat" };
-		interfaceTransitionState.starting = true;
-		render(<SessionView sessionId="sess-1" />);
-		const loader = screen.getByTestId("cloud-interface-switch-loader-screen");
-		expect(within(loader).getByRole("status", { name: "Switching to Chat UI" })).toBeInTheDocument();
-		expect(loader.querySelector(".lucide-loader-circle.animate-spin")).not.toBeNull();
-	});
 
-	it("keeps the Cloud switch loader over the stopped terminal until the session mode catches up", () => {
-		const session = workerSession("sess-1");
-		session.cloud = { orgId: "org-1", sandboxProvider: "docker" };
-		session.mode = "tui";
-		interfaceTransitionState.status = {
-			supported: true,
-			targetMode: "chat",
-			transition: {
-				id: "completed-cloud-switch", sessionId: session.id, sourceMode: "tui", targetMode: "chat",
-				policy: "interrupt", historyPolicy: "strict", phase: "completed", createdAt: "2026-09-28T00:00:00Z", updatedAt: "2026-09-28T00:00:01Z",
-			},
-		};
-		const view = render(<SessionView sessionId="sess-1" />);
-		expect(screen.getByTestId("cloud-interface-switch-loader-screen")).toBeInTheDocument();
-		session.mode = "chat";
-		view.rerender(<SessionView sessionId="sess-1" />);
-		expect(screen.queryByTestId("cloud-interface-switch-loader-screen")).not.toBeInTheDocument();
-	});
 
-	it("hides interface switching when the Cloud offering is disabled", () => {
-		cloudGateState.cloudEnabled = false;
-		interfaceTransitionState.status = { supported: true, targetMode: "chat" };
-		const session = workerSession("sess-1");
-		session.cloud = { orgId: "org-1" };
-		session.mode = "tui";
-		session.status = "idle";
-		session.activity = { state: "idle", lastActivityAt: "2026-08-06T00:00:00Z" };
 
-		render(<SessionView sessionId="sess-1" />);
 
-		expect(screen.queryByRole("button", { name: "Switch to chat UI" })).not.toBeInTheDocument();
-	});
+
 
 	it.each([
 		["worker", "sess-1"],
@@ -2908,79 +1991,7 @@ describe("SessionView", () => {
 		expect(screen.getByText("Previous switch failed")).toBeInTheDocument();
 	});
 
-	it("hides an old Cloud drain failure and retries with interrupt directly", async () => {
-		const session = workerSession("sess-1");
-		session.cloud = { orgId: "org-1", sandboxProvider: "docker" };
-		session.mode = "tui";
-		session.status = "idle";
-		session.activity = { state: "idle", lastActivityAt: "2026-08-06T00:00:00Z" };
-		interfaceTransitionState.status = {
-			supported: true,
-			targetMode: "chat",
-			transition: {
-				id: "docker-drain-failed",
-				sessionId: "sess-1",
-				sourceMode: "tui",
-				targetMode: "chat",
-				policy: "drain",
-				historyPolicy: "strict",
-				phase: "failed",
-				errorCode: "SOURCE_DRAIN_FAILED",
-				errorDetail: "source controller activity cannot be verified; use stop now to interrupt it",
-				createdAt: "2026-09-25T08:37:00Z",
-				updatedAt: "2026-09-25T08:37:04Z",
-			},
-		};
 
-		render(<SessionView sessionId="sess-1" />);
-		expect(screen.queryByText("Interface switch failed")).not.toBeInTheDocument();
-		expect(interfaceTransitionMock.start).not.toHaveBeenCalled();
-		await chooseSessionAction("Switch to chat UI");
-		expect(interfaceTransitionMock.start).toHaveBeenCalledWith({
-			targetMode: "chat",
-			policy: "interrupt",
-			historyPolicy: "strict",
-		});
-	});
-
-	it("explains a Cloud drain this view watched end without proof the agent finished", async () => {
-		const session = workerSession("sess-1");
-		session.cloud = { orgId: "org-1", sandboxProvider: "freestyle" };
-		session.mode = "tui";
-		session.status = "working";
-		session.activity = { state: "active", lastActivityAt: "2026-10-18T18:24:00Z" };
-		const transition = {
-			id: "drain-unverified",
-			sessionId: "sess-1",
-			sourceMode: "tui" as const,
-			targetMode: "chat" as const,
-			policy: "drain" as const,
-			historyPolicy: "strict" as const,
-			phase: "draining" as const,
-			createdAt: "2026-10-18T18:24:54Z",
-			updatedAt: "2026-10-18T18:24:54Z",
-		};
-		interfaceTransitionState.status = { supported: true, targetMode: "chat", transition };
-		const view = render(<SessionView sessionId="sess-1" />);
-		expect(screen.queryByText("Switch to Chat cancelled")).not.toBeInTheDocument();
-
-		interfaceTransitionState.status = { supported: true, targetMode: "chat", transition: {
-			...transition,
-			phase: "failed",
-			errorCode: "SOURCE_DRAIN_FAILED",
-			errorDetail: "source controller activity cannot be verified; the agent reported no running turn for 30s",
-			updatedAt: "2026-10-18T18:25:30Z",
-		} };
-		view.rerender(<SessionView sessionId="sess-1" />);
-		const notice = screen.getByRole("alert");
-		expect(notice).toHaveTextContent("Switch to Chat cancelled");
-		expect(notice).toHaveTextContent(
-			"Couldn't confirm the agent finished, so the switch was cancelled. Switch again to stop the current turn and switch now.",
-		);
-		interfaceTransitionMock.acknowledgeNotice.mockResolvedValue(undefined);
-		fireEvent.click(screen.getByRole("button", { name: "Dismiss interface switch error" }));
-		expect(interfaceTransitionMock.acknowledgeNotice).toHaveBeenCalledWith("drain-unverified");
-	});
 
 	it("keeps the policy dialog open when an explicit busy Chat choice fails", async () => {
 		interfaceTransitionState.status = { supported: true, targetMode: "tui" };
@@ -5332,17 +4343,6 @@ describe("SessionView", () => {
 		expect(screen.getByText("terminal center")).toBeInTheDocument();
 	});
 
-	it("opens a selected cloud diff file in the shared center file tab", () => {
-		workerSession("sess-1").cloud = { orgId: "cloud-org", sandboxProvider: "docker" };
-		act(() => useUiStore.getState().setInspectorOpen("sess-1", true));
-		render(<SessionView sessionId="sess-1" />);
-
-		fireEvent.click(screen.getByRole("button", { name: "open files" }));
-		fireEvent.click(screen.getByRole("button", { name: "open cloud file" }));
-
-		expect(screen.getByRole("tab", { name: "cloud.ts" })).toHaveAttribute("aria-selected", "true");
-		expect(screen.getByTestId("cloud-file-workspace")).toHaveTextContent("src/cloud.ts");
-	});
 
 	it("opens a selected tree file in a center tab while retaining the right-side tree", () => {
 		act(() => useUiStore.getState().setInspectorOpen("sess-1", true));

@@ -3,7 +3,6 @@ import type { components } from "../../api/schema";
 import { apiClient, apiErrorMessage } from "../lib/api-client";
 import { foldClaudeAliasDefault } from "../lib/agent-model-choices";
 import { cacheAgentModels, clearCachedAgentModels, readCachedAgentModels, withCachedModelUsage } from "../lib/agent-model-cache";
-import { modelCatalogScope } from "../lib/cloud-agents";
 import { clientForHost } from "../lib/host-clients";
 import { LOCAL_HOST } from "../lib/hosts";
 
@@ -21,8 +20,10 @@ export const agentModelsQueryPrefix = (agentId: string) =>
 	["agent-models", agentId] as const;
 
 // Model catalogs are device-wide, so every project shares one query per host and
-// agent. `scope` only distinguishes a cloud credential scope (credentialModelScope);
-// any other value, including a project id, reads the device catalog.
+// agent. `scope` is accepted for caller compatibility and ignored: any value,
+// including a project id, reads the device catalog.
+const modelCatalogScope = (_scope: string): string => "";
+
 export const agentModelsQueryKey = (agentId: string, scope: string, hostId?: string) => {
 	const catalogScope = modelCatalogScope(scope);
 	return hostId ? ["agent-models", hostId, agentId, catalogScope] as const : [...agentModelsQueryPrefix(agentId), catalogScope] as const;

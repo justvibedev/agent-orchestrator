@@ -9,40 +9,6 @@ const unpairTargets: (typeof active | null)[] = [];
 let unpairThrows: Error | null = null;
 let removeHostThrows: Error | null = null;
 let activeHostThrows: Error | null = null;
-let accountId: string | null = null;
-let ignoreThrows: Error | null = null;
-vi.mock("./account", () => ({ loadAccount: async () => accountId ? { id: accountId, email: "person@example.com" } : null }));
-vi.mock("./accountHostPreferences", () => ({ ignoreAccountHost: async (account: string, hostId: string) => {
-	calls.push(`ignore:${account}:${hostId}`);
-	if (ignoreThrows) throw ignoreThrows;
-} }));
-beforeEach(() => { accountId = null; ignoreThrows = null; });
-
-const active = {
-	id: "h_active",
-	name: "active",
-	platform: "darwin",
-	endpoints: [{ kind: "lan" as const, host: "192.168.1.42", port: 3011, secure: false }],
-	lastConnected: 1,
-};
-const other = {
-	...active,
-	id: "h_other",
-	name: "other",
-	endpoints: [{ kind: "lan" as const, host: "192.168.1.99", port: 3011, secure: false }],
-};
-
-vi.mock("./push", () => ({
-	// forgetServer unpairs rather than merely unregistering: the phone is leaving
-	// this daemon, so its row must go, not just its push token. Unregistering
-	// would leave the old desktop listing a phone that has moved on.
-	unpairFromServer: vi.fn(async (host: typeof active | null) => {
-		unpairTargets.push(host);
-		calls.push("unpairFromServer");
-		if (unpairThrows) throw unpairThrows;
-	}),
-	retryPendingUnpairs: vi.fn(async () => {}),
-}));
 vi.mock("./pendingUnpair", () => ({ markMachineUnpaired: vi.fn(async () => {}) }));
 vi.mock("./config", () => ({
 	loadConfig: async () => ({ host: "", httpPort: "3011", password: "" }),
@@ -102,22 +68,10 @@ describe("forgetPairedHost", () => {
 		expect(calls).not.toContain("clearEventCursor:h_other");
 	});
 
-	it("hides a manually paired machine from the signed-in account before removing it", async () => {
-		accountId = "user-a";
-		await forgetPairedHost(other);
-		expect(calls).toEqual(["unpairFromServer", "ignore:user-a:h_other", "removeHost:h_other", "clearEventCursor:h_other"]);
-	});
 
-	it("preserves pairing when hiding it from account sync cannot be persisted", async () => {
-		accountId = "user-a";
-		ignoreThrows = new Error("storage unavailable");
-		await expect(forgetPairedHost(other)).rejects.toThrow("storage unavailable");
-		expect(calls).not.toContain("removeHost:h_other");
-	});
 
 	it("unpairs sign-out removals without hiding them on the next sign-in", async () => {
-		accountId = "user-a";
-		await forgetPairedHost(other, { ignoreAccount: false });
+		await forgetPairedHost(other);
 		expect(calls).toEqual(["unpairFromServer", "removeHost:h_other", "clearEventCursor:h_other"]);
 	});
 });
@@ -151,20 +105,7 @@ describe("forgetServer", () => {
 		expect(calls.indexOf("unpairFromServer")).toBeLessThan(calls.indexOf("removeHost:h_active"));
 	});
 
-	it("hides the default machine from account sync before deleting its credentials", async () => {
-		accountId = "user-a";
-		await forgetServer();
-		expect(calls.indexOf("ignore:user-a:h_active")).toBeGreaterThan(calls.indexOf("unpairFromServer"));
-		expect(calls.indexOf("ignore:user-a:h_active")).toBeLessThan(calls.indexOf("removeHost:h_active"));
-	});
 
-	it("remembers Forget for an account-owned default machine after sign-in expires", async () => {
-		const { activeHostMetadata } = await import("./hosts");
-		vi.mocked(activeHostMetadata).mockResolvedValueOnce({ ...active, accountUserId: "expired-account" });
-		await forgetServer();
-		expect(calls.indexOf("ignore:expired-account:h_active")).toBeGreaterThan(calls.indexOf("unpairFromServer"));
-		expect(calls.indexOf("ignore:expired-account:h_active")).toBeLessThan(calls.indexOf("removeHost:h_active"));
-	});
 
 	it("keeps the default pairing if secure cleanup persistence fails", async () => {
 		unpairThrows = new Error("SecureStore unavailable");

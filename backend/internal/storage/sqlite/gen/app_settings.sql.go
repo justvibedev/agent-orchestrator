@@ -50,20 +50,6 @@ func (q *Queries) ResetHarnessDefault(ctx context.Context, arg ResetHarnessDefau
 	return err
 }
 
-const setCloudOffering = `-- name: SetCloudOffering :exec
-UPDATE app_settings SET cloud_offering = ?, updated_at = ? WHERE id = 1
-`
-
-type SetCloudOfferingParams struct {
-	CloudOffering bool
-	UpdatedAt     time.Time
-}
-
-func (q *Queries) SetCloudOffering(ctx context.Context, arg SetCloudOfferingParams) error {
-	_, err := q.db.ExecContext(ctx, setCloudOffering, arg.CloudOffering, arg.UpdatedAt)
-	return err
-}
-
 const setDefaultSessionMode = `-- name: SetDefaultSessionMode :exec
 UPDATE app_settings SET default_session_mode = ?, updated_at = ? WHERE id = 1
 `

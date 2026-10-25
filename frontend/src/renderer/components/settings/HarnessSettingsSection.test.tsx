@@ -19,17 +19,8 @@ const cloudMocks = vi.hoisted(() => ({
 	connections: [] as Array<{ provider: string; label?: string; validationState: string }>,
 }));
 
-vi.mock("../../hooks/useCloudGate", () => ({
-	useCloudGate: () => ({ cloudEnabled: cloudMocks.cloudEnabled, localEnabled: true, client: "" }),
-}));
 
-vi.mock("../../hooks/useCloudOrg", () => ({
-	useCloudOrg: () => ({ org: cloudMocks.org, isLoading: false, error: null, ready: cloudMocks.org !== undefined }),
-}));
 
-vi.mock("../../hooks/useProviderConnections", () => ({
-	useProviderConnections: () => ({ data: cloudMocks.connections, isSuccess: true }),
-}));
 
 // A connected remote host, off by default; the remote diagnostics test turns it on.
 const hostMocks = vi.hoisted(() => {
@@ -169,12 +160,12 @@ function backToList() {
 	fireEvent.click(screen.getByRole("button", { name: "All harnesses" }));
 }
 
-function renderSection(focusAgentId?: string, selectorAgentId?: string, initialView?: "local" | "cloud", client = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
+function renderSection(focusAgentId?: string, selectorAgentId?: string, client = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
 	const view = render(
 		<QueryClientProvider client={client}>
 			<TooltipProvider>
 				{selectorAgentId ? <ReadinessSelector agentId={selectorAgentId} /> : null}
-				<HarnessSettingsSection focusAgentId={focusAgentId} initialView={initialView} />
+				<HarnessSettingsSection focusAgentId={focusAgentId} />
 			</TooltipProvider>
 		</QueryClientProvider>,
 	);
@@ -339,7 +330,7 @@ describe("HarnessSettingsSection", () => {
 		const post = vi.mocked(apiClient.POST).getMockImplementation()!;
 		vi.mocked(apiClient.POST).mockImplementation(async (path, options) => path === "/api/v1/agents/{agent}/models/refresh"
 			? await pending as never : (post as (path: string, options: unknown) => Promise<never>)(path, options));
-		renderSection(undefined, undefined, undefined, queryClient);
+		renderSection(undefined, undefined, queryClient);
 		const page = await findAgentRow("codex");
 		const refreshCalls = () => vi.mocked(apiClient.POST).mock.calls.filter((call: readonly unknown[]) => call[0] === "/api/v1/agents/{agent}/models/refresh");
 		await waitFor(() => expect(refreshCalls()).toHaveLength(1));
@@ -888,7 +879,7 @@ describe("HarnessSettingsSection", () => {
 		client.setQueryData(["agent-update-advisory", "local", "codex"], {
 			agentId: "codex", status: "behind_latest", currentVersion: "1.2.3", latestVersion: "1.3.0", maintenanceMethod: "npm",
 		});
-		const view = renderSection(undefined, undefined, undefined, client);
+		const view = renderSection(undefined, undefined, client);
 		const row = await findAgentRow("codex");
 		expect(await within(row).findByRole("button", { name: "Update" })).toBeEnabled();
 		expect(within(row).getByText("v1.3.0 available")).toBeInTheDocument();
@@ -921,7 +912,7 @@ describe("HarnessSettingsSection", () => {
 			? Promise.resolve({ data: readiness }) as never : (original as (path: string, options: unknown) => Promise<never>)(path, options));
 		const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 		client.setQueryData(["agent-readiness"], readiness);
-		const view = renderSection(undefined, undefined, undefined, client);
+		const view = renderSection(undefined, undefined, client);
 		const codexRow = await findAgentRow("codex");
 		expect(await within(codexRow).findByRole("button", { name: "Login" })).toBeEnabled();
 		const claudeRow = await findAgentRow("claude-code");
@@ -1269,97 +1260,11 @@ describe("HarnessSettingsSection", () => {
 		}
 	});
 
-	it("keeps the local view free of cloud logins", async () => {
-		cloudMocks.cloudEnabled = true;
-		cloudMocks.org = { id: "org-1" };
-		renderSection();
 
-		const claudeRow = await findListRow("claude-code");
-		expect(screen.getByRole("radio", { name: "Local" })).toHaveAttribute("aria-checked", "true");
-		expect(screen.queryByRole("button", { name: "Login" })).toBeNull();
-		expect(within(claudeRow).queryByText(/Cloud/)).toBeNull();
-		expect(screen.getByText("Goose")).toBeInTheDocument();
-	});
 
-	it("logs cloud harnesses in from the cloud view", async () => {
-		cloudMocks.cloudEnabled = true;
-		cloudMocks.org = { id: "org-1" };
-		cloudMocks.connections = [{ provider: "codex", label: "default", validationState: "valid" }];
-		const user = userEvent.setup();
-		renderSection();
-		await screen.findByText("Goose");
 
-		await user.click(screen.getByRole("radio", { name: "Cloud" }));
-		// Only cloud-supported harnesses, with no local install or login controls.
-		expect(screen.queryByText("Goose")).toBeNull();
-		const claudeRow = screen.getByText("Claude Code").closest('[data-agent="claude-code"]') as HTMLElement;
-		expect(within(claudeRow).getByText("Not connected")).toBeInTheDocument();
-		// A disclosure and one cloud login action; no local install controls.
-		expect(within(claudeRow).getAllByRole("button")).toHaveLength(2);
-		expect(within(claudeRow).getByText("API version not reported")).toBeInTheDocument();
-		await user.click(within(claudeRow).getByRole("button", { name: "Login" }));
-		expect(within(claudeRow).getByTestId("cloud-harness-login")).toBeInTheDocument();
-		expect(within(claudeRow).queryByRole("button", { name: "Login" })).toBeNull();
-		await user.click(within(claudeRow).getByRole("button", { name: "Cancel" }));
-		expect(within(claudeRow).queryByTestId("cloud-harness-login")).toBeNull();
 
-		const codexRow = screen.getByText("Codex").closest('[data-agent="codex"]') as HTMLElement;
-		expect(within(codexRow).getByText("Connected")).toBeInTheDocument();
-		expect(within(codexRow).queryByRole("button", { name: "Install" })).toBeNull();
-		expect(within(codexRow).queryByRole("button", { name: "Refresh login" })).toBeNull();
-		await user.click(within(codexRow).getByRole("button", { name: "Expand Codex options" }));
-		await user.click(within(codexRow).getByRole("button", { name: "Refresh login" }));
-		expect(within(codexRow).getByRole("button", { name: "Log in with ChatGPT" })).toBeInTheDocument();
-	});
 
-	it("reads a harness as connected only from its valid default connection", async () => {
-		cloudMocks.cloudEnabled = true;
-		cloudMocks.org = { id: "org-1" };
-		// Several connections for one provider: whichever comes last must not decide.
-		cloudMocks.connections = [
-			{ provider: "codex", label: "default", validationState: "valid" },
-			{ provider: "codex", label: "secondary", validationState: "invalid" },
-			{ provider: "claude-code", label: "default", validationState: "invalid" },
-			{ provider: "claude-code", label: "secondary", validationState: "valid" },
-		];
-		renderSection(undefined, undefined, "cloud");
-
-		const codexRow = await findAgentRow("codex");
-		expect(within(codexRow).getByText("Connected")).toBeInTheDocument();
-		const claudeRow = screen.getByText("Claude Code").closest('[data-agent="claude-code"]') as HTMLElement;
-		expect(within(claudeRow).getByText("Not connected")).toBeInTheDocument();
-	});
-
-	it("opens straight into the cloud view when asked", async () => {
-		cloudMocks.cloudEnabled = true;
-		cloudMocks.org = { id: "org-1" };
-		renderSection(undefined, undefined, "cloud");
-
-		expect(await screen.findByRole("radio", { name: "Cloud" })).toHaveAttribute("aria-checked", "true");
-		expect((await screen.findAllByRole("button", { name: "Login" })).length).toBeGreaterThan(0);
-		expect(screen.queryByText("Goose")).toBeNull();
-	});
-
-	it("asks to sign in to AO Cloud in the cloud view when signed out", async () => {
-		cloudMocks.cloudEnabled = true;
-		cloudMocks.org = undefined;
-		renderSection(undefined, undefined, "cloud");
-
-		expect(await screen.findByText(/Sign in to AO Cloud/)).toBeInTheDocument();
-		expect(screen.queryByText("Claude Code")).toBeNull();
-	});
-
-	it("offers no cloud view while the cloud feature is off", async () => {
-		cloudMocks.cloudEnabled = false;
-		cloudMocks.org = { id: "org-1" };
-		cloudMocks.connections = [{ provider: "claude-code", label: "default", validationState: "valid" }];
-		renderSection(undefined, undefined, "cloud");
-
-		const claudeRow = await findListRow("claude-code");
-		expect(screen.queryByRole("radio", { name: "Cloud" })).toBeNull();
-		expect(within(claudeRow).queryByRole("button", { name: "Login" })).toBeNull();
-		expect(screen.getByText("Goose")).toBeInTheDocument();
-	});
 
 	it("refreshes local readiness in the background without a Refresh login button", async () => {
 		const authorized = { agents: [agentReadiness("claude-code", "Claude Code", { authentication: "authorized" })] };

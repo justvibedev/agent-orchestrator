@@ -197,9 +197,6 @@ vi.mock("../lib/host-clients", () => ({
 	subscribeConnectedHosts: () => () => undefined,
 }));
 
-vi.mock("../lib/cloud-session", () => ({
-	useCloudSession: () => ({ status: "authenticated", session: { user: { id: "test-user" } } }),
-}));
 vi.mock("../hooks/useSettings", () => ({ useSettings: () => ({ settings: { cloudControlPlaneUrl: "" } }) }));
 
 vi.mock("../hooks/useDaemonStatus", () => ({
@@ -221,13 +218,7 @@ vi.mock("../lib/daemon-status", () => ({
 // TerminalCacheProvider resolves the cloud terminal transport in production.
 // These shell shortcut tests never mount a terminal, so keep that unrelated
 // settings/query path out of the provider-free harness.
-vi.mock("../hooks/useCloudCp", () => ({
-	useCloudCp: () => ({ client: {}, ready: false, baseUrl: "" }),
-}));
 
-vi.mock("../hooks/useCloudOrg", () => ({
-	useCloudOrg: () => ({ org: undefined, isLoading: false, error: undefined, ready: false }),
-}));
 
 // The shell layout opens standalone terminals; this suite only covers the
 // shortcut subscriptions, so the mutation is stubbed rather than driven.
@@ -680,15 +671,6 @@ describe("shell workspace startup", () => {
 		});
 	});
 
-	it("shows the Cloud loader while opening a cloud orchestrator", async () => {
-		shellMocks.state.workspaces = [{ ...workspaces[0], kind: "cloud", sessions: [] }];
-		shellMocks.state.workspaceQuery.data = shellMocks.state.workspaces;
-		shellMocks.state.routeParams = { projectId: workspaces[0].id };
-		useUiStore.getState().setProjectProvisioning(workspaces[0].id, true);
-		await renderShell();
-		expect(await screen.findByTestId("cloud-session-loader-screen")).toBeInTheDocument();
-		expect(screen.queryByLabelText("Message the agent")).not.toBeInTheDocument();
-	});
 
 	it("opens optimistic chat during submission without a loading page", async () => {
 		useUiStore.getState().setProjectCreationPending(true);
@@ -966,23 +948,6 @@ describe("shell new-shell-terminal shortcut subscription", () => {
 		);
 	});
 
-	it("preserves the cloud identity for a session-scoped terminal", async () => {
-		const session = workspaces[0]!.sessions[0]!;
-		session.cloud = { orgId: "cloud-org" };
-		shellMocks.state.routeParams = { sessionId: "sess-1" };
-		await renderShell();
-
-		pressNewShellTerminal();
-
-		expect(shellMocks.openShellTerminal).toHaveBeenCalledWith(
-			expect.objectContaining({
-				projectId: "proj-1",
-				sessionId: "sess-1",
-				cloud: { orgId: "cloud-org" },
-			}),
-		);
-		delete session.cloud;
-	});
 
 	// Session terminals always belong to the session on screen — there is no
 	// longer an "owner" session whose worktree could be borrowed here (#3208).

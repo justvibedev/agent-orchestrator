@@ -44,17 +44,13 @@ import { clientForSessionHost } from "../lib/host-clients";
 import { sessionUiKey } from "../lib/hosts";
 import { projectNavigateTarget, sessionNavigateTarget } from "../lib/navigate-to-session";
 import { WORKER_DEFAULT_REVIEWERS } from "../lib/reviewer-harnesses";
-import { cloudSessionsQueryKey, workspaceQueryKeyForHost } from "../hooks/useWorkspaceQuery";
+import { workspaceQueryKeyForHost } from "../hooks/useWorkspaceQuery";
 import { useOpenArtifactPreview } from "../hooks/useOpenArtifactPreview";
 import { formatTimeCompact } from "../lib/format-time";
 import { AgentAvatar } from "./AgentAvatar";
 import { SessionArtifactsView, type ArtifactOpenRequest } from "./SessionArtifactsView";
-import { OrchestratorChildrenSection } from "./OrchestratorChildrenSection";
 import { ProductExternalLink } from "./ProductExternalLink";
 import { CopyButton } from "./chat/CopyButton";
-import { ScriptRunPanel } from "./ScriptRunPanel";
-import { useCloudScriptRuns } from "../hooks/useCloudScriptRuns";
-import { latestScriptRun } from "../lib/cloud-script-runs";
 import { ResumeAgentControl } from "./ResumeAgentControl";
 import { SessionBranchSummary } from "./SessionBranchSummary";
 import { SessionAccountSummary } from "./SessionAccountSummary";
@@ -65,7 +61,6 @@ import {
 	type SessionPRSummary,
 } from "../hooks/useSessionScmSummary";
 import { sessionWorkspaceFilesQueryKey, sessionWorkspaceHistoryQueryOptions, useSessionWorkspaceFilesChangedCount } from "../hooks/useSessionWorkspaceFiles";
-import { useCloudCp } from "../hooks/useCloudCp";
 import { useSessionBrowserLink } from "../hooks/useSessionBrowserLink";
 import { clearTerminateSessionState, useTerminateSession } from "../hooks/useTerminateSession";
 import { prBrowserUrl, prCanMerge, prCardPresentation, prNounKeys, prRepositoryFromUrl, prsSpanRepositories, sessionPRDisplaySummaries } from "../lib/pr-display";
@@ -90,7 +85,6 @@ import { ReviewerSelect } from "./ReviewerSelect";
 import { agentLabel } from "../lib/agent-options";
 import { useAgentReadinessQuery, useEnsureAgentReadiness } from "../hooks/useAgentReadinessQuery";
 import { Switch } from "./ui/switch";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { appI18n } from "../i18n";
 import type { MessageKey } from "../i18n";
@@ -106,7 +100,6 @@ import {
 	type PRReviewState,
 	type ReviewRunFacts,
 } from "../lib/session-reviews";
-import type { CloudCpAOReviewRun, CloudCpSessionReviewState, CloudCpPullRequestSummary } from "../lib/cloud-cp";
 
 type ProjectConfig = components["schemas"]["ProjectConfig"];
 type OpenReviewerTerminal = (target: { handleId: string; harness: string }) => void;
@@ -227,21 +220,12 @@ export const SessionInspector = memo(function SessionInspector({
 	);
 	const inspectorQueryClient = useQueryClient();
 	const localFilesChangedCount = useSessionWorkspaceFilesChangedCount(
-		onlyBrowser || session?.cloud ? undefined : session?.id,
+		onlyBrowser ? undefined : session?.id,
 		hostId,
 	);
 	const localWorkspaceData = session ? inspectorQueryClient.getQueryData<{ files?: unknown[] }>(sessionWorkspaceFilesQueryKey(session.id, hostId)) : undefined;
-	const { client: cloudCpClient, ready: cloudReady, baseUrl: cloudBaseUrl } = useCloudCp();
-	const cloudOrgId = session?.cloud?.orgId;
-	const cloudReview = useQuery({
-		queryKey: ["cloud-workspace-review", cloudBaseUrl, cloudOrgId ?? "", session?.id ?? "", "summary"],
-		enabled: cloudReady && session?.cloud !== undefined && cloudOrgId !== undefined,
-		refetchInterval: 5_000,
-		queryFn: () => cloudCpClient.getWorkspaceReview(cloudOrgId!, session!.id),
-	});
-	const cloudFilesChangedCount = cloudReview.data?.summary.files;
-	const filesChangedCount = session?.cloud ? (cloudFilesChangedCount ? cloudFilesChangedCount : undefined) : localFilesChangedCount;
-	const hasWorkspaceInventory = session?.cloud ? Boolean(cloudReview.data?.files.length) : Boolean(localWorkspaceData?.files?.length);
+	const filesChangedCount = localFilesChangedCount;
+	const hasWorkspaceInventory = Boolean(localWorkspaceData?.files?.length);
 	// An artifact link can open the Artifacts tab before a session refresh lists
 	// the file. The request keeps the tab available until the file is listed or
 	// another tab is picked.
@@ -370,9 +354,6 @@ export const SessionInspector = memo(function SessionInspector({
 
 function reviewsTabVisible(session: WorkspaceSession | undefined): boolean {
 	if (!session) return true;
-	// Cloud PR facts are queried directly by CloudReviewsSection instead of
-	// piggybacking on the local daemon workspace projection.
-	if (session.cloud) return true;
 	return sortedPRs(session).some((pr) => pr.state === "open" || pr.state === "draft");
 }
 
@@ -402,11 +383,11 @@ const SummaryView = memo(function SummaryView({
 	session: WorkspaceSession;
 }) {
 	const { t } = useTranslation();
-	const query = useSessionScmSummary(session.id, true, session.cloud?.orgId, session.cloud ? session.autoInjectCI === true : false, hostId);
+	const query = useSessionScmSummary(session.id, true, hostId);
 	const linkedPRs = query.data?.linkedPrs ?? [];
 	const projectQuery = useQuery({
 		queryKey: hostId ? ["project", hostId, session.workspaceId] : ["project", session.workspaceId],
-		enabled: linkedPRs.length > 0 && !session.cloud,
+		enabled: linkedPRs.length > 0,
 		queryFn: async () => {
 			const { data, error } = await clientForSessionHost(hostId).GET("/api/v1/projects/{id}", {
 				params: { path: { id: session.workspaceId } },
@@ -428,10 +409,6 @@ const SummaryView = memo(function SummaryView({
 	const openPRNumber = prSummaries.find((pr) => pr.state === "open" || pr.state === "draft")?.number;
 	// CI, review, and merge policies act on a PR. Standalone sessions keep the row for Archive.
 	const showSessionControls = hasPRs || session.workspaceId === STANDALONE_WORKSPACE_ID;
-	// Cloud orchestrators list the workers they spawned; local orchestrators
-	// have no parent/child model and every other session has no children.
-	const showWorkers =
-		session.kind === "orchestrator" && (session.cloud !== undefined || usePreviewData);
 	// Subscription accounts are a developer-mode preview.
 	const accountsPreview = useUiStore((state) => state.developerMode);
 	return (
@@ -478,7 +455,6 @@ const SummaryView = memo(function SummaryView({
 									pr={pr}
 									hostId={hostId}
 									sessionId={session.id}
-									cloudOrgId={session.cloud?.orgId}
 								/>
 							))}
 							{linkedPRs.map((pr) => <LinkedPRCard external={isExternalRepository(pr, projectQuery.data)} key={pr.url} pr={pr} />)}
@@ -489,38 +465,9 @@ const SummaryView = memo(function SummaryView({
 				/>
 			}
 			completion={showSessionControls ? <SessionControls hostId={hostId} session={session} /> : undefined}
-			scripts={session.cloud ? <CloudScriptRunSections cloud={session.cloud} sessionId={session.id} /> : undefined}
-			workers={showWorkers ? <OrchestratorChildrenSection session={session} /> : undefined}
 		/>
 	);
 });
-
-/**
- * The latest Setup and Cleanup runs, collapsed: a terminal session's agent
- * covers the startup loader once it starts, and Cleanup only runs after the
- * session is deleted, so this is where both stay reachable.
- */
-function CloudScriptRunSections({ cloud, sessionId }: { cloud: NonNullable<WorkspaceSession["cloud"]>; sessionId: string }) {
-	const { t } = useTranslation();
-	const runs = useCloudScriptRuns(cloud.orgId, sessionId, { lifecycle: cloud });
-	const setup = latestScriptRun(runs, "setup");
-	const cleanup = latestScriptRun(runs, "cleanup");
-	if (!setup && !cleanup) return null;
-	return (
-		<>
-			{setup ? (
-				<Section defaultOpen={false} surface={false} title={t("scriptRun.setup")}>
-					<ScriptRunPanel run={setup} showTitle={false} />
-				</Section>
-			) : null}
-			{cleanup ? (
-				<Section defaultOpen={false} surface={false} title={t("scriptRun.cleanup")}>
-					<ScriptRunPanel run={cleanup} showTitle={false} />
-				</Section>
-			) : null}
-		</>
-	);
-}
 
 const ReviewsView = memo(function ReviewsView({
 	session,
@@ -644,7 +591,6 @@ function AutoInjectCIPolicyControl({ session, hostId }: { session: WorkspaceSess
 	const { t } = useTranslation();
 	const queryClient = useQueryClient();
 	const workspaceKey = workspaceQueryKeyForHost(hostId);
-	const { client: cloudClient } = useCloudCp();
 	const [enabled, setEnabled] = useState(session.autoInjectCI ?? true);
 	useEffect(() => {
 		setEnabled(session.autoInjectCI ?? true);
@@ -652,10 +598,6 @@ function AutoInjectCIPolicyControl({ session, hostId }: { session: WorkspaceSess
 	const save = useMutation({
 		mutationFn: async (autoInjectCI: boolean) => {
 			if (usePreviewData) return;
-			if (session.cloud) {
-				await cloudClient.setSessionAutoInjectCI(session.cloud.orgId, session.id, autoInjectCI);
-				return;
-			}
 			const { error, response } = await clientForSessionHost(hostId).PATCH("/api/v1/sessions/{sessionId}/auto-inject-ci", {
 				params: { path: { sessionId: session.id } },
 				body: { autoInjectCI },
@@ -707,7 +649,6 @@ function AutoInjectReviewPolicyControl({ session, hostId }: { session: Workspace
 	const { t } = useTranslation();
 	const queryClient = useQueryClient();
 	const workspaceKey = workspaceQueryKeyForHost(hostId);
-	const { client: cloudClient } = useCloudCp();
 	const [enabled, setEnabled] = useState(session.autoInjectReview ?? true);
 	useEffect(() => {
 		setEnabled(session.autoInjectReview ?? true);
@@ -715,10 +656,6 @@ function AutoInjectReviewPolicyControl({ session, hostId }: { session: Workspace
 	const save = useMutation({
 		mutationFn: async (autoInjectReview: boolean) => {
 			if (usePreviewData) return;
-			if (session.cloud) {
-				await cloudClient.setSessionAutoInjectReview(session.cloud.orgId, session.id, autoInjectReview);
-				return;
-			}
 			const { error } = await clientForSessionHost(hostId).PATCH("/api/v1/sessions/{sessionId}/auto-inject-review", {
 				params: { path: { sessionId: session.id } },
 				body: { autoInjectReview },
@@ -777,14 +714,9 @@ function SessionControls({ session, hostId }: { session: WorkspaceSession; hostI
 	const workspaceKey = workspaceQueryKeyForHost(hostId);
 	const [confirmOpen, setConfirmOpen] = useState(false);
 	const terminate = useTerminateSession();
-	const { client: cloudClient } = useCloudCp();
 	const policy = useMutation({
 		mutationFn: async (terminateOnPrMerge: boolean) => {
 			if (usePreviewData) return;
-			if (session.cloud) {
-				await cloudClient.setSessionMergePolicy(session.cloud.orgId, session.id, terminateOnPrMerge);
-				return;
-			}
 			const { error, response } = await clientForSessionHost(hostId).PATCH("/api/v1/sessions/{sessionId}/merge-policy", {
 				params: { path: { sessionId: session.id } },
 				body: { terminateOnPrMerge },
@@ -917,7 +849,6 @@ function updateSessionMergePolicy(
 function PRSummaryCard({
 	canOpenReviews,
 	hostId,
-	cloudOrgId,
 	onOpenReviews,
 	pr,
 	sessionId,
@@ -925,7 +856,6 @@ function PRSummaryCard({
 }: {
 	canOpenReviews: boolean;
 	hostId?: string;
-	cloudOrgId?: string;
 	onOpenReviews: () => void;
 	pr: SessionPRSummary;
 	sessionId: string;
@@ -935,16 +865,11 @@ function PRSummaryCard({
 	const { t } = useTranslation();
 	const queryClient = useQueryClient();
 	const workspaceKey = workspaceQueryKeyForHost(hostId);
-	const { client: cloudClient, baseUrl: cloudBaseUrl } = useCloudCp();
 	const presentation = prCardPresentation(pr);
 	const canMerge = prCanMerge(pr) && Boolean(pr.url && pr.headSha);
 	const mergePr = useMutation({
 		mutationFn: async () => {
 			if (usePreviewData) return;
-			if (cloudOrgId) {
-				await cloudClient.mergePullRequest(cloudOrgId, sessionId, pr.number, pr.url, pr.headSha);
-				return;
-			}
 			const { data, error } = await clientForSessionHost(hostId).POST("/api/v1/prs/{id}/merge", {
 				params: { path: { id: String(pr.number) } },
 				body: { prUrl: pr.url, expectedHeadSha: pr.headSha },
@@ -953,7 +878,7 @@ function PRSummaryCard({
 			return data;
 		},
 		onSuccess: async (result) => {
-			if (!cloudOrgId && result?.state === "merged") {
+			if (result?.state === "merged") {
 				queryClient.setQueryData<{ prs: SessionPRSummary[]; linkedPrs: SessionPRReference[] }>(
 					sessionScmSummaryQueryKey(sessionId, hostId),
 					(current) => current ? {
@@ -970,7 +895,7 @@ function PRSummaryCard({
 				return;
 			}
 			await Promise.all([
-				queryClient.invalidateQueries({ queryKey: cloudOrgId ? ["cloud-session-scm-summary", cloudBaseUrl, cloudOrgId, sessionId] : sessionScmSummaryQueryKey(sessionId, hostId) }),
+				queryClient.invalidateQueries({ queryKey: sessionScmSummaryQueryKey(sessionId, hostId) }),
 				queryClient.invalidateQueries({ queryKey: workspaceKey }),
 			]);
 		},
@@ -1075,7 +1000,7 @@ function ActivityTimeline({ hostId, prs, session }: { hostId?: string; prs: Sess
 		queryFn: sessionWorkspaceHistoryQueryOptions(session.id, undefined, hostId).queryFn,
 		staleTime: Infinity,
 		placeholderData: (previous) => previous,
-		enabled: !session.cloud && session.kind !== "orchestrator",
+		enabled: session.kind !== "orchestrator",
 	});
 	const events: SortableTimelineEvent[] = [];
 	const pushEvent = (event: InspectorTimelineEvent, timestamp?: string | null) => {
@@ -1155,7 +1080,7 @@ function ActivityTimeline({ hostId, prs, session }: { hostId?: string; prs: Sess
 	// An account move stops the old agent before the new one starts. That stop
 	// is not the session ending, so the move stands in for "Exited" meanwhile.
 	// The session's own host: a remote session's id means nothing to the local daemon.
-	const { transition } = useSessionInterfaceTransitionStatus(session.cloud ? undefined : session.id, hostId);
+	const { transition } = useSessionInterfaceTransitionStatus(session.id, hostId);
 	const accountMoving = Boolean(transition?.targetAccountId) && interfaceTransitionIsActive(transition);
 	const activityView = accountMoving
 		? { ...getAgentActivityView({ state: "active", lastActivityAt: transition?.updatedAt ?? "" }), label: appI18n.t("settings.agentAccounts.switchingAccount") }
@@ -1310,16 +1235,6 @@ function ReviewsSection({
 	onOpenReviewerChat?: (reviewId: string) => void;
 	onWorkerMessageSent?: () => void;
 }) {
-	if (session.cloud) {
-		return (
-			<CloudReviewsSection
-				onOpenReviewFile={onOpenReviewFile}
-				onOpenReviewerTerminal={onOpenReviewerTerminal}
-				onWorkerMessageSent={onWorkerMessageSent}
-				session={session}
-			/>
-		);
-	}
 	return (
 		<LocalReviewsSection
 			hostId={hostId}
@@ -1517,7 +1432,7 @@ function LocalReviewsSection({
 	});
 	const reviewStates = reviewsQuery.data?.reviews ?? [];
 	const autoReviewEnabled = session.autoReviewEnabled === true;
-	const scmSummary = useSessionScmSummary(session.id, true, session.cloud?.orgId, session.cloud ? session.autoInjectCI === true : false, hostId);
+	const scmSummary = useSessionScmSummary(session.id, true, hostId);
 	const prSummaries = sessionPRDisplaySummaries(session, scmSummary.data?.prs);
 	const githubReviews = prSummaries.filter(
 		(pr) =>
@@ -1608,245 +1523,6 @@ function LocalReviewsSection({
 	);
 }
 
-function CloudReviewsSection({
-	session,
-	onOpenReviewFile,
-	onOpenReviewerTerminal,
-	onWorkerMessageSent,
-}: {
-	session: WorkspaceSession;
-	onOpenReviewFile?: (target: { line?: number; path: string }) => void;
-	onOpenReviewerTerminal?: OpenReviewerTerminal;
-	onWorkerMessageSent?: () => void;
-}) {
-	const { t } = useTranslation();
-	const { client, ready, baseUrl } = useCloudCp();
-	const queryClient = useQueryClient();
-	const orgId = session.cloud!.orgId;
-	const [reviewNotice, setReviewNotice] = useState<string | null>(null);
-	const pullRequestsQuery = useQuery({
-		queryKey: ["cloud-session-pull-requests", baseUrl, orgId, session.id],
-		enabled: ready,
-		queryFn: () => client.listSessionPullRequests(orgId, session.id),
-		retry: 1,
-	});
-	const reviewsQuery = useQuery({
-		queryKey: ["cloud-session-reviews", baseUrl, orgId, session.id],
-		enabled: ready,
-		queryFn: () => client.getSessionReviewState(orgId, session.id),
-		retry: 1,
-		refetchInterval: (query) =>
-			query.state.data?.reviews.some((review) => review.status === "running") ? 2500 : false,
-	});
-	const harnessesQuery = useQuery({
-		queryKey: ["cloud-session-reviewer-harnesses", baseUrl, orgId, session.id],
-		enabled: ready && session.runtimeConnected !== false,
-		queryFn: () => client.inspectSessionReviewerHarnesses(orgId, session.id),
-		retry: 1,
-	});
-	const effectiveReviewerHarness = reviewsQuery.data?.reviewerHarness || session.reviewerHarness || session.provider;
-	const [selectedReviewerHarness, setSelectedReviewerHarness] = useState(effectiveReviewerHarness);
-	useEffect(() => setSelectedReviewerHarness(effectiveReviewerHarness), [effectiveReviewerHarness, session.id]);
-	const [autoReviewEnabled, setAutoReviewEnabled] = useState(session.autoReviewEnabled === true);
-	useEffect(
-		() => setAutoReviewEnabled(session.autoReviewEnabled === true),
-		[session.autoReviewEnabled, session.id],
-	);
-	const triggerReview = useMutation({
-		mutationFn: () => client.triggerSessionReviews(orgId, session.id),
-		onMutate: () => setReviewNotice(null),
-		onSuccess: (data) => {
-			queryClient.setQueryData(["cloud-session-reviews", baseUrl, orgId, session.id], data);
-			const running = data.reviews.find((review) => review.status === "running");
-			if (running && data.reviewerHandleId) {
-				onOpenReviewerTerminal?.({
-					handleId: data.reviewerHandleId,
-					harness: data.reviewerHarness || session.provider,
-				});
-			} else if (!running) {
-				setReviewNotice(t("inspector.reviewAlreadyRanForCommit"));
-			}
-		},
-	});
-	const cancelReview = useMutation({
-		mutationFn: () => client.cancelSessionReviews(orgId, session.id),
-		onSuccess: (data) => {
-			setReviewNotice(null);
-			queryClient.setQueryData(["cloud-session-reviews", baseUrl, orgId, session.id], data);
-		},
-	});
-	const updateReviewerHarness = useMutation({
-		mutationFn: (reviewerHarness: string) => client.updateSessionPreferences(orgId, session.id, { reviewerHarness }),
-		onSuccess: (data) => {
-			queryClient.setQueryData(
-				["cloud-session-reviews", baseUrl, orgId, session.id],
-				(current: CloudCpSessionReviewState | undefined) =>
-					current
-						? {
-								...current,
-								reviewerHarness: data.session.reviewerHarness || data.session.harness,
-							}
-						: current,
-			);
-			void queryClient.invalidateQueries({ queryKey: cloudSessionsQueryKey });
-		},
-	});
-	const installReviewerHarness = useMutation({
-		mutationFn: (harness: string) => client.installSessionReviewerHarness(orgId, session.id, harness),
-		onSuccess: async (_status, harness) => {
-			await queryClient.invalidateQueries({
-				queryKey: ["cloud-session-reviewer-harnesses", baseUrl, orgId, session.id],
-			});
-			updateReviewerHarness.mutate(harness);
-		},
-	});
-	const updateAutoReview = useMutation({
-		mutationFn: (autoReviewEnabled: boolean) =>
-			client.updateSessionPreferences(orgId, session.id, { autoReviewEnabled }),
-		onMutate: (enabled) => {
-			const previous = autoReviewEnabled;
-			setAutoReviewEnabled(enabled);
-			return { previous };
-		},
-		onError: (_error, _enabled, context) => {
-			setAutoReviewEnabled(context?.previous ?? session.autoReviewEnabled === true);
-		},
-		onSuccess: (data) => {
-			setAutoReviewEnabled(data.session.autoReviewEnabled === true);
-			void queryClient.invalidateQueries({ queryKey: cloudSessionsQueryKey });
-		},
-	});
-	const selectedHarnessStatus = harnessesQuery.data?.harnesses.find(
-		(entry) => entry.harness === selectedReviewerHarness,
-	);
-	// The currently running worker proves its own harness binary exists. Keep
-	// review available while the optional inspection request is still loading
-	// (and for older control planes that do not expose it yet).
-	const selectedHarnessReady =
-		selectedHarnessStatus?.status === "ready" ||
-		(selectedHarnessStatus === undefined && selectedReviewerHarness === session.provider);
-	const credentialHarnesses = reviewsQuery.data?.availableReviewerHarnesses ?? [];
-	const selectedCredentialReady =
-		credentialHarnesses.includes(selectedReviewerHarness) ||
-		(credentialHarnesses.length === 0 && selectedReviewerHarness === session.provider);
-	const cloudSession = {
-		...session,
-		prs: (pullRequestsQuery.data?.pullRequests ?? []).map(cloudPullRequestFacts),
-	};
-	const reviewState = cloudReviewsToLocal(reviewsQuery.data, session.provider);
-	return (
-		<>
-			<ReviewPanel
-				cloud
-				autoReviewEnabled={autoReviewEnabled}
-				error={
-					pullRequestsQuery.error ??
-					reviewsQuery.error ??
-					harnessesQuery.error ??
-					triggerReview.error ??
-					cancelReview.error ??
-					updateReviewerHarness.error ??
-					installReviewerHarness.error ??
-					updateAutoReview.error
-				}
-				isAutoReviewSaving={updateAutoReview.isPending}
-				isCancelling={cancelReview.isPending}
-				isKilling={false}
-				isLoading={pullRequestsQuery.isLoading || reviewsQuery.isLoading}
-				isSwitchingReviewer={false}
-				activeReviewers={[]}
-				onOpenReviewer={() => undefined}
-				isTriggering={triggerReview.isPending}
-				notice={reviewNotice}
-				onAutoReviewChange={(enabled) => updateAutoReview.mutate(enabled)}
-				onCancel={() => cancelReview.mutate()}
-				onKill={() => undefined}
-				onReviewerHarnessPreviewChange={() => undefined}
-				onReviewerOverrideChange={() => undefined}
-				cloudReviewerHarnesses={reviewsQuery.data?.availableReviewerHarnesses ?? []}
-				cloudReviewerHarness={selectedReviewerHarness}
-				cloudHarnessStatuses={harnessesQuery.data?.harnesses ?? []}
-				cloudReviewerReady={selectedHarnessReady && selectedCredentialReady}
-				isInstallingCloudHarness={installReviewerHarness.isPending}
-				onCloudInstallHarness={() => installReviewerHarness.mutate(selectedReviewerHarness)}
-				onCloudReviewerHarnessChange={(harness) => {
-					setSelectedReviewerHarness(harness);
-					const status = harnessesQuery.data?.harnesses.find((entry) => entry.harness === harness);
-					if (status?.status === "ready") updateReviewerHarness.mutate(harness);
-				}}
-				onTrigger={() => triggerReview.mutate()}
-				reviewerHandleId={reviewsQuery.data?.reviewerHandleId ?? ""}
-				reviewerMode=""
-				reviewerModel=""
-				reviewerOverride=""
-				reviewStates={reviewState.reviews}
-				session={cloudSession}
-			/>
-			<MergedReviewsSection
-				githubPRs={[]}
-				isLoading={pullRequestsQuery.isLoading || reviewsQuery.isLoading}
-				onOpenReviewFile={onOpenReviewFile}
-				onWorkerMessageSent={onWorkerMessageSent}
-				reviewStates={reviewState.reviews}
-				runs={reviewState.runs}
-				session={cloudSession}
-			/>
-		</>
-	);
-}
-
-function cloudPullRequestFacts(pr: CloudCpPullRequestSummary): WorkspaceSession["prs"][number] {
-	return {
-		url: pr.url,
-		number: pr.number,
-		state: pr.state,
-		ci: "unknown",
-		review: "none",
-		mergeability: "unknown",
-		reviewComments: false,
-		updatedAt: pr.updatedAt,
-	};
-}
-
-function cloudReviewRun(run: CloudCpAOReviewRun, harness: string): ReviewRunFacts {
-	return {
-		autoInjectReview: false,
-		batchId: run.batchId || `cloud:${run.id}`,
-		body: run.body,
-		createdAt: run.createdAt,
-		githubReviewId: run.providerReviewId,
-		harness: run.harness || harness,
-		id: run.id,
-		prUrl: run.pullRequestUrl,
-		reviewId: run.reviewId,
-		sessionId: run.sessionId,
-		status: run.status,
-		targetSha: run.targetSha,
-		triggerSource: run.triggerSource,
-		verdict: run.verdict,
-	};
-}
-
-function cloudReviewsToLocal(
-	data: CloudCpSessionReviewState | undefined,
-	harness: string,
-): { reviews: PRReviewState[]; runs: ReviewRunFacts[] } {
-	if (!data) return { reviews: [], runs: [] };
-	const convert = (run: CloudCpAOReviewRun | undefined) => (run ? cloudReviewRun(run, harness) : undefined);
-	return {
-		reviews: data.reviews.map((review) => ({
-			prNumber: review.pullRequestNumber,
-			prUrl: review.pullRequestUrl,
-			targetSha: review.targetSha,
-			title: review.title,
-			status: review.status,
-			latestRun: convert(review.latestRun),
-			previousRun: convert(review.previousRun),
-		})),
-		runs: data.runs.map((run) => cloudReviewRun(run, harness)),
-	};
-}
-
 /**
  * AO's own reviewer passes and the reviews humans and bots left on GitHub, in
  * one list keyed by PR. They were two sections, which made the same PR appear
@@ -1875,7 +1551,6 @@ function MergedReviewsSection({
 }) {
 	const { t } = useTranslation();
 	const queryClient = useQueryClient();
-	const { client: cloudClient } = useCloudCp();
 	const openInAOBrowser = useSessionBrowserLink(session);
 	const workspaceKey = workspaceQueryKeyForHost(hostId);
 	const openReviewStates = openReviewStatesFor(session, reviewStates);
@@ -1922,10 +1597,6 @@ function MergedReviewsSection({
 		void queryClient.invalidateQueries({ queryKey: workspaceKey });
 	};
 	const sendMessageToWorker = async (message: string, fallbackError: string) => {
-		if (session.cloud) {
-			await cloudClient.sendSessionMessage(session.cloud.orgId, session.id, { text: message });
-			return;
-		}
 		if (session.mode === "chat") {
 			const { error } = await clientForSessionHost(hostId).POST("/api/v1/sessions/{sessionId}/conversation/messages", {
 				params: { path: { sessionId: session.id } },
@@ -1945,20 +1616,6 @@ function MergedReviewsSection({
 		onWorkerMessageSent?.();
 	};
 	const sendReviewSummaryToWorker = async (summary: InspectorReviewSummaryAction) => {
-		if (session.cloud) {
-			// Cloud delivers the stored review through the durable control-plane queue.
-			const matchingRun = [...runs]
-				.sort((left, right) => right.createdAt.localeCompare(left.createdAt))
-				.find(
-					(run) =>
-						(aoReviewCommentUrl(run) ?? run.prUrl) === (summary.url || summary.pullRequestUrl) &&
-						run.body.trim() === summary.body.trim(),
-				);
-			if (!matchingRun) throw new Error("Unable to find the stored Cloud review to send to the worker agent");
-			await cloudClient.sendSessionReviewToWorker(session.cloud.orgId, session.id, matchingRun.id);
-			onWorkerMessageSent?.();
-			return;
-		}
 		await sendMessageToWorker(formatReviewSummaryMessage(summary), "Unable to send review summary to worker agent");
 		onWorkerMessageSent?.();
 	};
@@ -2327,15 +1984,7 @@ function mockProjectConfig(): ProjectConfig {
 }
 
 function ReviewPanel({
-	cloud = false,
 	notice,
-	cloudReviewerHarnesses = [],
-	cloudReviewerHarness = "",
-	cloudHarnessStatuses = [],
-	cloudReviewerReady = true,
-	isInstallingCloudHarness = false,
-	onCloudReviewerHarnessChange,
-	onCloudInstallHarness,
 	autoReviewEnabled,
 	session,
 	hostId,
@@ -2391,17 +2040,8 @@ function ReviewPanel({
 	onAutoReviewChange: (enabled: boolean) => void;
 	isAutoReviewSaving: boolean;
 	onKill: () => void;
-	/** Cloud sessions choose from only credentials connected for the session owner. */
-	cloud?: boolean;
-	/** Cloud-only: the trigger declined to run and says why. */
+	/** The trigger declined to run and says why. */
 	notice?: string | null;
-	cloudReviewerHarnesses?: string[];
-	cloudReviewerHarness?: string;
-	cloudHarnessStatuses?: Array<{ harness: string; status: string; error?: string }>;
-	cloudReviewerReady?: boolean;
-	isInstallingCloudHarness?: boolean;
-	onCloudReviewerHarnessChange?: (harness: string) => void;
-	onCloudInstallHarness?: () => void;
 }) {
 	const { t } = useTranslation();
 	const latestAutoFailure = reviewStates
@@ -2451,7 +2091,7 @@ function ReviewPanel({
 	const reviewLive = reviewHasLiveActivity(openReviewStates, reviewerActivityState, hasReviewerSession);
 	const reviewHasRun = reviewRunning || Boolean(latest);
 	const runAction = reviewSessionRunAction(openReviewStates, isTriggering);
-	const runDisabled = isKilling || isSwitchingReviewer || (cloud && !cloudReviewerReady) || reviewRunDisabled(openReviewStates, isTriggering);
+	const runDisabled = isKilling || isSwitchingReviewer || reviewRunDisabled(openReviewStates, isTriggering);
 	const primaryReviewActionLabel = reviewRunning
 		? isCancelling
 			? t("inspector.review.cancelling")
@@ -2492,47 +2132,6 @@ function ReviewPanel({
 					</Tooltip>
 				) : null}
 				<div className="review-run-controls-container flex min-w-0 flex-col text-xs">
-					{cloud ? (
-						<div className="flex min-h-8 min-w-0 items-center justify-between gap-3 py-1">
-							<span className="min-w-0 text-sm text-settings-label">{t("inspector.selectReviewerAgent")}</span>
-							<div className="flex min-w-0 items-center justify-end gap-1.5">
-								<Select
-									disabled={reviewRunning || isTriggering || isCancelling || isInstallingCloudHarness}
-									onValueChange={(harness) => onCloudReviewerHarnessChange?.(harness)}
-									value={cloudReviewerHarness}
-								>
-									<SelectTrigger
-										aria-label={t("inspector.selectReviewerAgent")}
-										className="h-control-md max-w-[11rem] text-xs"
-										size="sm"
-									>
-										<SelectValue placeholder={t("inspector.selectReviewerAgent")} />
-									</SelectTrigger>
-									<SelectContent align="end">
-										{["claude-code", "codex", "cursor"].map((harness) => (
-											<SelectItem key={harness} value={harness}>
-												{agentLabel(harness)}
-												{cloudReviewerHarnesses.includes(harness) ? "" : " · Connect credential"}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
-								{cloudHarnessStatuses.some(
-									(entry) => entry.harness === cloudReviewerHarness && entry.status !== "ready",
-								) ? (
-									<Button
-										disabled={isInstallingCloudHarness || reviewRunning}
-										onClick={onCloudInstallHarness}
-										size="sm"
-										type="button"
-										variant="outline"
-									>
-										{isInstallingCloudHarness ? "Installing…" : "Install"}
-									</Button>
-								) : null}
-							</div>
-						</div>
-					) : (
 					<div className="flex min-h-8 min-w-0 items-center justify-between gap-3 py-1">
 						<span className="min-w-0 text-sm text-settings-label">
 							{t("inspector.selectReviewerAgent")}
@@ -2553,7 +2152,6 @@ function ReviewPanel({
 							value={reviewerOverride}
 						/>
 					</div>
-					)}
 					{/* Several reviewers can work on one worker at once (an agent may
 					    ask a reviewer other than the selected one). The reviewer tab
 					    shows one at a time, so each live reviewer gets a row to open it
@@ -2602,7 +2200,6 @@ function ReviewPanel({
 								{reviewRunning ? <X aria-hidden="true" /> : <Play aria-hidden="true" />}
 								<span className="review-run-action-label">{primaryReviewActionLabel}</span>
 							</Button>
-							{!cloud ? (
 							<Tooltip>
 								<TooltipTrigger asChild>
 									<span className="inline-flex">
@@ -2621,7 +2218,6 @@ function ReviewPanel({
 								</TooltipTrigger>
 								<TooltipContent>{archiveActionLabel}</TooltipContent>
 							</Tooltip>
-							) : null}
 						</div>
 					</div>
 				</div>

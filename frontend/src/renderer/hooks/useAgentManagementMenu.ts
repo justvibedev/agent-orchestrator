@@ -2,7 +2,7 @@ import { useRef } from "react";
 import { useUiStore } from "../stores/ui-store";
 
 /** Open Settings after the menu restores its trigger, so stacked dialogs retain focus. */
-export function useAgentManagementMenu(focusAgentId?: string, hostId?: string, harnessView?: "local" | "cloud") {
+export function useAgentManagementMenu(focusAgentId?: string, hostId?: string) {
 	const triggerRef = useRef<HTMLButtonElement>(null);
 	const pending = useRef(false);
 	const openGlobalSettings = useUiStore((state) => state.openGlobalSettings);
@@ -14,7 +14,7 @@ export function useAgentManagementMenu(focusAgentId?: string, hostId?: string, h
 			pending.current = false;
 			event.preventDefault();
 			triggerRef.current?.focus({ preventScroll: true });
-			openGlobalSettings("harness", { focusAgentId, ...(hostId ? { hostId } : {}), harnessView, preserveProject: true });
+			openGlobalSettings("harness", { focusAgentId, ...(hostId ? { hostId } : {}), preserveProject: true });
 		},
 	};
 }

@@ -41,40 +41,13 @@ const DEV_BUILD_INFO = {
 	isDirty: gitIsDirty(),
 };
 
-// Cloud terminals attach over a ticketed wss:// dialed directly from the
-// renderer (the WorkOS token stays in the main process; the single-use ticket
-// is the socket's whole authorization — see lib/cloud-terminal-mux.ts), so the
-// packaged CSP must allow the control-plane origin or every cloud terminal
-// stays on "Connecting…" forever in built apps. The runtime URL is a daemon
-// setting the build cannot read; list the baked defaults and fold in a
-// developer's AO_CLOUD_CONTROL_PLANE_URL override so a custom control plane
-// keeps a working terminal in packaged builds too.
-// The hosted cloud control planes, plus AO_CLOUD_CONTROL_PLANE_URL when set.
-const CLOUD_CP_ORIGINS = (() => {
-	const origins = ["https://staging-api.aoagents.dev", "https://api.aoagents.dev"];
-	const override = process.env.AO_CLOUD_CONTROL_PLANE_URL?.trim();
-	if (!override) return origins;
-	let url: URL;
-	try {
-		url = new URL(override);
-	} catch {
-		return origins;
-	}
-	const origin = `${url.protocol === "http:" ? "http:" : "https:"}//${url.host}`;
-	if (!origins.includes(origin)) origins.push(origin);
-	return origins;
-})();
-
-const CLOUD_CP_WS_ORIGINS = CLOUD_CP_ORIGINS.map((origin) => origin.replace(/^http/, "ws"));
-
 // CSP for the renderer. The daemon is loopback-only, so network access is
-// pinned to 127.0.0.1 (REST + SSE over http, terminal mux over ws), plus the
-// cloud control-plane websocket origins above. The policy is injected here
+// pinned to 127.0.0.1 (REST + SSE over http, terminal mux over ws). The policy is injected here
 // rather than written into index.html so the serve variant can differ: the
 // same directives apply in dev, relaxed only where the dev server itself
 // needs it. Enforcing CSP in dev keeps dev/packaged parity — a connect-src
 // gap then fails on the developer's screen, not weeks later in a packaged
-// build (that skew is exactly how the cloud-terminal block in #4666 shipped).
+// build.
 export function contentSecurityPolicy(mode: "build" | "serve"): string {
 	return [
 		"default-src 'self'",
@@ -86,8 +59,7 @@ export function contentSecurityPolicy(mode: "build" | "serve"): string {
 		// are only known at runtime. Keep the broad exception limited to images;
 		// scripts, connections, frames, and other resource classes remain scoped.
 		"img-src 'self' data: http://127.0.0.1:* http://*.localhost:* https:",
-		// A cloud session's audio and video artifacts stream from its control plane.
-		["media-src 'self' http://127.0.0.1:* http://*.localhost:*", ...CLOUD_CP_ORIGINS].join(" "),
+		"media-src 'self' http://127.0.0.1:* http://*.localhost:*",
 		"font-src 'self' data:",
 		[
 			"connect-src",
@@ -101,7 +73,6 @@ export function contentSecurityPolicy(mode: "build" | "serve"): string {
 			// Vite serves on localhost, which 'self' does not cover for the ws://
 			// HMR socket.
 			mode === "serve" ? "ws://localhost:*" : "",
-			...CLOUD_CP_WS_ORIGINS,
 		]
 			.filter(Boolean)
 			.join(" "),
@@ -112,9 +83,7 @@ export function contentSecurityPolicy(mode: "build" | "serve"): string {
 		// 'self' lets dev:web, whose API base is relative, frame a page; the page
 		// keeps its own sandbox from the daemon's CSP header either way.
 		// *.localhost is the inline-artifact origin an HTML artifact is framed from.
-		// A cloud session's HTML artifact is framed from its control plane, whose
-		// response CSP sandboxes it.
-		["frame-src 'self' http://127.0.0.1:* http://*.localhost:*", ...CLOUD_CP_ORIGINS].join(" "),
+		"frame-src 'self' http://127.0.0.1:* http://*.localhost:*",
 	].join("; ");
 }
 

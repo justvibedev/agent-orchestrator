@@ -1421,7 +1421,7 @@ function ChatWorkspaceContent({
 					rememberPermissionsError={rememberPermissionsError}
 					rememberedPermissionMode={rememberedPermissionMode}
 					harness={snapshot.harness}
-					showApprovalMode={showApprovalMode ?? !session?.cloud}
+					showApprovalMode={showApprovalMode ?? true}
 					approvalModes={approvalModes}
 					reroute={stableModelReroute}
 					onChange={newWorkDisabled ? undefined : onChooseSettings}
@@ -1464,7 +1464,6 @@ function ChatWorkspaceContent({
 			rememberedPermissionMode,
 			showApprovalMode,
 			approvalModes,
-			session?.cloud,
 			snapshot.controller.state,
 			snapshot.items.length,
 			turn,
@@ -1793,7 +1792,6 @@ function ChatWorkspaceContent({
 							onSessionLinkOpen={onSessionLinkOpen}
 							remoteHost={Boolean(activeRemoteHostId)}
 							sessionLinkHostId={activeRemoteHostId}
-							sessionLinkSourceKind={session?.cloud ? "cloud" : undefined}
 							workspacePaths={filePaths}
 						>
 							<ChatImageSourceProvider sessionId={snapshot.sessionId} assetBaseUrl={assetBaseUrl} remoteHost={Boolean(activeRemoteHostId)} artifacts={session?.artifactFiles}>

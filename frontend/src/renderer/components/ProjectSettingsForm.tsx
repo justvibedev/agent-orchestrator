@@ -19,7 +19,6 @@ import { RequiredAgentField } from "./CreateProjectAgentSheet";
 import { buildIntake } from "./IntakeFields";
 import { ReviewerSelect, reviewerTrustWarning } from "./ReviewerSelect";
 import { ProjectSettingsEditor, type ProjectAgentPickerProps, type ProjectSettingsDraft } from "./ProjectSettingsEditor";
-import { CloudProjectSettingsAdapter } from "./CloudProjectSettingsForm";
 
 type Project = components["schemas"]["Project"];
 type ProjectConfig = components["schemas"]["ProjectConfig"];
@@ -53,15 +52,12 @@ type ProjectSettingsFormProps = {
 	projectId: string;
 	/** Installation ID of the self-hosted daemon that owns this project. */
 	hostId?: string;
-	cloudOrgId?: string;
 	section?: ProjectSettingsSection;
 	onSaveState?: (state: ProjectSettingsSaveState) => void;
 };
 
 export function ProjectSettingsForm(props: ProjectSettingsFormProps) {
-	return props.cloudOrgId !== undefined
-		? <CloudProjectSettingsAdapter {...props} cloudOrgId={props.cloudOrgId} />
-		: <LocalProjectSettingsAdapter {...props} />;
+	return <LocalProjectSettingsAdapter {...props} />;
 }
 
 function LocalProjectSettingsAdapter({

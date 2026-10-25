@@ -23,8 +23,6 @@ import { pairFromCode, type MachineNameChoice } from "../lib/pairFlow";
 import { registerForPush } from "../lib/push";
 import { isLegacyPairingCode, parsePairingCode } from "../lib/pairingCode";
 import { findHost, saveHost, setActiveHost, type Host } from "../lib/hosts";
-import { loadAccount } from "../lib/account";
-import { syncAccountHosts, unignoreAccountHost } from "../lib/accountHosts";
 import { probeEndpoint } from "../lib/connectRuntime";
 import { raceEndpoints } from "../lib/race";
 import { createScanGate } from "../lib/scanGate";
@@ -281,12 +279,6 @@ export default function PairScreen() {
 		// The rest of the app still runs off ServerConfig, so the winning
 		// endpoint is written there as well as into the host list.
 		await saveConfig(result.config);
-		void loadAccount().then(async (account) => {
-			if (account) {
-				await unignoreAccountHost(account.id, result.host.id);
-				await syncAccountHosts(account);
-			}
-		}).catch(() => {});
 		haptics.success();
 		await finish();
 		// A successful scan counts as a deliberate trigger for the one-shot OS

@@ -6,7 +6,6 @@ import { useUiStore } from "../stores/ui-store";
 import { appShortcutBus } from "../test/app-shortcut-bus";
 import type { ProjectSettingsSaveState } from "./ProjectSettingsForm";
 import { SettingsDialog } from "./SettingsPageTestHarness";
-import { globalSettingsItemsFor, visibleGlobalSettings } from "./settings/settingsCatalog";
 
 const { postMock, cloudProjectsState, localWorkspacesState } = vi.hoisted(() => ({
 	postMock: vi.fn(),
@@ -101,18 +100,9 @@ vi.mock("./ProjectScriptsSettings", () => ({
 
 // The dialog reads the cloud gate to decide whether the Cloud nav page exists;
 // mocked so these tests need no QueryClientProvider (same pattern as Sidebar).
-vi.mock("../hooks/useCloudGate", () => ({
-	useCloudGate: () => ({ cloudEnabled: false, localEnabled: true }),
-}));
 
 // The dialog reads the org's offering to gate the Coder and Upgrade pages.
 // Nothing resolved here (signed out), so neither page is visible.
-vi.mock("../hooks/useCloudOffering", () => ({
-	useCloudOffering: () => ({ customCoder: false, selfServeBilling: false }),
-}));
-vi.mock("../lib/cloud-session", () => ({
-	useCloudSession: () => ({ status: "unauthenticated", session: null }),
-}));
 
 describe("SettingsDialog", () => {
 	beforeEach(() => {
@@ -186,53 +176,9 @@ describe("SettingsDialog", () => {
 		expect(screen.getByRole("button", { name: "Cues" })).toHaveAttribute("data-active", "true");
 	});
 
-	it("loads a cloud project's settings from the control plane, not the local daemon", async () => {
-		cloudProjectsState.data = [{ id: "cloud-1", orgId: "org-1", displayName: "ao-landing" }];
-		useUiStore.getState().openProjectSettings("cloud-1");
-		renderSettingsDialog();
 
-		// Opened without a Cloud org, the project is still routed to its control-plane settings.
-		expect(await screen.findByTestId("cloud-project-settings")).toHaveTextContent("org-1");
-		expect(screen.getByRole("button", { name: "General" })).toBeInTheDocument();
-		expect(screen.getByRole("button", { name: "Agents" })).toBeInTheDocument();
-		// Scripts are project settings on Cloud projects too; environment and cues stay local.
-		expect(screen.getByRole("button", { name: "Scripts" })).toBeInTheDocument();
-		for (const section of ["Environment", "Cues"]) {
-			expect(screen.queryByRole("button", { name: section })).not.toBeInTheDocument();
-		}
-		expect(screen.queryByTestId("project-scripts-settings")).not.toBeInTheDocument();
-	});
 
-	it("opens a cloud project's Scripts page from the control plane", async () => {
-		cloudProjectsState.data = [{ id: "cloud-1", orgId: "org-1", displayName: "ao-landing" }];
-		useUiStore.getState().openProjectSettings("cloud-1", { section: "scripts" });
-		renderSettingsDialog();
 
-		expect(await screen.findByTestId("cloud-project-scripts-settings")).toHaveTextContent("org-1/cloud-1");
-		expect(screen.queryByTestId("project-scripts-settings")).not.toBeInTheDocument();
-	});
-
-	it("waits for the cloud project list before falling back to local project settings", async () => {
-		cloudProjectsState.isLoading = true;
-		useUiStore.getState().openProjectSettings("cloud-1");
-		renderSettingsDialog();
-
-		expect(await screen.findByText("Loading project settings…")).toBeInTheDocument();
-		expect(screen.queryByRole("button", { name: "Start pending save" })).not.toBeInTheDocument();
-	});
-
-	it("surfaces a failed cloud lookup instead of asking the local daemon for a cloud project", async () => {
-		cloudProjectsState.data = undefined;
-		cloudProjectsState.isError = true;
-		cloudProjectsState.error = new Error("Cloud control plane request failed with status 503.");
-		useUiStore.getState().openProjectSettings("cloud-1");
-		renderSettingsDialog();
-
-		expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't load this cloud project. Cloud control plane request failed with status 503.");
-		expect(screen.queryByRole("button", { name: "Start pending save" })).not.toBeInTheDocument();
-		await userEvent.click(screen.getByRole("button", { name: "Retry" }));
-		expect(cloudProjectsState.refetch).toHaveBeenCalledTimes(1);
-	});
 
 	it("keeps local project settings when the cloud lookup fails for a project the daemon lists", async () => {
 		cloudProjectsState.data = undefined;
@@ -340,27 +286,7 @@ describe("SettingsDialog", () => {
 		expect(screen.queryByRole("button", { name: "Downloads" })).not.toBeInTheDocument();
 	});
 
-	it("opens Diagnostics as its own page, and leaves it out of the whole-settings view", async () => {
-		useUiStore.setState({ developerMode: true, diagnostics: true });
-		useUiStore.getState().openGlobalSettings("diagnostics");
-		renderSettingsDialog();
 
-		expect(await screen.findByTestId("global-settings-section")).toHaveTextContent("diagnostics");
-		expect(screen.getByRole("button", { name: "Diagnostics" })).toBeInTheDocument();
-		// The live monitor is a page of its own: the aggregate view never mounts it.
-		expect(globalSettingsItemsFor("all", { cloudEnabled: true, developerMode: true, diagnostics: true, customCoder: false, selfServeBilling: false }).map((item) => item.id)).not.toContain("diagnostics");
-		expect(visibleGlobalSettings({ cloudEnabled: true, developerMode: true, diagnostics: true, customCoder: false, selfServeBilling: false }).map((item) => item.id)).toContain("diagnostics");
-	});
-
-	it("hides Diagnostics until its toggle is on in Developer mode, falling back to General if asked for", async () => {
-		useUiStore.setState({ developerMode: true, diagnostics: false });
-		useUiStore.getState().openGlobalSettings("diagnostics");
-		renderSettingsDialog();
-
-		expect(await screen.findByTestId("global-settings-section")).toHaveTextContent("general");
-		expect(screen.queryByRole("button", { name: "Diagnostics" })).not.toBeInTheDocument();
-		expect(visibleGlobalSettings({ cloudEnabled: true, developerMode: true, diagnostics: false, customCoder: false, selfServeBilling: false }).map((item) => item.id)).not.toContain("diagnostics");
-	});
 
 	it("hides Diagnostics outside Developer mode even with its toggle left on", async () => {
 		useUiStore.setState({ developerMode: false, diagnostics: true });
@@ -371,39 +297,7 @@ describe("SettingsDialog", () => {
 		expect(screen.queryByRole("button", { name: "Diagnostics" })).not.toBeInTheDocument();
 	});
 
-	describe("offering gates", () => {
-		const pages = (context: { customCoder: boolean; selfServeBilling: boolean; cloudEnabled?: boolean }) =>
-			visibleGlobalSettings({ cloudEnabled: true, developerMode: false, diagnostics: false, ...context }).map((item) => item.id);
 
-		it("a B2C self-serve org sees Upgrade and no Coder page", () => {
-			expect(pages({ customCoder: false, selfServeBilling: true })).toContain("billing");
-			expect(pages({ customCoder: false, selfServeBilling: true })).not.toContain("coder");
-		});
-
-		it("a B2B contract org sees the Coder page and no Upgrade", () => {
-			expect(pages({ customCoder: true, selfServeBilling: false })).toContain("coder");
-			expect(pages({ customCoder: true, selfServeBilling: false })).not.toContain("billing");
-		});
-
-		it("an org on both sees both, and Upgrade only while self-serve", () => {
-			expect(pages({ customCoder: true, selfServeBilling: true })).toEqual(expect.arrayContaining(["coder", "billing"]));
-			expect(pages({ customCoder: true, selfServeBilling: false })).not.toContain("billing");
-		});
-
-		it("shows neither cloud page with cloud off", () => {
-			const ids = pages({ customCoder: true, selfServeBilling: true, cloudEnabled: false });
-			expect(ids).not.toContain("coder");
-			expect(ids).not.toContain("billing");
-		});
-	});
-
-	it("falls back to General when the Coder page is unavailable", async () => {
-		useUiStore.getState().openGlobalSettings("coder");
-		renderSettingsDialog();
-
-		expect(await screen.findByTestId("global-settings-section")).toHaveTextContent("general");
-		expect(screen.queryByRole("button", { name: "Coder" })).not.toBeInTheDocument();
-	});
 
 	it("closes Settings without cancelling daemon-owned account login work", async () => {
 		useUiStore.getState().openGlobalSettings("agents");

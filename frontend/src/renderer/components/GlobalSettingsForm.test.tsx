@@ -21,9 +21,6 @@ vi.mock("./settings/HarnessSettingsSection", () => ({
 
 // The real section reads the cloud gate and /me; here it only marks where the
 // General page places it.
-vi.mock("./settings/DefaultCloudSandboxRow", () => ({
-	DefaultCloudSandboxSection: () => <div data-testid="default-cloud-sandbox-section" />,
-}));
 
 const {
 	getUiSettings,
@@ -89,9 +86,6 @@ vi.mock("../lib/bridge", () => ({
 	},
 }));
 
-vi.mock("../lib/cloud-session", () => ({
-	useCloudSession: () => ({ status: "authenticated", session: { user: { id: "test-user" } } }),
-}));
 
 function renderForm(section: GlobalSettingsSection = "all", focusAgentId?: string, hostId?: string) {
 	const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -217,13 +211,6 @@ describe("GlobalSettingsForm", () => {
 		expect(window.localStorage.getItem("ao.developerMode")).toBe("true");
 	});
 
-	// Admins pick the org's cloud sandbox without turning on Developer Mode or
-	// the preview Cloud toggle, which builds that force cloud leave off.
-	it("shows the default cloud sandbox outside Developer mode", async () => {
-		renderForm("general");
-		expect(await screen.findByRole("switch", { name: "Developer mode" })).toHaveAttribute("aria-checked", "false");
-		expect(screen.getByTestId("default-cloud-sandbox-section")).toBeInTheDocument();
-	});
 
 	it("reveals the Side chats toggle only in Developer mode and persists it", async () => {
 		const user = userEvent.setup();

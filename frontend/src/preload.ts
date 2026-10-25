@@ -36,13 +36,6 @@ import type {
 	OpenSessionTargetResult,
 } from "./shared/editor-handoff";
 import type { LocalPathAction, LocalPathInspection, LocalPathResult } from "./shared/local-path";
-import type { CloudAccount } from "./shared/cloud-account";
-import type { LocalLoginInput, LocalRegisterInput } from "./main/cloud-auth-local";
-import type {
-	CloudCpProxyRequestInit,
-	CloudCpProxyResponse,
-	CloudCpStreamEvent,
-} from "./main/cloud-cp-proxy";
 import type { UiSettings } from "./main/ui-settings";
 import type {
 	BrowserAnnotationActionInput,
@@ -335,16 +328,6 @@ const api = {
 	chatImage: {
 		fetch: (url: string) => ipcRenderer.invoke("chatImage:fetch", url) as Promise<{ bytes: Uint8Array; mimeType: string }>,
 		save: (input: { name: string; bytes: Uint8Array }) => ipcRenderer.invoke("chatImage:save", input) as Promise<boolean>,
-	},
-	cloudArtifact: {
-		fetch: (url: string) => ipcRenderer.invoke("cloudArtifact:fetch", url) as Promise<Uint8Array>,
-		onFrameNavigated: (listener: (navigation: { url: string; status: number }) => void) => {
-			const wrapped = (_event: Electron.IpcRendererEvent, navigation: { url: string; status: number }) => listener(navigation);
-			ipcRenderer.on("cloudArtifact:frameNavigated", wrapped);
-			return () => {
-				ipcRenderer.off("cloudArtifact:frameNavigated", wrapped);
-			};
-		},
 	},
 	daemon: {
 		getStatus: () => ipcRenderer.invoke("daemon:getStatus") as Promise<DaemonStatus>,
@@ -641,10 +624,6 @@ const api = {
 	// plaintext password only travels renderer -> main on add or credential edit.
 	remotes: {
 		list: () => ipcRenderer.invoke("remotes:list") as Promise<RemoteHostView[]>,
-		importAccountHost: (accountId: string, input: { hostId: string; label: string; url: string; password: string }) =>
-			ipcRenderer.invoke("remotes:importAccountHost", accountId, input) as Promise<void>,
-		pruneAccountHosts: (accountId: string, hostIds: string[]) => ipcRenderer.invoke("remotes:pruneAccountHosts", accountId, hostIds) as Promise<void>,
-		issueAccountToken: (url: string) => ipcRenderer.invoke("remotes:issueAccountToken", url) as Promise<string>,
 		add: (input: { label: string; url: string; password: string }) =>
 			ipcRenderer.invoke("remotes:add", input) as Promise<RemoteHealth>,
 		// An edit carries only what changed: an omitted password keeps the saved
@@ -667,58 +646,6 @@ const api = {
 		// A preview's address for a browser outside AO; any other URL unchanged.
 		externalUrl: (hostId: string, url: string) =>
 			ipcRenderer.invoke("remotes:externalUrl", hostId, url) as Promise<string>,
-	},
-	cloud: {
-		getSession: () => ipcRenderer.invoke("cloud:getSession") as Promise<CloudAccount | null>,
-		signIn: () => ipcRenderer.invoke("cloud:signIn") as Promise<void>,
-		signOut: () => ipcRenderer.invoke("cloud:signOut") as Promise<void>,
-		cancelProviderAuth: () => ipcRenderer.invoke("cloud:cancelProviderAuth") as Promise<void>,
-		connectProviderAuth: (input: { baseUrl: string; provider: string; persistLocalClaudeToken?: boolean }) =>
-			ipcRenderer.invoke("cloud:connectProviderAuth", input) as Promise<
-				| string
-				| { secret: string; refreshToken?: string; expiresIn?: number; refreshTokenExpiresIn?: number }
-				| void
-			>,
-		// Dev-only local (email/password) sign-in against a loopback Docker CP.
-		// Whether the surface is offered is decided in main (unpackaged/dev +
-		// loopback); the renderer only mirrors it for UI visibility.
-		localAuthAvailable: (cpUrl: string) =>
-			ipcRenderer.invoke("cloud:localAuthAvailable", cpUrl) as Promise<boolean>,
-		localRegister: (input: LocalRegisterInput) =>
-			ipcRenderer.invoke("cloud:localRegister", input) as Promise<CloudAccount>,
-		localLogin: (input: LocalLoginInput) =>
-			ipcRenderer.invoke("cloud:localLogin", input) as Promise<CloudAccount>,
-		onSessionChanged: (listener: (account: CloudAccount | null) => void) => {
-			const wrapped = (_event: Electron.IpcRendererEvent, account: CloudAccount | null) => listener(account);
-			ipcRenderer.on("cloud:sessionChanged", wrapped);
-			return () => {
-				ipcRenderer.off("cloud:sessionChanged", wrapped);
-			};
-		},
-	},
-	// Cloud control-plane transport. The CP has no CORS and the WorkOS bearer
-	// token lives only in the main process, so every CP call is proxied through
-	// main (main/cloud-cp-proxy.ts), which attaches the token; the token itself
-	// never crosses this bridge.
-	cloudCp: {
-		request: (init: CloudCpProxyRequestInit) =>
-			ipcRenderer.invoke("cloudCp:request", init) as Promise<CloudCpProxyResponse>,
-		openStream: (init: CloudCpProxyRequestInit) =>
-			ipcRenderer.invoke("cloudCp:openStream", init) as Promise<{ streamId: string }>,
-		closeStream: (streamId: string) => {
-			ipcRenderer.send("cloudCp:closeStream", streamId);
-		},
-		/** A cloud session's agent browser for its agent tab; "" when its sandbox has none. */
-		agentBrowserUrl: (baseUrl: string, orgId: string, sessionId: string) =>
-			ipcRenderer.invoke("cloudCp:agentBrowserUrl", baseUrl, orgId, sessionId) as Promise<string>,
-		onStreamEvent: (streamId: string, listener: (event: CloudCpStreamEvent) => void) => {
-			const channel = `cloudCp:stream:${streamId}`;
-			const wrapped = (_event: Electron.IpcRendererEvent, event: CloudCpStreamEvent) => listener(event);
-			ipcRenderer.on(channel, wrapped);
-			return () => {
-				ipcRenderer.off(channel, wrapped);
-			};
-		},
 	},
 };
 

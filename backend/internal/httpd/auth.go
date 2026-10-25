@@ -18,7 +18,6 @@ import (
 type authState struct{ hashes atomic.Pointer[authHashes] }
 type authHashes struct {
 	current string
-	account string
 	retired []string
 }
 
@@ -30,7 +29,6 @@ func (a *authState) setHash(h string) {
 		}
 		next := &authHashes{current: h}
 		if previous != nil {
-			next.account = previous.account
 			next.retired = append(next.retired, previous.retired...)
 			if previous.current != "" {
 				next.retired = append(next.retired, previous.current)
@@ -40,25 +38,6 @@ func (a *authState) setHash(h string) {
 			return
 		}
 	}
-}
-func (a *authState) setAccountHash(h string) {
-	for {
-		previous := a.hashes.Load()
-		next := &authHashes{account: h}
-		if previous != nil {
-			next.current = previous.current
-			next.retired = previous.retired
-		}
-		if a.hashes.CompareAndSwap(previous, next) {
-			return
-		}
-	}
-}
-func (a *authState) accountHash() string {
-	if hashes := a.hashes.Load(); hashes != nil {
-		return hashes.account
-	}
-	return ""
 }
 func (a *authState) currentHash() string {
 	if hashes := a.hashes.Load(); hashes != nil {
@@ -295,8 +274,7 @@ func authMiddleware(state *authState, lock *lockout) func(http.Handler) http.Han
 				conn.owner.mu.Lock()
 			}
 			// Record auth atomically with rotation's connection close.
-			authenticated := mobilebridge.PasswordMatches(state.currentHash(), tok) ||
-				mobilebridge.PasswordMatches(state.accountHash(), tok)
+			authenticated := mobilebridge.PasswordMatches(state.currentHash(), tok)
 			if conn != nil {
 				if authenticated {
 					conn.tokenHash = mobilebridge.HashPassword(tok)

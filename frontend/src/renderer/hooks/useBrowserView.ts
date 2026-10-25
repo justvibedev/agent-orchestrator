@@ -64,8 +64,6 @@ type UseBrowserViewOptions = {
 	sessionId: string;
 	/** Source daemon for preview URLs; omitted for the local daemon. */
 	origin?: { hostId: string; sessionId: string; proxyBase: string };
-	/** A cloud session, whose agent browser the control plane serves. */
-	cloudAgentBrowser?: { baseUrl: string; orgId: string; sessionId: string };
 	active: boolean;
 	poppedOut: boolean;
 	/**
@@ -278,7 +276,6 @@ function hiddenByFullscreen(node: HTMLElement): boolean {
 export function useBrowserView({
 	sessionId,
 	origin,
-	cloudAgentBrowser,
 	active,
 	poppedOut,
 	terminated,
@@ -981,7 +978,7 @@ export function useBrowserView({
 		[hasNativeBrowser, navigate, openTab, selectTab],
 	);
 
-	// A remote or cloud session's agent browser (the host's or sandbox's
+	// A remote session's agent browser (the host's
 	// Chromium its agent drives, streamed) is part of the session's surface:
 	// main shows it as one tab per agent page. It is derived from the host
 	// whenever the view is built or the host reconnects, not remembered: a
@@ -991,9 +988,7 @@ export function useBrowserView({
 	useEffect(() => {
 		const agentBrowserUrl = origin
 			? () => aoBridge.remotes.agentBrowserUrl(origin.hostId, origin.sessionId)
-			: cloudAgentBrowser
-				? () => aoBridge.cloudCp.agentBrowserUrl(cloudAgentBrowser.baseUrl, cloudAgentBrowser.orgId, cloudAgentBrowser.sessionId)
-				: undefined;
+			: undefined;
 		if (!hasNativeBrowser || !agentBrowserUrl || !viewId || viewIdRef.current !== viewId || terminated) return;
 		let cancelled = false;
 		let retry = 0;
@@ -1018,7 +1013,7 @@ export function useBrowserView({
 			cancelled = true;
 			window.clearTimeout(retry);
 		};
-	}, [hasNativeBrowser, origin?.hostId, origin?.sessionId, origin?.proxyBase, cloudAgentBrowser?.baseUrl, cloudAgentBrowser?.orgId, cloudAgentBrowser?.sessionId, terminated, viewId]);
+	}, [hasNativeBrowser, origin?.hostId, origin?.sessionId, origin?.proxyBase, terminated, viewId]);
 
 	const clear = useCallback(() => {
 		if (!hasNativeBrowser) {

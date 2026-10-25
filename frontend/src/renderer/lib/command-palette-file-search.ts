@@ -1,5 +1,3 @@
-import type { CloudCpClient } from "./cloud-cp";
-import { cloudWorkspaceReviewSearchQueryOptions } from "../hooks/useCloudWorkspaceReview";
 import { sessionWorkspaceSearchQueryOptions } from "../hooks/useSessionWorkspaceFiles";
 import type { WorkspaceFileSearchItem, WorkspaceFileSearchTarget } from "./command-palette";
 
@@ -14,11 +12,6 @@ type CommandPaletteFileSearchArgs = {
 	target: WorkspaceFileSearchTarget;
 	query: string;
 	errorMessage: string;
-	cloud: {
-		client: CloudCpClient;
-		baseUrl: string;
-		ready: boolean;
-	};
 };
 
 type CommandPaletteFileSearchQueryOptions = {
@@ -41,32 +34,10 @@ function normalizeSearchResponse(response: {
 	};
 }
 
-export function commandPaletteFileSearchAvailable(
-	target: WorkspaceFileSearchTarget | undefined,
-	cloudReady: boolean,
-): boolean {
-	return Boolean(target && (!target.cloudOrgId || cloudReady));
-}
-
 export function commandPaletteFileSearchQueryOptions(
 	args: CommandPaletteFileSearchArgs,
 ): CommandPaletteFileSearchQueryOptions {
 	const { target } = args;
-	if (target.cloudOrgId) {
-		const options = cloudWorkspaceReviewSearchQueryOptions({
-			client: args.cloud.client,
-			baseUrl: args.cloud.baseUrl,
-			orgId: target.cloudOrgId,
-			sessionId: target.sessionId,
-			query: { query: args.query, limit: COMMAND_PALETTE_FILE_SEARCH_LIMIT },
-		});
-		return {
-			...options,
-			queryFn: async (context: { signal?: AbortSignal } = {}) =>
-				normalizeSearchResponse(await options.queryFn(context)),
-		};
-	}
-
 	const options = sessionWorkspaceSearchQueryOptions(
 		target.sessionId,
 		args.query,

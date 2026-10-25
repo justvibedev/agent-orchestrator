@@ -4,7 +4,7 @@ import { Linking, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, Tex
 import { ApiError, pingServer } from "./api";
 import { DEFAULT_CONFIG, saveConfig, type ServerConfig } from "./config";
 import { saveHost, setActiveHost, renameHost, type Host } from "./hosts";
-import { AccountManagedHostError, adoptManualConnection, DifferentMachineError, persistManualHostEdit } from "./manualConnect";
+import { adoptManualConnection, DifferentMachineError, persistManualHostEdit } from "./manualConnect";
 import { configForEndpoint } from "./connect";
 import { normalizeServerHost } from "./endpoints";
 import { probeEndpoint, probeIdentity } from "./connectRuntime";
@@ -89,9 +89,9 @@ export function ManualConnectSheet({ onConnected, editingHost, editingEndpointIn
 			onConnected();
 		} catch (e) {
 			haptics.warning();
-			if (e instanceof DifferentMachineError || e instanceof AccountManagedHostError) {
+			if (e instanceof DifferentMachineError) {
 				setFailure({
-					title: e instanceof AccountManagedHostError ? "Managed by Orchestrator Cloud" : "Different machine",
+					title: "Different machine",
 					message: e.message,
 					icon: "alert-circle",
 					showLocalNetworkHint: false,

@@ -87,14 +87,6 @@ export const aoBridge: AoBridge =
 				return true;
 			},
 		},
-		cloudArtifact: {
-			fetch: async (url: string) => {
-				const response = await fetch(url);
-				if (!response.ok) throw new Error(`Artifact request failed (${response.status})`);
-				return new Uint8Array(await response.arrayBuffer());
-			},
-			onFrameNavigated: () => () => undefined,
-		},
 		daemon: {
 			getStatus: async () => ({
 				state: "stopped",
@@ -311,9 +303,6 @@ export const aoBridge: AoBridge =
 		// which is the truth there.
 		remotes: {
 			list: async () => [],
-			importAccountHost: async () => undefined,
-			pruneAccountHosts: async () => undefined,
-			issueAccountToken: async () => { throw new Error("remote hosts need the desktop app"); },
 			add: async () => "offline" as const,
 			update: async () => "offline" as const,
 			remove: async () => undefined,
@@ -324,33 +313,5 @@ export const aoBridge: AoBridge =
 			resolvePreviewUrl: async (_hostId: string, _sessionId: string, viewedUrl: string) => viewedUrl,
 			agentBrowserUrl: async () => "",
 			externalUrl: async (_hostId: string, url: string) => url,
-		},
-		cloud: {
-			getSession: async () => null,
-			signIn: async () => undefined,
-			signOut: async () => undefined,
-			cancelProviderAuth: async () => undefined,
-			connectProviderAuth: async () => {
-				throw new Error("Cloud provider sign-in requires the desktop app.");
-			},
-			localAuthAvailable: async () => false,
-			localRegister: async () => {
-				throw new Error("AO Cloud sign-in requires the desktop app.");
-			},
-			localLogin: async () => {
-				throw new Error("AO Cloud sign-in requires the desktop app.");
-			},
-			onSessionChanged: () => () => undefined,
-		},
-		cloudCp: {
-			request: async () => {
-				throw new Error("AO Cloud requests require the desktop app.");
-			},
-			openStream: async () => {
-				throw new Error("AO Cloud event streams require the desktop app.");
-			},
-			closeStream: () => undefined,
-			onStreamEvent: () => () => undefined,
-			agentBrowserUrl: async () => "",
 		},
 	} satisfies AoBridge);

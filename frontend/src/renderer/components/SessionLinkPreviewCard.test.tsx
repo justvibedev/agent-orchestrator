@@ -79,13 +79,14 @@ describe("SessionLinkPreviewCard", () => {
 		mocks.source.mockReturnValue(source());
 	});
 
+
 	it("resolves the card from the chat source host", () => {
 		const remote = session({ title: "Remote worker" });
 		mocks.source.mockReturnValue(source({ workspaces: [workspace(remote)] }));
 
 		render(<SessionLinkPreviewCard href="ao://sessions/project-a/worker-367" sourceHostId="box-a" />);
 
-		expect(mocks.source).toHaveBeenCalledWith("box-a", undefined);
+		expect(mocks.source).toHaveBeenCalledWith("box-a");
 		expect(screen.getByText("Remote worker")).toBeInTheDocument();
 	});
 
@@ -217,7 +218,7 @@ describe("ArtifactLinkPreviewCard", () => {
 
 		renderWithQuery(<ArtifactLinkPreviewCard href="ao://sessions/project-a/worker-367/artifacts/plans/plan.md" sourceHostId="box-a" />);
 
-		expect(mocks.source).toHaveBeenCalledWith("box-a", undefined);
+		expect(mocks.source).toHaveBeenCalledWith("box-a");
 		expect(screen.getByText("plan.md")).toBeInTheDocument();
 		expect(screen.getByText("Implement worker link previews")).toHaveTextContent("Implement worker link previews · worker-367");
 		expect(await screen.findByText(/Ship artifact links\./)).toBeInTheDocument();
@@ -293,16 +294,6 @@ describe("ArtifactLinkPreviewCard", () => {
 		expect(container.querySelector("iframe")).toBeNull();
 	});
 
-	it("never frames a Cloud session's page", async () => {
-		const page = artifact({ kind: "html", name: "chart.html", path: "chart.html", inlineUrl: "http://ao-inline-artifact.abc123.localhost:8080/chart.html" });
-		mocks.source.mockReturnValue(source({ workspaces: [workspace(session({ artifactFiles: [page] }))] }));
-		mocks.artifactFile.mockResolvedValue({ binary: false, content: "<html><body><p>Cloud text</p></body></html>" });
-
-		const { container } = renderWithQuery(<ArtifactLinkPreviewCard href="ao://sessions/project-a/worker-367/artifacts/chart.html" sourceKind="cloud" />);
-
-		expect(await screen.findByText("Cloud text")).toBeInTheDocument();
-		expect(container.querySelector("iframe")).toBeNull();
-	});
 
 	it("falls back to an HTML artifact's text when it has no inline page", async () => {
 		const page = artifact({ kind: "html", name: "chart.html", path: "chart.html" });

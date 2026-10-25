@@ -46,11 +46,6 @@ const (
 	// daemon validates it at startup, but worker/orchestrator spawns resolve from
 	// explicit requests or project role config instead of falling back to it.
 	DefaultAgent = "claude-code"
-
-	// defaultCloudControlPlaneURL is the control plane a build talks to when no
-	// override is set. Production, now that the hosted offering is live;
-	// AO_CLOUD_CONTROL_PLANE_URL still overrides it (e.g. staging-api for dev).
-	defaultCloudControlPlaneURL = "https://api.aoagents.dev"
 )
 
 // GitLabConfig carries the self-managed GitLab host allowlist and per-host
@@ -157,21 +152,12 @@ type Config struct {
 	TrackerIntake bool
 	// Client identifies which client this deployment serves (AO_CLIENT). It is
 	// reported to clients through the settings API and gates nothing in the
-	// daemon: the cloud offering (B2B/B2C, providers, billing) is decided per
-	// organization by the cloud control plane.
+	// daemon.
 	Client string
-	// CloudOffering reports whether the cloud offering flag is switched on
-	// (AO_CLOUD_OFFERING). It forces the cloud gate on regardless of the user's
-	// toggle; the settings service still requires a configured control plane.
-	CloudOffering bool
 	// LocalOffering reports whether the local offering is available
 	// (AO_LOCAL_OFFERING). It defaults to true; only an explicit false/0
 	// switches it off.
 	LocalOffering bool
-	// CloudControlPlaneURL is the cloud control plane base URL
-	// (AO_CLOUD_CONTROL_PLANE_URL). When set it must be an http(s) URL; empty
-	// means no control plane is configured, which keeps the cloud offering off.
-	CloudControlPlaneURL string
 	// AgentBrowserURL is the host's agent browser (AO_AGENT_BROWSER_URL): the
 	// Chromium its sessions' agents drive, which clients show as the agent's
 	// tab through /sessions/{id}/agent-browser. A loopback http URL; empty
@@ -206,9 +192,7 @@ func (c Config) Addr() string {
 //	AO_GITLAB_ALLOWED_HOSTS    comma-separated self-managed GitLab hosts (each may include :port)
 //	AO_GITLAB_HOST_TOKENS      host=token,host=token per-host token overrides
 //	AO_CLIENT                  client identity reported to clients (trimmed, default empty)
-//	AO_CLOUD_OFFERING          cloud offering flag off|on (default off)
 //	AO_LOCAL_OFFERING          local offering off|on (default on)
-//	AO_CLOUD_CONTROL_PLANE_URL cloud control plane base URL (trimmed, must be http(s))
 //	AO_AGENT_BROWSER_URL       the host's agent browser (loopback http URL, default none)
 //	AO_AGENT_BROWSER_TOKEN     that browser's credential (trimmed, required with AO_AGENT_BROWSER_URL)
 //
@@ -381,31 +365,12 @@ func Load() (Config, error) {
 	if raw := os.Getenv("AO_CLIENT"); raw != "" {
 		cfg.Client = strings.TrimSpace(raw)
 	}
-	if raw := os.Getenv("AO_CLOUD_OFFERING"); raw != "" {
-		v, err := parseToggleEnv("AO_CLOUD_OFFERING", raw)
-		if err != nil {
-			return Config{}, err
-		}
-		cfg.CloudOffering = v
-	}
 	if raw := os.Getenv("AO_LOCAL_OFFERING"); raw != "" {
 		v, err := parseToggleEnv("AO_LOCAL_OFFERING", raw)
 		if err != nil {
 			return Config{}, err
 		}
 		cfg.LocalOffering = v
-	}
-	// The control-plane URL is public client configuration (like the WorkOS
-	// client id), so it ships as a baked default and the env var is only a
-	// development override. Users never configure it; the Settings toggle is
-	// the sole cloud switch.
-	cfg.CloudControlPlaneURL = defaultCloudControlPlaneURL
-	if raw := os.Getenv("AO_CLOUD_CONTROL_PLANE_URL"); strings.TrimSpace(raw) != "" {
-		u, err := parseCloudControlPlaneURL(raw)
-		if err != nil {
-			return Config{}, err
-		}
-		cfg.CloudControlPlaneURL = u
 	}
 
 	if raw := strings.TrimSpace(os.Getenv("AO_AGENT_BROWSER_URL")); raw != "" {
@@ -480,22 +445,6 @@ func parseHostTokenMap(name, raw string) (map[string]string, error) {
 		tokens[host] = token
 	}
 	return tokens, nil
-}
-
-// parseCloudControlPlaneURL validates the cloud control plane base URL. Only
-// http(s) with a host is accepted: clients dial this value, so a stray scheme
-// or a bare host (which url.Parse reads as a path) must fail boot loudly
-// rather than surface later as an unreachable cloud.
-func parseCloudControlPlaneURL(raw string) (string, error) {
-	trimmed := strings.TrimSpace(raw)
-	u, err := url.Parse(trimmed)
-	if err != nil {
-		return "", fmt.Errorf("invalid AO_CLOUD_CONTROL_PLANE_URL %q: %w", raw, err)
-	}
-	if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return "", fmt.Errorf("invalid AO_CLOUD_CONTROL_PLANE_URL %q: must be an http(s) URL", raw)
-	}
-	return trimmed, nil
 }
 
 // parseAgentBrowserURL accepts only a loopback http URL: the daemon proxies

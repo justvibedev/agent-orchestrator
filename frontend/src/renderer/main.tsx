@@ -10,8 +10,6 @@ import { mergeUnreadNotification, unreadNotificationsQueryKey } from "./lib/noti
 import { playNotificationSound } from "./lib/notification-sound-player";
 import { createAppRouter } from "./router";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
-import { CloudOnboardingGate } from "./components/CloudOnboardingGate";
-import { CloudNotificationRuntime } from "./components/CloudNotificationRuntime";
 import { aoBridge } from "./lib/bridge";
 import { appI18n } from "./i18n";
 import { useLocaleStore } from "./stores/locale-store";
@@ -87,9 +85,7 @@ async function renderApp(): Promise<void> {
 		<I18nextProvider i18n={appI18n}>
 			<AppErrorBoundary>
 				<QueryClientProvider client={queryClient}>
-					<CloudNotificationRuntime />
 					<RouterProvider router={router} />
-					<CloudOnboardingGate />
 				</QueryClientProvider>
 			</AppErrorBoundary>
 		</I18nextProvider>,

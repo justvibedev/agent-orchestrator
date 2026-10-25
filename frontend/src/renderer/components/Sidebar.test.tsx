@@ -123,22 +123,8 @@ vi.mock("../hooks/useSessionRename", async (importOriginal) => {
 		},
 	};
 });
-vi.mock("../lib/cloud-session", () => ({ useCloudSession: () => cloudSessionState }));
-vi.mock("../hooks/useCloudGate", () => ({ useCloudGate: () => cloudGateState }));
 // Local (dev-only) cloud sign-in is off in these tests; mock it like its cloud
 // siblings so the sign-in row never fires a real settings fetch.
-vi.mock("../hooks/useCloudLocalAuth", () => ({
-	useCloudLocalAuth: () => ({
-		available: false,
-		cpUrl: "",
-		register: async () => {
-			throw new Error("useCloudLocalAuth is mocked");
-		},
-		login: async () => {
-			throw new Error("useCloudLocalAuth is mocked");
-		},
-	}),
-}));
 vi.mock("../hooks/useCommandPaletteEnabled", () => ({
 	useCommandPaletteEnabled: () => commandPaletteEnabled.current,
 }));
@@ -382,30 +368,6 @@ it("keeps new projects at the top across refreshes and restores the order after 
 	expect(rows().map((row) => row.getAttribute("data-project-id"))).toEqual(["zulu", "alpha", "beta"]);
 });
 
-it("shows the creation order before the new project snapshot arrives and preserves it through refreshes", () => {
-	const alpha = { ...workspace, id: "alpha", name: "Alpha", sessions: [] };
-	const beta = { ...workspace, id: "beta", name: "Beta", sessions: [] };
-	const newest = { ...workspace, id: "zulu", name: "Zulu", sessions: [] };
-	const olderCloud = { ...workspace, id: "older-cloud", name: "Older cloud", kind: "cloud" as const, sessions: [] };
-	const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-	const noop = vi.fn().mockResolvedValue(undefined);
-	const tree = (workspaces: WorkspaceSummary[]) => (
-		<QueryClientProvider client={client}><TooltipProvider><SidebarProvider>
-			<Sidebar workspaces={workspaces} onCloneProject={noop} onCreateProject={noop} onInitializeProject={noop} onRemoveProject={noop} onCreateRemoteProject={noop} onInitializeRemoteProject={noop} />
-		</SidebarProvider></TooltipProvider></QueryClientProvider>
-	);
-	window.localStorage.setItem("ao.sidebar.project-order", JSON.stringify(["beta", "alpha", "zulu"]));
-	useSidebarOrderStore.getState().setProjectOrder(["beta", "alpha", "zulu"]);
-	const view = render(tree([alpha, beta]));
-	act(() => useSidebarOrderStore.getState().moveProjectToTop("zulu"));
-	view.rerender(tree([alpha, beta, olderCloud, newest]));
-	const ids = () => Array.from(document.querySelectorAll("[data-project-drop-target][data-project-id]"), (row) => row.getAttribute("data-project-id"));
-	expect(ids()).toEqual(["zulu", "older-cloud", "beta", "alpha"]);
-	view.rerender(tree([]));
-	view.rerender(tree([alpha, beta, olderCloud, newest]));
-	expect(ids()).toEqual(["zulu", "older-cloud", "beta", "alpha"]);
-	expect(JSON.parse(window.localStorage.getItem("ao.sidebar.project-order") ?? "null")).toEqual(["zulu", "older-cloud", "beta", "alpha"]);
-});
 
 it.each(["invalid JSON", '{"unexpected":true}', '[4,null]'])("ignores invalid saved project order: %s", (saved) => {
 	window.localStorage.setItem("ao.sidebar.project-order", saved);
@@ -624,26 +586,7 @@ describe("Sidebar", () => {
 		});
 	});
 
-	it("shows the cloud sign-in entry point while signed out", () => {
-		cloudSessionState.configured = true;
-		renderSidebar();
 
-		const signInControls = screen.getAllByLabelText("Sign in to cloud");
-		expect(signInControls).toHaveLength(2);
-		const activeControl = signInControls.find((control) => control.tabIndex === 0);
-		expect(activeControl).toBeDefined();
-		fireEvent.click(activeControl!);
-		expect(cloudSessionState.signIn).toHaveBeenCalledOnce();
-	});
-
-	it("keeps cloud account controls visible while signed in", () => {
-		cloudSessionState.configured = true;
-		cloudSessionState.status = "authenticated";
-		cloudSessionState.session = { user: { email: "user@example.com" } };
-		renderSidebar();
-
-		expect(screen.getAllByLabelText("Signed in as user@example.com")).toHaveLength(2);
-	});
 
 	it("hides cloud account controls when the daemon reports the cloud offering off", () => {
 		cloudGateState.cloudEnabled = false;
@@ -655,14 +598,6 @@ describe("Sidebar", () => {
 		expect(screen.queryByLabelText("Signed in as user@example.com")).not.toBeInTheDocument();
 	});
 
-	it("shows AO sign-in for developer-mode remote hosts when Cloud execution is off", () => {
-		cloudGateState.cloudEnabled = false;
-		cloudSessionState.configured = true;
-		useUiStore.setState({ developerMode: true });
-		renderSidebar();
-
-		expect(screen.getAllByLabelText("Sign in to cloud")).toHaveLength(2);
-	});
 
 	it("shows the Artifacts row under Automations with a count of live artifacts", async () => {
 		const user = userEvent.setup();

@@ -17,9 +17,6 @@ const h = vi.hoisted(() => ({
 	ensureTargetedReadiness: vi.fn(),
 	agentValues: [] as string[],
 	agentCatalog: undefined as { agents: ReturnType<typeof import("../test/agent-readiness-fixtures").agentReadiness>[] } | undefined,
-	cloudProjects: [] as Array<{ id: string; displayName: string; repositoryUrl: string; defaultBranch: string; config: Record<string, unknown> }>,
-	cloudCreateSession: vi.fn(),
-	cloudChatHarnesses: ["claude-code", "codex", "cursor"],
 }));
 
 vi.mock("../hooks/useAgentReadinessQuery", async (importOriginal) => {
@@ -80,29 +77,14 @@ vi.mock("../lib/host-clients", () => ({
 
 
 vi.mock("../hooks/useWorkspaceQuery", () => ({
-	useCloudProjectsQuery: () => ({ data: h.cloudProjects }),
-	cloudProjectsQueryKey: ["cloud-projects"] as const,
-	useCloudSessionsQuery: () => ({ data: [] }),
-	cloudSessionsQueryKey: ["cloud-sessions"] as const,
 }));
 
-vi.mock("../hooks/useCloudOrg", () => ({
-	useCloudOrg: () => ({ org: { id: "org-1" } }),
-}));
 
-vi.mock("../hooks/useCloudCp", () => ({
-	useCloudCp: () => ({ client: { createSession: h.cloudCreateSession } }),
-}));
 
-vi.mock("../hooks/useCloudOffering", () => ({
-	useCloudOffering: () => ({ chatHarnesses: h.cloudChatHarnesses }),
-}));
 
 import { TaskComposer } from "./TaskComposer";
-import { CloudCpError } from "../lib/cloud-cp";
 import { agentReadiness } from "../test/agent-readiness-fixtures";
 import { agentReadinessQueryKey } from "../hooks/useAgentReadinessQuery";
-import { providerConnectionsQueryKey } from "../hooks/useProviderConnections";
 import { cacheAgentModels, clearCachedAgentModels } from "../lib/agent-model-cache";
 import { useUiStore } from "../stores/ui-store";
 
@@ -151,9 +133,6 @@ afterEach(() => {
 	h.ensureReadiness.mockReset();
 	h.ensureTargetedReadiness.mockReset();
 	h.agentCatalog = undefined;
-	h.cloudProjects.length = 0;
-	h.cloudCreateSession.mockReset();
-	h.cloudChatHarnesses = ["claude-code", "codex", "cursor"];
 	vi.unstubAllGlobals();
 	h.agentValues.length = 0;
 	window.localStorage.removeItem("ao.taskComposer.preferences.v1");
@@ -1151,129 +1130,13 @@ describe("TaskComposer", () => {
 		expect(body.attachments?.[0].data.length).toBeGreaterThan(0);
 	});
 
-	it("manages cloud harness connections from a cloud project's agent picker", async () => {
-		h.cloudProjects.push({ id: "cloud-1", displayName: "Cloud", repositoryUrl: "https://example.com/repo", defaultBranch: "main", config: {} });
-		const { unmount } = render(<Wrap><TaskComposer projectId="cloud-1" onCreated={vi.fn()} /></Wrap>);
-		// Only connected harnesses, with "Manage harness connections…" (Harness settings' Cloud view).
-		expect(await screen.findByLabelText("Agent")).toHaveAttribute("data-manage-view", "cloud");
-		unmount();
 
-		render(<Wrap><TaskComposer projectId="proj-1" onCreated={vi.fn()} /></Wrap>);
-		expect(await screen.findByLabelText("Agent")).toHaveAttribute("data-manage-view", "local");
-	});
 
-	it("rejects cloud task attachments instead of silently dropping them", async () => {
-		h.cloudProjects.push({ id: "cloud-1", displayName: "Cloud", repositoryUrl: "https://example.com/repo", defaultBranch: "main", config: {} });
-		const onCreated = vi.fn();
-		const { container } = render(<Wrap><TaskComposer projectId="cloud-1" onCreated={onCreated} /></Wrap>);
-		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
-		fireEvent.change(input, { target: { files: [new File(["notes"], "notes.txt", { type: "text/plain" })] } });
-		expect(await screen.findByText("notes.txt")).toBeInTheDocument();
 
-		fireEvent.change(task(), { target: { value: "Read the notes" } });
-		await waitForTaskReady();
-		fireEvent.click(startTask());
 
-		expect(await screen.findByRole("alert")).toHaveTextContent("File attachments are not supported for cloud tasks yet.");
-		expect(onCreated).not.toHaveBeenCalled();
-		expect(h.post).not.toHaveBeenCalled();
-		expect(h.capture).toHaveBeenCalledWith("ao.renderer.task_create_failed", { project_id: "cloud-1" });
-	});
 
-	it("starts a cloud task in the default session mode, as a local task does", async () => {
-		h.cloudProjects.push({ id: "cloud-1", displayName: "Cloud", repositoryUrl: "https://example.com/repo", defaultBranch: "main", config: { worker: { agent: "claude-code" } } });
-		h.get.mockImplementation(async (path: string) => path === "/api/v1/settings"
-			? { data: { defaultSessionMode: "chat", chatHarnesses: ["claude-code"] } }
-			: { data: { agent: "claude-code", selectionMode: "catalog", models: [{ id: "claude-sonnet-test", label: "Sonnet", isDefault: true }], allowCustom: true } });
-		h.cloudCreateSession.mockResolvedValue({ session: { id: "session-1" } });
-		render(<Wrap><TaskComposer projectId="cloud-1" onCreated={vi.fn()} /></Wrap>);
-		await waitForTaskReady();
-		fireEvent.change(task(), { target: { value: "Do the work" } });
-		fireEvent.click(startTask());
-		await waitFor(() => expect(h.cloudCreateSession).toHaveBeenCalledWith("org-1", expect.objectContaining({ interfaceMode: "chat" })));
-	});
 
-	it("starts a cloud task in the terminal when the control plane has no Chat for its agent, as local does", async () => {
-		h.cloudChatHarnesses = [];
-		h.cloudProjects.push({ id: "cloud-1", displayName: "Cloud", repositoryUrl: "https://example.com/repo", defaultBranch: "main", config: { worker: { agent: "claude-code" } } });
-		h.get.mockImplementation(async (path: string) => path === "/api/v1/settings"
-			? { data: { defaultSessionMode: "chat", chatHarnesses: ["claude-code"] } }
-			: { data: { agent: "claude-code", selectionMode: "catalog", models: [{ id: "claude-sonnet-test", label: "Sonnet", isDefault: true }], allowCustom: true } });
-		h.cloudCreateSession.mockResolvedValue({ session: { id: "session-1" } });
-		render(<Wrap><TaskComposer projectId="cloud-1" onCreated={vi.fn()} /></Wrap>);
-		await waitForTaskReady();
-		fireEvent.change(task(), { target: { value: "Do the work" } });
-		fireEvent.click(startTask());
-		await waitFor(() => expect(h.cloudCreateSession).toHaveBeenCalledWith("org-1", expect.objectContaining({ interfaceMode: "tui" })));
-	});
 
-	it("offers to create a refused cloud Chat task in the terminal, as local does", async () => {
-		h.cloudProjects.push({ id: "cloud-1", displayName: "Cloud", repositoryUrl: "https://example.com/repo", defaultBranch: "main", config: { worker: { agent: "claude-code" } } });
-		h.get.mockImplementation(async (path: string) => path === "/api/v1/settings"
-			? { data: { defaultSessionMode: "chat", chatHarnesses: ["claude-code"] } }
-			: { data: { agent: "claude-code", selectionMode: "catalog", models: [{ id: "claude-sonnet-test", label: "Sonnet", isDefault: true }], allowCustom: true } });
-		h.cloudCreateSession.mockRejectedValueOnce(new CloudCpError("claude-code can't run in Chat in AO Cloud. Start it in the terminal.", { status: 409, code: "SESSION_MODE_UNSUPPORTED" }));
-		h.cloudCreateSession.mockResolvedValueOnce({ session: { id: "session-1" } });
-		render(<Wrap><TaskComposer projectId="cloud-1" onCreated={vi.fn()} /></Wrap>);
-		await waitForTaskReady();
-		fireEvent.change(task(), { target: { value: "Do the work" } });
-		fireEvent.click(startTask());
-		fireEvent.click(await screen.findByRole("button", { name: "Create as Terminal UI" }));
-		await waitFor(() => expect(h.cloudCreateSession).toHaveBeenLastCalledWith("org-1", expect.objectContaining({ interfaceMode: "tui" })));
-	});
-
-	it("defaults cloud effort to medium and sends explicit effort choices", async () => {
-		h.cloudProjects.push({ id: "cloud-1", displayName: "Cloud", repositoryUrl: "https://example.com/repo", defaultBranch: "main", config: { worker: { agent: "claude-code" } } });
-		h.get.mockImplementation(async () => ({ data: { agent: "claude-code", selectionMode: "catalog", models: [
-			{ id: "claude-sonnet-test", label: "Sonnet", isDefault: true, efforts: ["low", "medium", "high"] },
-		], allowCustom: true } }));
-		h.cloudCreateSession.mockResolvedValue({ session: { id: "session-1" } });
-		render(<Wrap><TaskComposer projectId="cloud-1" onCreated={vi.fn()} /></Wrap>);
-		const picker = await screen.findByRole("button", { name: "Effort" });
-		await waitFor(() => expect(picker).toHaveTextContent("Medium"));
-		await userEvent.click(picker);
-		expect(screen.queryByRole("menuitem", { name: "Use agent effort" })).not.toBeInTheDocument();
-		await userEvent.keyboard("{Escape}");
-		fireEvent.change(task(), { target: { value: "Do the work" } });
-		fireEvent.click(startTask());
-		await waitFor(() => expect(h.cloudCreateSession).toHaveBeenCalledWith("org-1", expect.objectContaining({ reasoningEffort: "medium" })));
-		await userEvent.click(picker);
-		await userEvent.click(screen.getByRole("menuitemradio", { name: "High" }));
-		fireEvent.change(task(), { target: { value: "Another task" } });
-		fireEvent.click(startTask());
-		await waitFor(() => expect(h.cloudCreateSession).toHaveBeenLastCalledWith("org-1", expect.objectContaining({ reasoningEffort: "high" })));
-	});
-
-	it("starts a cloud task in the terminal when that is the default", async () => {
-		h.cloudProjects.push({ id: "cloud-1", displayName: "Cloud", repositoryUrl: "https://example.com/repo", defaultBranch: "main", config: {} });
-		h.cloudCreateSession.mockResolvedValue({ session: { id: "session-1" } });
-		const onCreated = vi.fn();
-		render(<Wrap><TaskComposer projectId="cloud-1" onCreated={onCreated} /></Wrap>);
-
-		fireEvent.change(task(), { target: { value: "Fix the bug" } });
-		await waitForTaskReady();
-		fireEvent.click(startTask());
-
-		await waitFor(() => expect(onCreated).toHaveBeenCalledWith("session-1"));
-		// A task carries the interface it starts in, never the default an
-		// orchestrator create carries.
-		expect(h.cloudCreateSession).toHaveBeenCalledWith("org-1", expect.objectContaining({ interfaceMode: "tui" }));
-		expect(h.cloudCreateSession.mock.calls[0]?.[1]).not.toHaveProperty("defaultInterfaceMode");
-	});
-
-	it("leaves the sandbox provider to the project and org default on the control plane", async () => {
-		h.cloudProjects.push({ id: "cloud-1", displayName: "Cloud", repositoryUrl: "https://example.com/repo", defaultBranch: "main", config: { sandboxProvider: "coder" } });
-		h.cloudCreateSession.mockResolvedValue({ session: { id: "session-1" } });
-		const onCreated = vi.fn();
-		render(<Wrap><TaskComposer projectId="cloud-1" onCreated={onCreated} /></Wrap>);
-
-		fireEvent.change(task(), { target: { value: "Fix the bug" } });
-		await waitForTaskReady();
-		fireEvent.click(startTask());
-
-		await waitFor(() => expect(onCreated).toHaveBeenCalledWith("session-1"));
-		expect(h.cloudCreateSession.mock.calls[0]?.[1]).not.toHaveProperty("provider");
-	});
 
 	it("waits for a selected file read before submitting", async () => {
 		h.post.mockResolvedValueOnce({ data: { workerId: "sess-1" } });
@@ -2379,7 +2242,7 @@ describe("TaskComposer", () => {
 
 			await userEvent.click(screen.getByRole("button", { name: "Log in" }));
 			expect(useUiStore.getState().settingsModal).toEqual(expect.objectContaining({
-				scope: "global", section: "harness", focusAgentId: "claude-code", harnessView: "local", startLogin: true,
+				scope: "global", section: "harness", focusAgentId: "claude-code", startLogin: true,
 			}));
 
 			await userEvent.click(screen.getByRole("button", { name: "Retry" }));
@@ -2411,39 +2274,7 @@ describe("TaskComposer", () => {
 			expect(screen.queryByTestId("model-catalog-notice")).not.toBeInTheDocument();
 		});
 
-		// A cloud task runs with the cloud credential; this computer's login only
-		// shapes the model list, so it must never read as a blocking error.
-		it("keeps a cloud project startable with a quiet note when the local login fails", async () => {
-			h.cloudProjects.push({ id: "cloud-1", displayName: "Cloud", repositoryUrl: "https://example.com/repo", defaultBranch: "main", config: { worker: { agent: "claude-code" } } });
-			h.agentCatalog = { agents: [agentReadiness("claude-code", "Claude Code", { authentication: "unauthorized" })] };
-			h.get.mockImplementation(async () => ({ data: claudeCatalog({ warning: expiredDetail, warningCode: "auth_required" }) }));
-			h.cloudCreateSession.mockResolvedValue({ session: { id: "session-1" } });
-			const onCreated = vi.fn();
-			render(<Wrap><TaskComposer projectId="cloud-1" onCreated={onCreated} /></Wrap>);
 
-			const notice = await screen.findByTestId("model-catalog-notice");
-			expect(notice).toHaveTextContent("Cloud tasks use your cloud connection and can still start.");
-			expect(notice).not.toHaveClass("text-warning");
-			expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-			fireEvent.change(task(), { target: { value: "Do the work" } });
-			await waitForTaskReady();
-			fireEvent.click(startTask());
-			await waitFor(() => expect(h.cloudCreateSession).toHaveBeenCalled());
-		});
-
-		it("shows no local-login notice on a cloud project whose agent is connected for cloud", async () => {
-			h.cloudProjects.push({ id: "cloud-1", displayName: "Cloud", repositoryUrl: "https://example.com/repo", defaultBranch: "main", config: { worker: { agent: "claude-code" } } });
-			h.agentCatalog = { agents: [agentReadiness("claude-code", "Claude Code", { authentication: "unauthorized" })] };
-			h.get.mockImplementation(async () => ({ data: claudeCatalog({ warning: expiredDetail, warningCode: "auth_required" }) }));
-			const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-			queryClient.setQueryData(providerConnectionsQueryKey, [
-				{ id: "c-1", provider: "claude-code", label: "default", validationState: "valid", config: { credentialType: "oauth" } },
-			]);
-			render(<Wrap queryClient={queryClient}><TaskComposer projectId="cloud-1" onCreated={vi.fn()} /></Wrap>);
-			await screen.findByRole("textbox", { name: "Task" });
-			await waitFor(() => expect(h.get).toHaveBeenCalled());
-			expect(screen.queryByTestId("model-catalog-notice")).not.toBeInTheDocument();
-		});
 
 		it("re-reads the catalog by itself once the agent reads as logged in", async () => {
 			h.agentCatalog = { agents: [agentReadiness("claude-code", "Claude Code", { authentication: "unauthorized" })] };

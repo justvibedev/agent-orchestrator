@@ -1,11 +1,9 @@
-import { Activity, BadgeCheck, Bot, CircleHelp, CreditCard, Globe2, Keyboard, Server, Settings2, Smartphone, type LucideIcon } from "lucide-react";
+import { Activity, BadgeCheck, Bot, CircleHelp, Globe2, Keyboard, Server, Settings2, Smartphone, type LucideIcon } from "lucide-react";
 import { lazy, type ReactNode } from "react";
 import type { TFunction } from "i18next";
 import type { GlobalSettingsSection, HarnessDiagnosticsRequest } from "../../stores/ui-store";
-import { BillingSection } from "./BillingSection";
 import { BrowserDownloadsSection } from "./BrowserDownloadsSection";
 import { BrowserProfilesSection } from "./BrowserProfilesSection";
-import { CoderSettingsSection } from "./CoderSettingsSection";
 import { CodexAccountsSection } from "./CodexAccountsSection";
 import { ConnectMobileContent } from "./ConnectMobileContent";
 import { GeneralSettingsSection } from "./GeneralSettingsSection";
@@ -25,17 +23,11 @@ const MemoryDiagnostics = lazy(async () => {
 
 
 type CatalogContext = {
-	cloudEnabled: boolean;
 	developerMode: boolean;
 	/** Developer mode with the Diagnostics toggle on — gates the memory and CPU page. */
 	diagnostics: boolean;
-	/** The org holds the coder capability: gates the bring-your-own-Coder page. */
-	customCoder: boolean;
-	/** The org is on self-serve billing: gates the Upgrade (plans and usage) page. */
-	selfServeBilling: boolean;
 	focusAgentId?: string;
 	hostId?: string;
-	harnessView?: "local" | "cloud";
 	startLogin?: boolean;
 	showDiagnostics?: HarnessDiagnosticsRequest;
 	/** One page is shown, under its own title: a first heading that only
@@ -66,7 +58,7 @@ const globalSettingsCatalog: SettingsCatalogItem[] = [
 		id: "harness",
 		icon: Bot,
 		label: (t) => t("settings.harness"),
-		render: (_t, titleHidden, { focusAgentId, hostId, harnessView, startLogin, showDiagnostics }) => <HarnessSettingsSection focusAgentId={focusAgentId} {...(hostId ? { hostId } : {})} {...(harnessView ? { initialView: harnessView } : {})} {...(startLogin ? { startLogin } : {})} {...(showDiagnostics ? { showDiagnostics } : {})} titleHidden={titleHidden} />,
+		render: (_t, titleHidden, { focusAgentId, hostId, startLogin, showDiagnostics }) => <HarnessSettingsSection focusAgentId={focusAgentId} {...(hostId ? { hostId } : {})} {...(startLogin ? { startLogin } : {})} {...(showDiagnostics ? { showDiagnostics } : {})} titleHidden={titleHidden} />,
 	},
 	{
 		id: "agents",
@@ -78,13 +70,6 @@ const globalSettingsCatalog: SettingsCatalogItem[] = [
 		render: (_t, titleHidden) => <CodexAccountsSection titleHidden={titleHidden} />,
 	},
 	{
-		id: "billing",
-		icon: CreditCard,
-		label: (t) => t("settings.billing.navLabel"),
-		visible: ({ cloudEnabled, selfServeBilling }) => cloudEnabled && selfServeBilling,
-		render: (_t, titleHidden, { singlePage }) => <BillingSection titleHidden={titleHidden || Boolean(singlePage)} />,
-	},
-	{
 		id: "browserProfiles",
 		icon: Globe2,
 		label: (t) => t("settings.browserProfiles"),
@@ -94,13 +79,6 @@ const globalSettingsCatalog: SettingsCatalogItem[] = [
 				<BrowserDownloadsSection />
 			</>
 		),
-	},
-	{
-		id: "coder",
-		icon: Server,
-		label: (t) => t("settings.coder.navLabel"),
-		visible: ({ cloudEnabled, customCoder }) => cloudEnabled && customCoder,
-		render: (_t, titleHidden, { singlePage }) => <CoderSettingsSection titleHidden={titleHidden || Boolean(singlePage)} />,
 	},
 	{
 		id: "remoteHosts",

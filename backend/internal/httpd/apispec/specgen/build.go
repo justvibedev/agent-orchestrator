@@ -1027,17 +1027,6 @@ func shellTerminalOperations() []operation {
 			},
 		},
 		{
-			method: http.MethodPatch, path: "/api/v1/settings/cloud-offering", id: "updateCloudOffering", tag: "settings",
-			summary: "Turn the cloud offering on or off for this machine",
-			reqBody: controllers.UpdateCloudOfferingRequest{},
-			resps: []respUnit{
-				{http.StatusOK, controllers.SettingsResponse{}},
-				{http.StatusBadRequest, envelope.APIError{}},
-				{http.StatusInternalServerError, envelope.APIError{}},
-				{http.StatusNotImplemented, envelope.APIError{}},
-			},
-		},
-		{
 			method: http.MethodPatch, path: "/api/v1/settings/chat-hibernation", id: "updateChatHibernation", tag: "settings",
 			summary: "Turn idle Chat hibernation on or off for this machine",
 			reqBody: controllers.UpdateChatHibernationRequest{},
@@ -2097,14 +2086,6 @@ func agentOperations() []operation {
 // 1:1 with the routes mountMobile registers (enforced by the parity test).
 func mobileOperations() []operation {
 	return []operation{
-		{
-			method: http.MethodPost, path: "/api/v1/remote-host/account-token", id: "issueRemoteHostAccountToken", tag: "mobile",
-			summary: "Issue a host-scoped account credential using the pairing password",
-			resps: []respUnit{
-				{http.StatusOK, controllers.RemoteHostAccountTokenResponse{}},
-				{http.StatusForbidden, envelope.APIError{}},
-			},
-		},
 		{
 			method: http.MethodGet, path: "/api/v1/mobile/status", id: "getMobileStatus", tag: "mobile",
 			summary: "Check whether Connect Mobile's LAN bridge is enabled",

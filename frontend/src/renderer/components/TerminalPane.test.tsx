@@ -11,10 +11,9 @@ import type { TerminalTarget } from "../types/terminal";
 import type { WorkspaceSession } from "../types/workspace";
 import { useUiStore } from "../stores/ui-store";
 import {
-	cloudTerminalKind,
 	TerminalCacheProvider,
 	TerminalPane,
-	providerScrollsByKeyboard,
+	providerScrollsByKeyboard
 } from "./TerminalPane";
 import { TooltipProvider } from "./ui/tooltip";
 
@@ -30,8 +29,6 @@ const {
 	replaySettled,
 	hasAttached,
 	terminalSessionOptions,
-	cloudMuxOptions,
-	cloudTicketMock,
 	xtermMounts,
 	xtermUnmounts,
 	xtermFocusRequests,
@@ -52,14 +49,8 @@ const {
 			coverInitialReplay?: boolean;
 			createMux?: () => unknown;
 			exitNotice?: string;
-			waitForInitialOutput?: boolean;
 			shellTerminalHandleId?: string;
 		}>,
-		cloudMuxOptions: [] as Array<{
-			kind: "agent" | "workspace";
-			mintTicket: (kind: "agent" | "workspace") => Promise<string>;
-		}>,
-		cloudTicketMock: vi.fn(async () => ({ ticket: "ticket" })),
 		xtermMounts: { value: 0 },
 		xtermUnmounts: { value: 0 },
 		xtermFocusRequests: { value: 0 },
@@ -68,20 +59,7 @@ const {
 );
 let terminalLinkHandler: ((uri: string) => void) | undefined;
 
-vi.mock("../hooks/useCloudCp", () => ({
-	useCloudCp: () => ({
-		baseUrl: "https://cloud.example.test",
-		client: { createTerminalTicket: cloudTicketMock },
-		ready: true,
-	}),
-}));
 
-vi.mock("../lib/cloud-terminal-mux", () => ({
-	createCloudTerminalMux: (options: { kind: "agent" | "workspace"; mintTicket: () => Promise<string> }) => {
-		cloudMuxOptions.push(options);
-		return {};
-	},
-}));
 
 vi.mock("../lib/api-client", () => ({
 	apiClient: {
@@ -148,7 +126,7 @@ vi.mock("./XtermTerminal", () => ({
 vi.mock("../hooks/useTerminalSession", () => ({
 	useTerminalSession: (
 		_session: WorkspaceSession | undefined,
-		options: { coverInitialReplay?: boolean; createMux?: () => unknown; exitNotice?: string; waitForInitialOutput?: boolean; shellTerminalHandleId?: string },
+		options: { coverInitialReplay?: boolean; createMux?: () => unknown; exitNotice?: string; shellTerminalHandleId?: string },
 	) => {
 		terminalSessionOptions.push(options);
 		return {
@@ -191,8 +169,6 @@ beforeEach(() => {
 	hasAttached.value = false;
 	terminalLinkHandler = undefined;
 	terminalSessionOptions.length = 0;
-	cloudMuxOptions.length = 0;
-	cloudTicketMock.mockClear();
 	attachMock.mockClear();
 	prepareForActivationMock.mockReset();
 	prepareForActivationMock.mockResolvedValue(undefined);
@@ -206,105 +182,13 @@ beforeEach(() => {
 	useUiStore.setState({ inspectorSessions: {} });
 });
 
-describe("cloud terminal routing", () => {
-	it("uses an agent stream for the session terminal and a workspace stream for shell tabs", () => {
-		expect(cloudTerminalKind({ kind: "worker" })).toBe("agent");
-		expect(
-			cloudTerminalKind({
-				kind: "shell",
-				handleId: "cloud-shell-1",
-				generation: "2026-09-01T00:00:00Z",
-				sessionId: "cloud-session",
-				title: "Terminal 1",
-			}),
-		).toBe("workspace");
-	});
 
-	it("mints a workspace ticket for a cloud shell tab", async () => {
-		const cloudSession = {
-			...worker,
-			cloud: { orgId: "cloud-org" },
-			terminalHandleId: "cloud-session",
-		} satisfies WorkspaceSession;
-		const shell = {
-			cloud: { orgId: "cloud-org" },
-			createdAt: "2026-09-01T00:00:00Z",
-			handleId: "cloud-shell-1",
-			projectId: "proj-1",
-			sessionId: cloudSession.id,
-			title: "Terminal 1",
-			workingDir: "/workspace/repository",
-		} satisfies ShellTerminal;
-		const target = {
-			kind: "shell",
-			handleId: shell.handleId,
-			generation: shell.createdAt,
-			sessionId: cloudSession.id,
-			title: shell.title,
-		} satisfies TerminalTarget;
-		const view = renderCachedPane({
-			session: cloudSession,
-			sessions: [cloudSession],
-			shellTerminals: [shell],
-			terminalTarget: target,
-		});
-		try {
-			const createMux = [...terminalSessionOptions].reverse().find(
-				(options) => options.shellTerminalHandleId === shell.handleId,
-			)?.createMux;
-			expect(createMux).toBeTypeOf("function");
-			const before = cloudMuxOptions.length;
-			createMux?.();
-			expect(cloudMuxOptions).toHaveLength(before + 1);
-			expect(cloudMuxOptions.at(-1)?.kind).toBe("workspace");
-			await cloudMuxOptions.at(-1)?.mintTicket("workspace");
-			expect(cloudTicketMock).toHaveBeenCalledWith("cloud-org", cloudSession.id, {
-				kind: "workspace",
-			});
-		} finally {
-			view.restore();
-		}
-	});
-});
-
-describe("TerminalPane Cloud reviewer connections", () => {
-	it("dials each Cloud reviewer through the control plane by its own terminal ID", async () => {
-		const cloudSession = { ...worker, cloud: { orgId: "cloud-org" } } as WorkspaceSession;
-		const reviewer = (handleId: string) => ({ kind: "reviewer", handleId, harness: "codex", sessionId: cloudSession.id }) satisfies TerminalTarget;
-		const connect = async () => {
-			// A reviewer pane mounts fresh, outside the retained cache, yet must not
-			// fall back to the local daemon mux.
-			await waitFor(() => expect(terminalSessionOptions.at(-1)?.createMux).toBeTypeOf("function"));
-			terminalSessionOptions.at(-1)?.createMux?.();
-			await cloudMuxOptions.at(-1)?.mintTicket("agent");
-			return (cloudTicketMock.mock.calls.at(-1) as unknown[] | undefined)?.[2];
-		};
-		const view = renderCachedPane({ session: cloudSession, sessions: [cloudSession], terminalTarget: reviewer("reviewer-1") });
-		try {
-			expect(await connect()).toEqual({ kind: "agent", terminalId: "reviewer-1" });
-			view.show(cloudSession, reviewer("reviewer-2"));
-			expect(await connect()).toEqual({ kind: "agent", terminalId: "reviewer-2" });
-		} finally {
-			view.restore();
-		}
-	});
-
-	it("keeps local reviewer panes on the local daemon", () => {
-		const view = renderCachedPane({ session: worker, sessions: [worker], terminalTarget: { kind: "reviewer", handleId: "local-reviewer", harness: "codex", sessionId: worker.id } });
-		try {
-			expect(terminalSessionOptions.at(-1)?.createMux).toBeUndefined();
-		} finally {
-			view.restore();
-		}
-	});
-});
 
 function renderPane(
 	session?: WorkspaceSession,
 	inputRequest?: { id: number; data: string },
 	onInputRequestResult?: (id: number, accepted: boolean) => void,
 	terminalTarget?: TerminalTarget,
-	onTerminalContentReadyChange?: (ready: boolean) => void,
 ) {
 	const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 	const previousAO = window.ao;
@@ -317,7 +201,6 @@ function renderPane(
 					fontSize={12}
 					inputRequest={inputRequest}
 					onInputRequestResult={onInputRequestResult}
-					onTerminalContentReadyChange={onTerminalContentReadyChange}
 					session={session}
 					terminalTarget={terminalTarget}
 					theme="dark"
@@ -548,46 +431,6 @@ describe("TerminalPane empty states", () => {
 		}
 	});
 
-	it("refreshes cloud review state without showing a false terminal-ended banner", async () => {
-		const previousAO = window.ao;
-		window.ao = {} as typeof window.ao;
-		terminalState.value = "exited";
-		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-		const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries");
-		const cloudSession = {
-			...worker,
-			cloud: { orgId: "cloud-org" },
-		} satisfies WorkspaceSession;
-		try {
-			render(
-				<QueryClientProvider client={queryClient}>
-					<TerminalPane
-						daemonReady
-						fontSize={12}
-						session={cloudSession}
-						terminalTarget={{
-							handleId: "reviewer-1",
-							harness: "codex",
-							kind: "reviewer",
-							reviewStatus: "running",
-							sessionId: cloudSession.id,
-						}}
-						theme="dark"
-					/>
-				</QueryClientProvider>,
-			);
-
-			await waitFor(() =>
-				expect(invalidateQueries).toHaveBeenCalledWith({
-					queryKey: ["cloud-session-reviews"],
-				}),
-			);
-			expect(screen.queryByText("Terminal ended")).not.toBeInTheDocument();
-			expect(screen.queryByText("Review terminal has ended.")).not.toBeInTheDocument();
-		} finally {
-			window.ao = previousAO;
-		}
-	});
 
 	it("uses the full top, right, and bottom extent for the terminal grid", () => {
 		const view = renderPane({ ...worker, terminalHandleId: "term-1" });
@@ -720,48 +563,7 @@ describe("TerminalPane replay cover", () => {
 		}
 	});
 
-	it("keeps Cloud startup on Connecting until the agent terminal draws", () => {
-		replaySettled.value = false;
-		const view = renderPane({ ...worker, terminalHandleId: "term-1", cloud: { orgId: "org-1" } });
-		try {
-			// Before the first attach, a cloud terminal shows the single opaque
-			// connecting cover (not the replay cover), with a bare "Connecting".
-			expect(screen.getByTestId("terminal-connecting-cover")).toHaveTextContent("Connecting");
-			expect(terminalSessionOptions.at(-1)?.waitForInitialOutput).toBe(true);
-		} finally {
-			view.restore();
-		}
-	});
 
-	it("reports the cloud agent ready only after its first replay is painted", async () => {
-		const onContentReady = vi.fn();
-		let finishPaint: (() => void) | undefined;
-		prepareForActivationMock.mockImplementation(() => new Promise<void>((resolve) => { finishPaint = resolve; }));
-		terminalState.value = "attached";
-		hasAttached.value = true;
-		replaySettled.value = false;
-		const session = { ...worker, terminalHandleId: "term-1", cloud: { orgId: "org-1" } };
-		const view = renderPane(session, undefined, undefined, undefined, onContentReady);
-		try {
-			expect(onContentReady).toHaveBeenLastCalledWith(false);
-			replaySettled.value = true;
-			view.rerender(
-				<QueryClientProvider client={view.queryClient}>
-					<TooltipProvider>
-						<TerminalPane daemonReady fontSize={12} onTerminalContentReadyChange={onContentReady} session={session} theme="dark" />
-					</TooltipProvider>
-				</QueryClientProvider>,
-			);
-			expect(onContentReady).toHaveBeenLastCalledWith(false);
-			await act(async () => finishPaint?.());
-			expect(onContentReady).toHaveBeenLastCalledWith(false);
-			expect(screen.getByTestId("terminal-connecting-cover")).toBeInTheDocument();
-			act(() => visibleContentCallback.value?.());
-			await waitFor(() => expect(onContentReady).toHaveBeenLastCalledWith(true));
-		} finally {
-			view.restore();
-		}
-	});
 
 	it("uncovers once the replay has settled", () => {
 		replaySettled.value = true;
@@ -1033,43 +835,6 @@ describe("TerminalCacheProvider", () => {
 		}
 	});
 
-	it("adopts a fresh cloud worker's first epoch in place without remounting", async () => {
-		// A fresh cloud worker attaches before its sandbox is up, while the epoch is
-		// still unknown; the moment the worker comes online the polled epoch flips
-		// from undefined to its first value. That must NOT remount the just-attached
-		// pane, which the user would see as connected -> blank -> terminal.
-		const cloud = { orgId: "cloud-org" } as const;
-		const connecting = { ...sessionA, cloud, terminalGeneration: undefined };
-		const online = { ...connecting, terminalGeneration: "5605" };
-		const view = renderCachedPane({ session: connecting, sessions: [connecting] });
-		try {
-			const terminal = await waitFor(() => activeXterm());
-			expect(xtermMounts.value).toBe(1);
-			act(() => {
-				view.queryClient.setQueryData(workspaceQueryKey, workspaceWithSessions([online]));
-			});
-			view.show(online);
-			// The reconcile loop runs on the query update; adoption is synchronous, so
-			// no remount and no second attach should ever occur.
-			expect(activeXterm()).toBe(terminal);
-			expect(xtermMounts.value).toBe(1);
-			expect(xtermUnmounts.value).toBe(0);
-			expect(attachMock).toHaveBeenCalledTimes(1);
-
-			// A genuine later epoch advance (idle-resume) still re-mints, proving the
-			// adopted epoch was recorded rather than ignored.
-			const resumed = { ...online, terminalGeneration: "5606" };
-			act(() => {
-				view.queryClient.setQueryData(workspaceQueryKey, workspaceWithSessions([resumed]));
-			});
-			view.show(resumed);
-			await waitFor(() => expect(activeXterm()).not.toBe(terminal));
-			expect(xtermMounts.value).toBe(2);
-			expect(attachMock).toHaveBeenCalledTimes(2);
-		} finally {
-			view.restore();
-		}
-	});
 
 	it("disposes parked entries when their session is removed", async () => {
 		const view = renderCachedPane({ session: sessionA, sessions: [sessionA, sessionB] });
@@ -1231,16 +996,6 @@ describe("TerminalCacheProvider", () => {
 });
 
 describe("terminal restore", () => {
-	it("does not show the terminal-ended strip for a Cloud agent", () => {
-		terminalState.value = "exited";
-		const view = renderPane({ ...worker, cloud: { orgId: "org-1" }, terminalHandleId: "term-1" });
-		try {
-			expect(screen.queryByText("This terminal process ended, but the session is not marked terminated yet.")).not.toBeInTheDocument();
-			expect(screen.queryByText("TERMINAL ENDED")).not.toBeInTheDocument();
-		} finally {
-			view.restore();
-		}
-	});
 
 	it.each([
 		["exited", undefined],
@@ -1322,21 +1077,6 @@ describe("terminal restore", () => {
 			},
 		);
 
-		// Cloud sessions recover through the control plane; the local daemon has
-		// never heard of them, so this button must not appear for one.
-		it("does not offer resume for a cloud session", () => {
-			terminalState.value = "exited";
-			const view = renderPane({
-				...worker,
-				...exited,
-				cloud: { orgId: "org-1" },
-			});
-			try {
-				expect(screen.queryByRole("button", { name: "Resume agent" })).not.toBeInTheDocument();
-			} finally {
-				view.restore();
-			}
-		});
 
 		it("offers restore and not resume once the row is terminated", () => {
 			terminalState.value = "exited";

@@ -3467,19 +3467,10 @@ type SettingsResponse struct {
 	Client string `json:"client"`
 	// LocalEnabled reports whether the local offering is available.
 	LocalEnabled bool `json:"localEnabled"`
-	// CloudOffering is the user's persisted cloud toggle (Settings, Developer
-	// Mode). Distinct from CloudEnabled, which is the effective gate.
-	CloudOffering bool `json:"cloudOffering"`
 	// ChatHibernationEnabled is the developer-mode gate for idle Chat process shutdown.
 	ChatHibernationEnabled bool `json:"chatHibernationEnabled"`
 	// VersionRefresh moves idle open sessions to a harness release installed while they ran.
 	VersionRefresh bool `json:"versionRefresh" description:"After a harness update, idle open sessions restart on the new release instead of running the old one until they happen to restart."`
-	// CloudEnabled reports whether the cloud offering is effectively available:
-	// the user's toggle (or the env override) plus a configured control plane.
-	CloudEnabled bool `json:"cloudEnabled"`
-	// CloudControlPlaneURL is the cloud control plane base URL; empty when no
-	// control plane is configured.
-	CloudControlPlaneURL string `json:"cloudControlPlaneUrl"`
 	// TrackerIntakeEnabled reports the AO_TRACKER_INTAKE gate, so a client can
 	// avoid offering a per-project intake control the daemon will ignore.
 	TrackerIntakeEnabled bool `json:"trackerIntakeEnabled"`
@@ -3500,12 +3491,6 @@ type UpdateHarnessDefaultRequest struct {
 	// DisabledModels lists the model ids (each up to 256 characters) clients
 	// should leave out of their pickers. An empty list offers every catalog model.
 	DisabledModels *[]string `json:"disabledModels" required:"true" maxItems:"20000"`
-}
-
-// UpdateCloudOfferingRequest flips the user's cloud toggle.
-type UpdateCloudOfferingRequest struct {
-	// Enabled turns the cloud offering on or off for this machine's user.
-	Enabled *bool `json:"enabled"`
 }
 
 // UpdateVersionRefreshRequest flips whether open sessions move to new harness releases.

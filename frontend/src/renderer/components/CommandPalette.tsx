@@ -4,12 +4,10 @@ import { ArrowLeft, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type AnimationEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useCommandPaletteEnabled } from "../hooks/useCommandPaletteEnabled";
-import { useCloudCp } from "../hooks/useCloudCp";
 import { useRestoreSession } from "../hooks/useRestoreSession";
-import { cloudSessionsQueryKey, useWorkspaceQuery, workspaceQueryKey } from "../hooks/useWorkspaceQuery";
+import { useWorkspaceQuery, workspaceQueryKey } from "../hooks/useWorkspaceQuery";
 import { apiClient, apiErrorMessage } from "../lib/api-client";
 import { aoBridge } from "../lib/bridge";
-import { spawnCloudOrchestrator } from "../lib/cloud-orchestrator";
 import {
 	buildCommands,
 	buildFileSessionCommands,
@@ -26,7 +24,6 @@ import {
 } from "../lib/command-palette";
 import {
 	type CommandPaletteFileSearchResponse,
-	commandPaletteFileSearchAvailable,
 	commandPaletteFileSearchQueryOptions,
 } from "../lib/command-palette-file-search";
 import { iconForCommand } from "../lib/command-palette-icons";
@@ -65,7 +62,6 @@ export function CommandPalette() {
 	const enabled = useCommandPaletteEnabled();
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
-	const cloud = useCloudCp();
 	const restoreSessionById = useRestoreSession();
 	const params = useParams({ strict: false }) as { hostId?: string; projectId?: string; sessionId?: string };
 	const { cloneProject, createProject, initializeProjectRepository } = useShell();
@@ -145,12 +141,11 @@ export function CommandPalette() {
 	const normalizedFileQuery = debouncedQuery.trim();
 	const fileSearchEnabled = isOpen
 		&& normalizedFileQuery.length >= PALETTE_FILE_SEARCH_MIN_CHARS
-		&& commandPaletteFileSearchAvailable(activeFileTarget, cloud.ready);
+		&& activeFileTarget !== undefined;
 	const fileSearchOptions = commandPaletteFileSearchQueryOptions({
 		target: activeFileTarget ?? { projectId: "", sessionId: "" },
 		query: normalizedFileQuery,
 		errorMessage: t("command.searchFilesError"),
-		cloud,
 	});
 	const fileSearchQuery = useQuery<CommandPaletteFileSearchResponse>({ ...fileSearchOptions, enabled: fileSearchEnabled });
 
@@ -426,7 +421,7 @@ export function CommandPalette() {
 					void navigate({ to: target.to, params: target.params });
 					break;
 				case "/projects/$projectId/settings":
-					useUiStore.getState().openProjectSettings(target.params.projectId, { cloudOrgId: workspaces.find((workspace) => workspace.id === target.params.projectId)?.cloudOrgId });
+					useUiStore.getState().openProjectSettings(target.params.projectId);
 					break;
 				case "/projects/$projectId/sessions/$sessionId":
 				case "/host/$hostId/project/$projectId/session/$sessionId":
@@ -475,16 +470,6 @@ export function CommandPalette() {
 				return;
 			}
 			const workspace = workspaces.find((candidate) => candidate.id === projectId);
-			// Cloud projects carry no local orchestrator-agent config; spawn the
-			// orchestrator as a cloud session in its own sandbox instead of falling
-			// through to the project-settings page.
-			if (workspace?.kind === "cloud") {
-				const sessionId = await spawnCloudOrchestrator(queryClient, projectId);
-				await queryClient.invalidateQueries({ queryKey: cloudSessionsQueryKey });
-				navigateToTarget(sessionRoute(projectId, sessionId));
-				closePalette();
-				return;
-			}
 			if (!hasConfiguredOrchestratorAgent(workspace)) {
 				if (workspace) {
 					navigateToTarget({ to: "/projects/$projectId/settings", params: { projectId } });

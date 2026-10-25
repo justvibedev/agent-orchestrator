@@ -1,17 +1,14 @@
 import { useCallback, useSyncExternalStore } from "react";
 import { type QueryClient, useMutation, useMutationState, useQueryClient } from "@tanstack/react-query";
 import type { WorkspaceSession, WorkspaceSummary } from "../types/workspace";
-import { cloudSessionsQueryKey, workspaceQueryKeyForHost } from "./useWorkspaceQuery";
+import { workspaceQueryKeyForHost } from "./useWorkspaceQuery";
 import {
 	applyTerminatedSession,
 	clearOptimisticSessionKill,
 	trackOptimisticSessionKill,
 } from "./optimistic-session-kills";
 import { apiClient, apiErrorMessage } from "../lib/api-client";
-import { createRendererCloudCpClient } from "./useCloudCp";
 import { useTranslation } from "react-i18next";
-import { settingsQueryKey, type Settings } from "./useSettings";
-import type { CloudCpSession } from "../lib/cloud-cp";
 import { clientForHost } from "../lib/host-clients";
 import { LOCAL_HOST, refKey } from "../lib/hosts";
 import { useUiStore } from "../stores/ui-store";
@@ -32,15 +29,7 @@ export const terminateSessionMutationKey = ["terminate-session"] as const;
 export type TerminateSessionRequest = WorkspaceSession & { deleteArtifacts?: boolean };
 
 /** Resolves to whether the daemon confirmed it deleted the artifacts. */
-async function terminateSession(queryClient: QueryClient, session: TerminateSessionRequest): Promise<boolean> {
-	if (session.cloud) {
-		const settings = queryClient.getQueryData<Settings>(settingsQueryKey);
-		const baseUrl = settings?.cloudControlPlaneUrl ?? "";
-		if (baseUrl === "") throw new Error("The cloud control plane is not configured.");
-		await createRendererCloudCpClient(baseUrl).deleteSession(session.cloud.orgId, session.id);
-		return false;
-	}
-
+async function terminateSession(session: TerminateSessionRequest): Promise<boolean> {
 	const { data, error, response } = await (session.hostId ? clientForHost(session.hostId) : apiClient).POST("/api/v1/sessions/{sessionId}/kill", {
 		params: { path: { sessionId: session.id } },
 		body: session.deleteArtifacts ? { deleteArtifacts: true } : undefined,
@@ -52,21 +41,10 @@ async function terminateSession(queryClient: QueryClient, session: TerminateSess
 	return data?.artifactsDeleted === true;
 }
 
-// The merged board recomputes cloud cards from cloudSessionsQueryKey, NOT from
-// workspaceQueryKey, so a cloud kill must flip the raw CloudCpSession too or the
-// card sits still until the round trip refetches (the "nothing happened, click
-// again" symptom). Snapshot every matching cache entry so onError can roll back.
 type WorkspaceSnapshot = [readonly unknown[], WorkspaceSummary[] | undefined];
-type CloudSnapshot = [readonly unknown[], CloudCpSession[] | undefined];
-
-function markCloudSessionTerminated(sessionId: string) {
-	return (session: CloudCpSession): CloudCpSession =>
-		session.id === sessionId ? { ...session, isTerminated: true, status: "terminated" } : session;
-}
 
 type TerminateMutationContext = {
 	workspace: WorkspaceSnapshot | undefined;
-	cloud: CloudSnapshot[];
 };
 
 type TerminateSessionMutationState = {
@@ -118,7 +96,7 @@ export function useTerminateSession(options: TerminateSessionOptions = {}) {
 		mutationKey: terminateSessionMutationKey,
 		mutationFn: async (session: TerminateSessionRequest) => {
 
-			return terminateSession(queryClient, session);
+			return terminateSession(session);
 		},
 		// Navigate and archive the card on the click, not on the round trip: the
 		// delete is slow (daemon kill or CP delete + sandbox teardown), and a row
@@ -140,18 +118,7 @@ export function useTerminateSession(options: TerminateSessionOptions = {}) {
 			queryClient.setQueryData<WorkspaceSummary[]>(queryKey, (workspaces) =>
 				applyTerminatedSession(workspaces, session.id, session.hostId),
 			);
-			const cloud: CloudSnapshot[] = [];
-			if (session.cloud) {
-				await queryClient.cancelQueries({ queryKey: cloudSessionsQueryKey });
-				for (const [key, sessions] of queryClient.getQueriesData<CloudCpSession[]>({
-					queryKey: cloudSessionsQueryKey,
-				})) {
-					cloud.push([key, sessions]);
-					if (!sessions?.some((s) => s.id === session.id)) continue;
-					queryClient.setQueryData<CloudCpSession[]>(key, sessions.map(markCloudSessionTerminated(session.id)));
-				}
-			}
-			return { workspace, cloud };
+			return { workspace };
 		},
 		onSuccess: async (artifactsDeleted, session) => {
 			// The archive stands either way. A failed delete, or a host whose daemon
@@ -165,9 +132,6 @@ export function useTerminateSession(options: TerminateSessionOptions = {}) {
 				applyTerminatedSession(workspaces, session.id, session.hostId),
 			);
 			await queryClient.invalidateQueries({ queryKey });
-			// A cloud kill also lives in the cloud sessions query, which the board
-			// merges in separately, so refresh it too.
-			if (session.cloud) await queryClient.invalidateQueries({ queryKey: cloudSessionsQueryKey });
 			options.onSuccess?.(session);
 		},
 		onError: (_error, session, context) => {
@@ -176,7 +140,6 @@ export function useTerminateSession(options: TerminateSessionOptions = {}) {
 			clearOptimisticSessionKill(session.id, session.hostId);
 			const ctx = context as TerminateMutationContext | undefined;
 			if (ctx?.workspace) queryClient.setQueryData(ctx.workspace[0], ctx.workspace[1]);
-			for (const [key, sessions] of ctx?.cloud ?? []) queryClient.setQueryData(key, sessions);
 		},
 		onSettled: (_data, error, session) => {
 			if (!error) clearOptimisticSessionKill(session.id, session.hostId);

@@ -26,8 +26,6 @@ vi.mock("expo-constants", () => ({ default: { expoConfig: {} } }));
 vi.mock("expo-updates", () => ({ isEnabled: false, updateId: null, channel: null, runtimeVersion: "1", useUpdates: () => ({}) }));
 vi.mock("./icons", () => ({ Feather: "Feather" }));
 vi.mock("./api", () => ({ ApiError: class ApiError extends Error {}, pingServer: vi.fn() }));
-vi.mock("./account", () => ({ loadAccount: async () => null, signInToAccount: vi.fn(), signOutOfAccount: vi.fn() }));
-vi.mock("./accountHosts", () => ({ clearAccountHosts: vi.fn(), syncAccountHosts: vi.fn() }));
 vi.mock("./config", () => ({ isConfigured: () => false }));
 vi.mock("./hosts", () => ({ activeHost: async () => fixtures.hosts[0], loadHosts: async () => fixtures.hosts }));
 vi.mock("./disconnect", () => ({ forgetPairedHost: vi.fn(), forgetServer: vi.fn() }));

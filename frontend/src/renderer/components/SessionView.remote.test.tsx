@@ -23,8 +23,6 @@ vi.mock("@tanstack/react-router", async (importOriginal) => ({
 	useNavigate: () => vi.fn(),
 	useBlocker: () => undefined,
 }));
-vi.mock("../hooks/useCloudCp", () => ({ useCloudCp: () => ({ ready: false, baseUrl: "", client: {} }) }));
-vi.mock("../hooks/useCloudOrg", () => ({ useCloudOrg: () => ({ org: undefined, ready: false }) }));
 vi.mock("../lib/shell-context", () => ({ useShell: () => ({ daemonStatus: { state: "ready" } }) }));
 vi.mock("./ShellTopbar", () => ({ ShellTopbar: () => <div data-testid="shared-shell-topbar" /> }));
 vi.mock("./NotificationCenter", () => ({ NotificationCenter: () => <button aria-label="Notifications" type="button" /> }));

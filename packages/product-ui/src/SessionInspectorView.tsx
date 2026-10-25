@@ -275,9 +275,7 @@ export function SessionInspectorSummaryView({
 	pullRequestCards,
 	pullRequestTitle,
 	reviews,
-	scripts,
 	usage,
-	workers,
 }: {
 	activity: ReactNode;
 	activityTitle: string;
@@ -291,18 +289,10 @@ export function SessionInspectorSummaryView({
 	pullRequestCards?: ReactNode;
 	pullRequestTitle?: string;
 	reviews?: ReactNode;
-	/** The project's Setup and Cleanup runs (Cloud sessions), just before the activity. */
-	scripts?: ReactNode;
 	usage?: ReactNode;
-	/**
-	 * The sessions this orchestrator spawned. Rendered first: for an
-	 * orchestrator, its workers are the summary's primary content.
-	 */
-	workers?: ReactNode;
 }) {
 	return (
 		<div role="tabpanel">
-			{workers}
 			{context}
 			{branch}
 			{pullRequestTitle ? (
@@ -317,7 +307,6 @@ export function SessionInspectorSummaryView({
 			) : null}
 			{reviews}
 			{completion}
-			{scripts}
 			<InspectorSection title={activityTitle}>{activity}</InspectorSection>
 			{usage}
 		</div>

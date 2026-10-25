@@ -24,17 +24,14 @@ import (
 type Store interface {
 	GetAppSettings(ctx context.Context) (Snapshot, error)
 	SetDefaultSessionMode(ctx context.Context, mode domain.SessionMode, now time.Time) error
-	SetCloudOffering(ctx context.Context, enabled bool, now time.Time) error
 	SetHarnessDefault(ctx context.Context, agent domain.AgentHarness, value domain.HarnessDefault, now time.Time) error
 	SetVersionRefresh(ctx context.Context, enabled bool, now time.Time) error
 }
 
 // Snapshot is the current preference set.
 type Snapshot struct {
-	HarnessDefaults    map[string]domain.HarnessDefault
-	DefaultSessionMode domain.SessionMode
-	// CloudOffering is the user's cloud toggle (Settings, Developer Mode).
-	CloudOffering          bool
+	HarnessDefaults        map[string]domain.HarnessDefault
+	DefaultSessionMode     domain.SessionMode
 	ChatHibernationEnabled bool
 	// VersionRefresh moves idle open sessions to a harness release installed
 	// while they ran (Settings, General). On by default.
@@ -51,13 +48,6 @@ type Offering struct {
 	Client string
 	// LocalEnabled reports whether the local offering is available.
 	LocalEnabled bool
-	// CloudForced reports the AO_CLOUD_OFFERING env override: when set the
-	// cloud offering is on regardless of the user's toggle (dev/CI escape
-	// hatch). The normal path is the persisted Settings toggle.
-	CloudForced bool
-	// CloudControlPlaneURL is the cloud control plane base URL; empty when
-	// no control plane is configured.
-	CloudControlPlaneURL string
 	// TrackerIntakeEnabled reports the AO_TRACKER_INTAKE gate. Clients need it
 	// to avoid offering a per-project intake control the daemon will ignore.
 	TrackerIntakeEnabled bool
@@ -68,18 +58,8 @@ func OfferingFromConfig(cfg config.Config) Offering {
 	return Offering{
 		Client:               cfg.Client,
 		LocalEnabled:         cfg.LocalOffering,
-		CloudForced:          cfg.CloudOffering,
-		CloudControlPlaneURL: cfg.CloudControlPlaneURL,
 		TrackerIntakeEnabled: cfg.TrackerIntake,
 	}
-}
-
-// CloudEnabled resolves the effective cloud gate for one settings snapshot:
-// the user's toggle (or the env override), and a configured control plane.
-// A missing control-plane URL fails closed instead of surfacing broken cloud
-// UI.
-func (o Offering) CloudEnabled(snapshot Snapshot) bool {
-	return (o.CloudForced || snapshot.CloudOffering) && o.CloudControlPlaneURL != ""
 }
 
 // ChatCapability reports which harnesses can run in chat mode, so the UI can warn
@@ -178,15 +158,6 @@ func (s *Service) SetDefaultSessionMode(ctx context.Context, mode domain.Session
 		return Snapshot{}, fmt.Errorf("%w: %q", ports.ErrChatUnsupported, mode)
 	}
 	if err := s.store.SetDefaultSessionMode(ctx, mode, s.now()); err != nil {
-		return Snapshot{}, err
-	}
-	return s.Get(ctx)
-}
-
-// SetCloudOffering flips the user's cloud toggle. The effect is immediate for
-// new reads; nothing about running sessions changes.
-func (s *Service) SetCloudOffering(ctx context.Context, enabled bool) (Snapshot, error) {
-	if err := s.store.SetCloudOffering(ctx, enabled, s.now()); err != nil {
 		return Snapshot{}, err
 	}
 	return s.Get(ctx)

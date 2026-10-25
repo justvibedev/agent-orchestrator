@@ -202,7 +202,6 @@ export function SessionInterfaceSwitchButton({
 export function SessionInterfaceSwitchDialog({
 	open,
 	target,
-	requireExplicitTerminalStop,
 	waitingForInput,
 	busy,
 	error,
@@ -211,7 +210,6 @@ export function SessionInterfaceSwitchDialog({
 }: {
 	open: boolean;
 	target: SessionInterfaceMode;
-	requireExplicitTerminalStop?: boolean;
 	waitingForInput?: boolean;
 	busy?: boolean;
 	error?: string;
@@ -234,42 +232,31 @@ export function SessionInterfaceSwitchDialog({
 				</DialogHeader>
 
 				<div className="grid gap-2 px-5 py-4">
-					{requireExplicitTerminalStop ? (
-						<p className="text-xs leading-5 text-muted-foreground">
-							AO cannot verify whether this Terminal is idle. Nothing will stop until you confirm.
-							If work is underway, switching will interrupt it.
-						</p>
-					) : (
-						<button
-							type="button"
-							className="rounded-lg border border-border bg-background px-3.5 py-3 text-left transition-colors hover:border-border-strong hover:bg-muted disabled:opacity-50"
-							disabled={busy}
-							onClick={() => onChoose("drain")}
-						>
-							<strong className="block text-sm font-medium text-foreground">Finish work, then switch</strong>
-							<span className="mt-1 block text-xs leading-5 text-muted-foreground">
-								Wait for the running turn and anything already queued to finish. New AO messages wait safely
-								for {targetName}.
-							</span>
-						</button>
-					)}
+					<button
+						type="button"
+						className="rounded-lg border border-border bg-background px-3.5 py-3 text-left transition-colors hover:border-border-strong hover:bg-muted disabled:opacity-50"
+						disabled={busy}
+						onClick={() => onChoose("drain")}
+					>
+						<strong className="block text-sm font-medium text-foreground">Finish work, then switch</strong>
+						<span className="mt-1 block text-xs leading-5 text-muted-foreground">
+							Wait for the running turn and anything already queued to finish. New AO messages wait safely
+							for {targetName}.
+						</span>
+					</button>
 					<button
 						type="button"
 						className="rounded-lg border border-border bg-background px-3.5 py-3 text-left transition-colors hover:border-warning/60 hover:bg-muted disabled:opacity-50"
 						disabled={busy}
 						onClick={() => onChoose("interrupt")}
 					>
-						<strong className="block text-sm font-medium text-foreground">
-							{requireExplicitTerminalStop ? "Terminate and then switch" : "Stop now and switch"}
-						</strong>
+						<strong className="block text-sm font-medium text-foreground">Stop now and switch</strong>
 						<span className="mt-1 block text-xs leading-5 text-muted-foreground">
-							{requireExplicitTerminalStop
-								? "Stop the Terminal controller before switching. Any work still running will be interrupted. Files already changed remain in the worktree."
-								: "Cancel the running turn before switching. Files already changed remain in the worktree, but unfinished output and queued Chat turns are cancelled."}
+							Cancel the running turn before switching. Files already changed remain in the worktree, but unfinished output and queued Chat turns are cancelled.
 							{target === "chat" ? " Any unsent Terminal UI draft is discarded." : null}
 						</span>
 					</button>
-					{waitingForInput && !requireExplicitTerminalStop ? (
+					{waitingForInput ? (
 						<p className="text-[11px] leading-4 text-warning">
 							This turn is waiting for your input. “Finish work” will wait until you answer it; use “Stop
 							now” to switch immediately.

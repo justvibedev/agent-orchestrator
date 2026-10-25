@@ -21,7 +21,6 @@ const routeMocks = vi.hoisted(() => ({
 	startGitHubAuth: vi.fn(),
 	markAutoLoginOffered: vi.fn(),
 	closeTerminal: vi.fn(),
-	cloudEnabled: false,
 }));
 
 vi.mock("@tanstack/react-router", async (importOriginal) => ({
@@ -33,9 +32,6 @@ vi.mock("../hooks/useWorkspaceQuery", () => ({
 	useWorkspaceQuery: () => ({ data: routeMocks.workspaces, isSuccess: true }),
 }));
 
-vi.mock("../hooks/useCloudGate", () => ({
-	useCloudGate: () => ({ cloudEnabled: routeMocks.cloudEnabled }),
-}));
 
 vi.mock("../hooks/useSystemRequirementsGate", () => ({
 	useSystemRequirementsGate: () => ({ blocked: false, requirements: routeMocks.requirements, query: { refetch: vi.fn() } }),
@@ -92,7 +88,6 @@ beforeEach(() => {
 	routeMocks.startGitHubAuth.mockReset();
 	routeMocks.markAutoLoginOffered.mockReset();
 	routeMocks.closeTerminal.mockReset();
-	routeMocks.cloudEnabled = false;
 });
 
 describe("shell index route", () => {
@@ -105,7 +100,6 @@ describe("shell index route", () => {
 		expect(screen.getByRole("button", { name: "Open a local folder" })).toBeInTheDocument();
 		expect(screen.getByRole("button", { name: "Open a workspace" })).toBeInTheDocument();
 		expect(screen.getByRole("button", { name: "Start a standalone agent" })).toBeInTheDocument();
-		expect(screen.queryByRole("button", { name: "Clone to the cloud" })).not.toBeInTheDocument();
 		expect(routeMocks.navigate).not.toHaveBeenCalled();
 	});
 
@@ -116,48 +110,7 @@ describe("shell index route", () => {
 		expect(routeMocks.createProjectFlowProps?.sourceSignal?.source).toBe("clone");
 	});
 
-	it("swaps standalone for cloud project creation when Developer Mode and Cloud are enabled", () => {
-		useUiStore.setState({ developerMode: true });
-		routeMocks.cloudEnabled = true;
-		render(<HomePage />);
-
-		fireEvent.click(screen.getByRole("button", { name: "Clone to the cloud" }));
-		expect(routeMocks.createProjectFlowProps?.sourceSignal?.source).toBe("cloud");
-		expect(screen.queryByRole("button", { name: "Start a standalone agent" })).not.toBeInTheDocument();
-	});
-
-	it.each([
-		{ developerMode: false, cloudEnabled: true },
-		{ developerMode: true, cloudEnabled: false },
-	])("keeps standalone creation when either toggle is off: %j", ({ developerMode, cloudEnabled }) => {
-		useUiStore.setState({ developerMode });
-		routeMocks.cloudEnabled = cloudEnabled;
-		render(<HomePage />);
-
-		fireEvent.click(screen.getByRole("button", { name: "Start a standalone agent" }));
-		expect(useUiStore.getState().newTaskRequest?.projectId).toBe(STANDALONE_WORKSPACE_ID);
-		expect(screen.queryByRole("button", { name: "Clone to the cloud" })).not.toBeInTheDocument();
-	});
-
-	it("shows cloud creation when standalone sessions exist without a registered project", () => {
-		useUiStore.setState({ developerMode: true });
-		routeMocks.cloudEnabled = true;
-		routeMocks.workspaces = [{
-			id: STANDALONE_WORKSPACE_ID,
-			name: "Scratchpad",
-			kind: STANDALONE_PROJECT_KIND,
-			path: "Not attached to a project",
-			sessions: [standaloneSession({})],
-		}];
-		render(<HomePage />);
-
-		fireEvent.click(screen.getByRole("button", { name: "Clone to the cloud" }));
-		expect(routeMocks.createProjectFlowProps?.sourceSignal?.source).toBe("cloud");
-	});
-
 	it("renders the home page instead of redirecting to a scratch board when projects exist", async () => {
-		useUiStore.setState({ developerMode: true });
-		routeMocks.cloudEnabled = true;
 		routeMocks.workspaces = [
 			{
 				id: "scratch",
@@ -171,8 +124,7 @@ describe("shell index route", () => {
 		render(<HomePage />);
 
 		expect(screen.getByText("Jump back right in")).toBeInTheDocument();
-		expect(screen.getByRole("button", { name: "Clone to the cloud" })).toBeInTheDocument();
-		expect(screen.queryByRole("button", { name: "Start a standalone agent" })).not.toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Start a standalone agent" })).toBeInTheDocument();
 		expect(screen.queryByRole("button", { name: "Connect mobile" })).not.toBeInTheDocument();
 		expect(routeMocks.navigate).not.toHaveBeenCalled();
 	});

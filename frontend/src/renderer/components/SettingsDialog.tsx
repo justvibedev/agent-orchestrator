@@ -1,21 +1,17 @@
-import { Bot, FolderGit2, KeyRound, Loader2, MonitorCog, Play, ScrollText, TriangleAlert, Wrench, X, type LucideIcon } from "lucide-react";
+import { Bot, KeyRound, Loader2, MonitorCog, Play, TriangleAlert, Wrench, X, type LucideIcon } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { createPortal } from "react-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { aoBridge } from "../lib/bridge";
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { useCloudGate } from "../hooks/useCloudGate";
-import { useCloudOffering } from "../hooks/useCloudOffering";
 import { useRestoreFocusOnClose } from "../hooks/useRestoreFocusOnClose";
 import { ensureCodexAccounts } from "../hooks/useCodexAccountsQuery";
 import { writeCodexAccounts } from "../hooks/codex-accounts-state";
 import { GlobalSettingsForm } from "./GlobalSettingsForm";
 import { ProjectSettingsForm, type ProjectSettingsSaveState, type ProjectSettingsSection as ProjectFormSection } from "./ProjectSettingsForm";
-import { CloudProjectScriptsSettings, ProjectScriptsSettings } from "./ProjectScriptsSettings";
-import { CloudProjectInstructionsSettings, CloudProjectRepositoriesSettings } from "./CloudProjectLayoutSettings";
+import { ProjectScriptsSettings } from "./ProjectScriptsSettings";
 import { ProjectEnvironmentSettings } from "./ProjectEnvironmentSettings";
-import { useCloudProjectsQuery, workspaceQueryOptions } from "../hooks/useWorkspaceQuery";
 import { CuesSettings } from "./CuesDialog";
 import { topbarDragStyle } from "./ShellTopbar";
 import { useAppShortcut } from "../hooks/useAppShortcut";
@@ -40,11 +36,6 @@ function useSettingsLayer(settingsModal: SettingsModal | null) {
 	const developerMode = useUiStore((state) => state.developerMode);
 	// Diagnostics (memory and CPU) is listed only with its toggle on in Developer mode.
 	const diagnostics = useUiStore((state) => state.developerMode && state.diagnostics);
-	// Reads the daemon settings the dialog tree already queries; no extra fetch.
-	const { cloudEnabled } = useCloudGate();
-	// The org's offering decides the cloud pages: the bring-your-own-Coder page
-	// only when it includes coder, Upgrade only for self-serve billing.
-	const { customCoder, selfServeBilling } = useCloudOffering();
 
 	const displaySettings = settingsModal;
 	// The selected page includes several store/query subscribers. Mount it one
@@ -68,30 +59,8 @@ function useSettingsLayer(settingsModal: SettingsModal | null) {
 	}, [deferSettingsBody, settingsModal]);
 	const isBodyReady = bodySettings === displaySettings;
 
-	const globalSections = visibleGlobalSettings({ cloudEnabled, developerMode, diagnostics, customCoder, selfServeBilling });
+	const globalSections = visibleGlobalSettings({ developerMode, diagnostics });
 	const remoteHostId = displaySettings?.scope === "project" ? displaySettings.hostId : undefined;
-	// A cloud project lives only in the control plane; the local daemon has no
-	// record of it. Resolve it here so its settings load from the control plane.
-	const explicitCloudOrgId = displaySettings?.scope === "project" ? displaySettings.cloudOrgId : undefined;
-	const localProjectScope = displaySettings?.scope === "project" && !remoteHostId && explicitCloudOrgId === undefined;
-	const cloudProjects = useCloudProjectsQuery({ enabled: localProjectScope });
-	const cloudProject = localProjectScope
-		? cloudProjects.data?.find((project) => project.id === displaySettings.projectId)
-		: undefined;
-	// Only fall back to the local daemon's form for a project the local daemon
-	// actually lists: a failed cloud lookup must not masquerade as a local
-	// project (the daemon would answer "Unknown project" for a cloud id).
-	const projectId = displaySettings?.scope === "project" ? displaySettings.projectId : "";
-	const knownLocal = useQuery({
-		...workspaceQueryOptions,
-		enabled: localProjectScope,
-		select: (workspaces) => workspaces.some((workspace) => workspace.id === projectId),
-	}).data === true;
-	const cloudProjectsPending = localProjectScope && !knownLocal && cloudProjects.isLoading;
-	const cloudLookupFailed = localProjectScope && !cloudProject && !knownLocal && cloudProjects.isError;
-
-	const cloudOrgId = explicitCloudOrgId ?? cloudProject?.orgId;
-	const isCloudProjectSettings = displaySettings?.scope === "project" && cloudOrgId !== undefined;
 	const projectSections: Array<{
 		id: ProjectSettingsSection;
 		label: string;
@@ -100,17 +69,9 @@ function useSettingsLayer(settingsModal: SettingsModal | null) {
 		{ id: "general", label: t("settings.project.general"), icon: MonitorCog },
 		{ id: "agents", label: t("settings.project.agents"), icon: Bot },
 	];
-	// Scripts are project settings on local and Cloud projects alike (a Cloud
-	// session's worker runs them). Environment and cues are local-daemon
-	// features; remote hosts expose none of these.
-	// A Cloud project's repositories, where its agent starts, and the
-	// instructions added to its agents' prompts live on the control plane.
-	if (isCloudProjectSettings) {
-		projectSections.push({ id: "repositories", label: t("settings.project.repositories", { defaultValue: "Repositories" }), icon: FolderGit2 });
-		projectSections.push({ id: "instructions", label: t("settings.project.instructions", { defaultValue: "Instructions" }), icon: ScrollText });
-	}
 	if (!remoteHostId) projectSections.push({ id: "scripts", label: t("settings.project.scripts"), icon: Wrench });
-	if (!remoteHostId && !isCloudProjectSettings) {
+	// Environment and cues are local-daemon features; remote hosts expose none of them.
+	if (!remoteHostId) {
 		projectSections.push({ id: "environment", label: t("settings.project.environment"), icon: KeyRound });
 		projectSections.push({ id: "cues", label: t("cues.title"), icon: Play });
 	}
@@ -118,7 +79,6 @@ function useSettingsLayer(settingsModal: SettingsModal | null) {
 	const isProjectSettings = displaySettings?.scope === "project";
 	const [activeSection, setActiveSection] = useState<GlobalSettingsSection>("general");
 	const [focusAgentId, setFocusAgentId] = useState<string>();
-	const [harnessView, setHarnessView] = useState<"local" | "cloud">();
 	const [startLogin, setStartLogin] = useState(false);
 	const [showDiagnostics, setShowDiagnostics] = useState<HarnessDiagnosticsRequest | undefined>();
 	const [activeProjectSection, setActiveProjectSection] = useState<ProjectSettingsSection>("general");
@@ -136,7 +96,7 @@ function useSettingsLayer(settingsModal: SettingsModal | null) {
 
 	const activeLabel = !settingsModal ? "" : isProjectSettings
 		? (projectSections.find((s) => s.id === activeProjectSection)?.label ?? t("settings.project.general"))
-		: globalSettingsItem(activeSection, { cloudEnabled, developerMode, diagnostics, customCoder, selfServeBilling }).label(t);
+		: globalSettingsItem(activeSection, { developerMode, diagnostics }).label(t);
 
 	const closeSettingsDialog = () => {
 		if (!settingsModal) return;
@@ -180,19 +140,17 @@ function useSettingsLayer(settingsModal: SettingsModal | null) {
 			closeSettings();
 		}
 	}, [closeSettings, projectSaveState]);
-	// Re-resolves the requested page as the gates settle: the org's offering
-	// loads after the dialog opens, so a deep link to Upgrade or Coder lands on
-	// it once the offering allows it.
+	// Re-resolves the requested page as the gates settle.
 	useEffect(() => {
 		if (settingsModal?.scope === "global") {
-			setActiveSection(globalSettingsItem(settingsModal.section ?? "general", { cloudEnabled, developerMode, diagnostics, customCoder, selfServeBilling }).id);
+			setActiveSection(globalSettingsItem(settingsModal.section ?? "general", { developerMode, diagnostics }).id);
 		}
-	}, [cloudEnabled, developerMode, diagnostics, customCoder, selfServeBilling, settingsModal]);
+	}, [developerMode, diagnostics, settingsModal]);
 	// Project scope resets only when a project is opened, never when a gate
-	// settles, so a reported save state survives the offering loading.
+	// settles, so a reported save state survives.
 	useEffect(() => {
 		if (settingsModal?.scope === "project") {
-			setActiveProjectSection(settingsModal.cloudOrgId !== undefined && settingsModal.section === "cues" ? "general" : settingsModal.section ?? "general");
+			setActiveProjectSection(settingsModal.section ?? "general");
 			setProjectSaveState(initialProjectSaveState());
 			setCueBusy(false);
 		}
@@ -200,7 +158,6 @@ function useSettingsLayer(settingsModal: SettingsModal | null) {
 
 	useEffect(() => {
 		setFocusAgentId(settingsModal?.scope === "global" ? settingsModal.focusAgentId : undefined);
-		setHarnessView(settingsModal?.scope === "global" ? settingsModal.harnessView : undefined);
 		setStartLogin(settingsModal?.scope === "global" && settingsModal.startLogin === true);
 		setShowDiagnostics(settingsModal?.scope === "global" ? settingsModal.showDiagnostics : undefined);
 	}, [settingsModal]);
@@ -264,36 +221,19 @@ function useSettingsLayer(settingsModal: SettingsModal | null) {
 		bodyKey: displaySettings?.scope === "project" ? refKey({ host: displaySettings.hostId ?? LOCAL_HOST, id: displaySettings.projectId }) : "global",
 		body: () => {
 			if (!isBodyReady) return <div aria-hidden="true" className="h-full" data-testid="settings-dialog-body-pending" />;
-			if (cloudProjectsPending) return <p className="text-sm text-settings-muted">{t("settings.project.loading")}</p>;
-			if (cloudLookupFailed) {
-				return (
-					<div className="space-y-2 text-sm text-error" role="alert">
-						<p>{t("settings.project.cloudLoadFailed")} {cloudProjects.error instanceof Error ? cloudProjects.error.message : ""}</p>
-						<button className="text-settings-label underline underline-offset-2" onClick={() => void cloudProjects.refetch()} type="button">{t("settings.project.retry")}</button>
-					</div>
-				);
-			}
-			if (displaySettings?.scope === "project" && !remoteHostId && !isCloudProjectSettings && activeProjectSection === "cues") {
+			if (displaySettings?.scope === "project" && !remoteHostId && activeProjectSection === "cues") {
 				return <CuesSettings projectId={displaySettings.projectId} onBusyChange={setCueBusy} />;
 			}
-			if (displaySettings?.scope === "project" && isCloudProjectSettings && cloudOrgId !== undefined && activeProjectSection === "repositories") {
-				return <CloudProjectRepositoriesSettings projectId={displaySettings.projectId} cloudOrgId={cloudOrgId} onSaveState={setProjectSaveState} />;
-			}
-			if (displaySettings?.scope === "project" && isCloudProjectSettings && cloudOrgId !== undefined && activeProjectSection === "instructions") {
-				return <CloudProjectInstructionsSettings projectId={displaySettings.projectId} cloudOrgId={cloudOrgId} onSaveState={setProjectSaveState} />;
-			}
 			if (displaySettings?.scope === "project" && !remoteHostId && activeProjectSection === "scripts") {
-				return isCloudProjectSettings && cloudOrgId !== undefined
-					? <CloudProjectScriptsSettings projectId={displaySettings.projectId} cloudOrgId={cloudOrgId} onSaveState={setProjectSaveState} />
-					: <ProjectScriptsSettings projectId={displaySettings.projectId} onSaveState={setProjectSaveState} />;
+				return <ProjectScriptsSettings projectId={displaySettings.projectId} onSaveState={setProjectSaveState} />;
 			}
-			if (displaySettings?.scope === "project" && !remoteHostId && !isCloudProjectSettings && activeProjectSection === "environment") {
+			if (displaySettings?.scope === "project" && !remoteHostId && activeProjectSection === "environment") {
 				return <ProjectEnvironmentSettings projectId={displaySettings.projectId} onSaveState={setProjectSaveState} />;
 			}
 			if (displaySettings?.scope === "project") {
-				return <ProjectSettingsForm projectId={displaySettings.projectId} hostId={remoteHostId} cloudOrgId={cloudOrgId} section={activeProjectSection as ProjectFormSection} onSaveState={setProjectSaveState} />;
+				return <ProjectSettingsForm projectId={displaySettings.projectId} hostId={remoteHostId} section={activeProjectSection as ProjectFormSection} onSaveState={setProjectSaveState} />;
 			}
-			return <GlobalSettingsForm cloudEnabled={cloudEnabled} customCoder={customCoder} selfServeBilling={selfServeBilling} focusAgentId={focusAgentId} hostId={displaySettings?.scope === "global" ? displaySettings.hostId : undefined} harnessView={harnessView} startLogin={startLogin} showDiagnostics={showDiagnostics} section={activeSection} />;
+			return <GlobalSettingsForm focusAgentId={focusAgentId} hostId={displaySettings?.scope === "global" ? displaySettings.hostId : undefined} startLogin={startLogin} showDiagnostics={showDiagnostics} section={activeSection} />;
 		},
 	};
 }

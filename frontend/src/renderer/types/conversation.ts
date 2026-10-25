@@ -10,7 +10,6 @@
  * lifecycle decisions all belong to the daemon. Nothing here recomputes them.
  */
 
-import type { ScriptRun } from "../lib/cloud-script-runs";
 
 /** Which controller currently owns the AO session. */
 export type SessionMode = "chat" | "tui";
@@ -473,10 +472,7 @@ export interface SystemEventDetail {
 		| "render"
 		| "artifact"
 		| "workspace.setup"
-		| "workspace.script.run"
 		| "account.switched";
-	/** workspace.script.run: one Setup or Cleanup run, grouped from its workspace.script.step events. */
-	scriptRun?: ScriptRun;
 	/** account.switched: the account a stopped turn's conversation continues on. */
 	accountId?: string;
 	/** workspace.setup: how the project's Setup commands ended (exitCode, durationMs and output carry the rest). */

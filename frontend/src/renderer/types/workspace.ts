@@ -104,7 +104,7 @@ export type SessionStaleBinary = { version: string; since: string; switchFailedA
 export type WorkspaceSession = {
 	workspaceCleanup?: "pending" | "removed" | "preserved_dirty" | "failed" | "not_applicable";
 	id: string;
-	/** Installation ID of the daemon that owns this session; absent for local and Cloud. */
+	/** Installation ID of the daemon that owns this session; absent for local. */
 	hostId?: string;
 	terminalHandleId?: string;
 	/** Opaque controller generation; changes even when a restarted PTY reuses its handle. */
@@ -179,8 +179,6 @@ export type WorkspaceSession = {
 	staleBinary?: SessionStaleBinary;
 	/** Durable runtime fact from the daemon; independent of the derived SCM-aware status. */
 	isTerminated?: boolean;
-	/** Whether the cloud worker has a current control-plane connection. */
-	runtimeConnected?: boolean;
 	chatProviderPreserved?: boolean;
 	/** User preference to tear down this session when its PR set completes through a merge. */
 	terminateOnPrMerge?: boolean;
@@ -230,26 +228,6 @@ export type WorkspaceSession = {
 	 * is `"artifact"`. Empty/absent for sessions whose output is a PR or nothing.
 	 */
 	artifactFiles?: SessionArtifact[];
-	/**
-	 * Present only for sessions that run in a control-plane sandbox. Carries the
-	 * org the session is scoped to so its terminal can be opened against the CP;
-	 * absent for local sessions, which route through the local daemon.
-	 */
-	cloud?: {
-		orgId: string;
-		/** Maximum permission mode for Cloud turns in this session. */
-		permissionMode?: "read-only" | "standard" | "trusted";
-		sandboxProvider?: string;
-		desiredState?: string;
-		observedState?: string;
-		/** Sandbox runtime state; "terminated" means AO stopped retrying startup. */
-		runtimeState?: string;
-		runtimeError?: string;
-		/** Why the worker has not started; cleared once it connects. */
-		startupError?: { code: string; message: string; at: string; detail?: string };
-		/** Bring-your-own Coder workspace page; absent for managed compute. */
-		coderWorkspaceUrl?: string;
-	};
 };
 
 // Tracker providers whose ids the intake daemon stamps sessions with, in
@@ -273,9 +251,6 @@ export type ProjectKind = "single_repo" | "workspace" | "scratch";
 /** UI-only grouping for sessions that have no daemon project row. */
 export const STANDALONE_WORKSPACE_ID = "__standalone__" as const;
 export const STANDALONE_PROJECT_KIND = "standalone" as const;
-
-/** Sentinel `kind` value for projects hosted by the AO cloud control plane. */
-export const CLOUD_PROJECT_KIND = "cloud" as const;
 
 const projectKinds = new Set<ProjectKind>(["single_repo", "workspace", "scratch"]);
 
@@ -424,18 +399,15 @@ export type { AttentionZone } from "../lib/session-presentation";
 
 export type WorkspaceSummary = {
 	id: string;
-	cloudOrgId?: string;
-	/** Installation ID of the daemon that owns this project; absent for local and Cloud. */
+	/** Installation ID of the daemon that owns this project; absent for local. */
 	hostId?: string;
 	name: string;
 	/**
 	 * Discriminator for where the project lives. Local projects carry the
-	 * daemon's ProjectKind (or undefined for older daemons); projects hosted by
-	 * the AO cloud control plane carry CLOUD_PROJECT_KIND — branch on
-	 * `kind === CLOUD_PROJECT_KIND`.
+	 * daemon's ProjectKind (or undefined for older daemons).
 	 */
-	kind?: ProjectKind | typeof CLOUD_PROJECT_KIND | typeof STANDALONE_PROJECT_KIND;
-	/** Local checkout path; empty string for cloud projects (no local folder). */
+	kind?: ProjectKind | typeof STANDALONE_PROJECT_KIND;
+	/** Local checkout path. */
 	path: string;
 	folderMissing?: boolean;
 	workspaceRepos?: WorkspaceRepoSummary[];

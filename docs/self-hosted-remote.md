@@ -1,7 +1,6 @@
 # Self-hosted remote hosts (experimental)
 
 Sessions stay on the machine that started them. Desktop and mobile are clients.
-AO account sign-in is required for desktop remote hosts; Cloud sandbox execution is separate.
 
 ## Install on Ubuntu
 
@@ -64,21 +63,17 @@ gh auth status
 
 Pairing does not copy GitHub credentials from your laptop.
 
-1. On one laptop, turn on **Developer mode** in **Settings → General** and sign
-   in to AO Cloud. In **Settings → Remote hosts**, add the VM's name, exact
-   `Address:` and `Password:`. Alternatively, sign in on mobile under
-   **Settings → Account** and pair it once under **Settings → Machines**.
-2. Sign in to the same AO account on your other laptops and phones. Hosts,
-   projects, and sessions load automatically; enable **Developer mode** on each
-   desktop client. A running client may take up to 30 seconds to find a newly
-   linked host.
+1. On the laptop, turn on **Developer mode** in **Settings → General**. In
+   **Settings → Remote hosts**, add the VM's name, exact `Address:` and
+   `Password:`. Alternatively, pair a phone once under **Settings → Machines**.
+2. Repeat step 1 on each laptop or phone that should reach the VM; saved hosts
+   are per device and are not synced between devices.
 3. Use **Projects +** to clone or import a project on the VM. In desktop
    **Settings → Harness**, select the VM to install/sign in to an agent there.
 
-The host publishes a changed quick-tunnel address to AO Cloud automatically.
-Desktop connections saved before account linking keep their original pairing
-password and are not attributed to whichever account signs in next. Re-pair
-only if you want to replace that local credential with an account-scoped one.
+A quick-tunnel address changes whenever the connector restarts; re-add the host
+with the new `Address:` (see `ao remote-host status` on the VM) when that
+happens.
 
 ## Status and other hosts
 
@@ -102,15 +97,9 @@ sessions.
 - AO's unauthenticated listener stays on `127.0.0.1`. The opt-in remote
   endpoint requires a password; `--lan` is plain HTTP, so use only a trusted
   LAN/VPN and never expose its port publicly.
-- AO sign-in gates desktop discovery, not the VM's direct pairing endpoint.
-  Pairing on one device issues a separate 256-bit host credential that AO Cloud
-  stores encrypted and shares only with the signed-in account's devices. The
-  original VM password is not uploaded. AO Cloud and signed-in devices can use
-  the scoped credential to reach the VM; removing a saved host from an account
-  does not invalidate a credential already imported on another device until it
-  syncs. Pairing the VM to another account rotates the scoped credential.
-  Regenerating the VM connection password revokes the scoped credential, so
-  re-pair the host with the account afterward.
+- Each device holds its own copy of the host password. Regenerating the VM
+  connection password revokes every previously paired device; re-pair them
+  afterward.
 - Host-ID checks prevent connecting to the wrong host, but not an active
   network attacker or a copied AO data directory. Desktop passwords are stored
   in `~/.ao/remotes.json` (or `AO_DATA_DIR/remotes.json`) with owner-only access.

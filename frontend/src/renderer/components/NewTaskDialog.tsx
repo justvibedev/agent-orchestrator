@@ -8,7 +8,7 @@ import { useRemoteWorkspaces, useWorkspaceQuery } from "../hooks/useWorkspaceQue
 import { labelForHost } from "../lib/host-clients";
 import { apiClient, apiErrorMessage } from "../lib/api-client";
 import { TaskComposer } from "./TaskComposer";
-import { CLOUD_PROJECT_KIND, STANDALONE_WORKSPACE_ID, STANDALONE_PROJECT_KIND } from "../types/workspace";
+import { STANDALONE_WORKSPACE_ID, STANDALONE_PROJECT_KIND } from "../types/workspace";
 import { SettingsOptionMenu } from "./settings/SettingsOptionMenu";
 
 function repositoryOwnerAvatar(repo: string): { owner: string; url: string } | null {
@@ -73,7 +73,7 @@ export function NewTaskDialog({ open, projectId, hostId, onProjectChange, onCrea
 	const projects = useMemo(() => workspaces.filter(
 		(workspace) => workspace.id !== STANDALONE_WORKSPACE_ID && workspace.kind !== STANDALONE_PROJECT_KIND,
 	), [workspaces]);
-	const localProjects = useMemo(() => hostId ? [] : projects.filter((project) => project.kind !== CLOUD_PROJECT_KIND), [hostId, projects]);
+	const localProjects = useMemo(() => hostId ? [] : projects, [hostId, projects]);
 	const localProjectDetails = useQueries({
 		queries: localProjects.map((project) => ({
 			queryKey: ["project", project.id],

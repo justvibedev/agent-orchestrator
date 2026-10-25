@@ -1,12 +1,9 @@
-import { type QueryClient, useQueries, useQuery, useQueryClient, type Query } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient, type Query } from "@tanstack/react-query";
 import type { TraySessionEntry } from "../../shared/tray";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo
+} from "react";
 import type { components } from "../../api/schema";
 import { apiClient, apiErrorCode, hasTrustedApiBaseUrl } from "../lib/api-client";
-import { CloudCpError, type CloudCpProject, type CloudCpSession, type CloudCpSessionArtifact } from "../lib/cloud-cp";
-import { useCloudCp } from "./useCloudCp";
-import { cloudArtifactFilesQueryKey } from "./useCloudArtifacts";
-import { useCloudOrg } from "./useCloudOrg";
 import { mockWorkspaces } from "../lib/mock-data";
 import { usesPreviewWorkspaceData } from "../lib/preview-mode";
 import { toReviewerHarnessId } from "../lib/reviewer-harnesses";
@@ -400,264 +397,10 @@ export function useWorkspacePolling(enabled = true) {
 	useQuery({ ...workspaceQueryOptions, refetchInterval: workspaceRefetchInterval, notifyOnChangeProps: [], enabled });
 }
 
-// Cloud projects are a separate query so a control-plane failure can never
-// break the local list: on error TanStack keeps this query's last known data,
-// and until the first successful fetch the merge below simply omits cloud
-// items. Invalidated by the cloud create flow (CreateProjectFlow).
-export const cloudProjectsQueryKey = ["cloud-projects"] as const;
-export const cloudSessionsQueryKey = ["cloud-sessions"] as const;
-
-// Maps one control-plane session onto the board's session shape. Cloud sessions
-// carry the same status/activity/harness vocabulary as local ones, so the same
-// product-ui mappers apply; fields with no cloud analogue take safe defaults.
-export function toCloudWorkspaceSession(
-	session: CloudCpSession,
-	project: Pick<CloudCpProject, "id" | "displayName">,
-	orgId: string,
-): WorkspaceSession {
-	return {
-		id: session.id,
-		// The terminal pane only mounts for a session that has a terminal handle.
-		// A cloud session's PTY is addressed by the session id over its ticketed
-		// CP WebSocket, so the session id is its handle.
-		terminalHandleId: session.id,
-		// The worker epoch advances on every fresh worker connection (resume from
-		// idle-pause, restore, re-provision). Folding it into the terminal
-		// generation makes the terminal pane re-mint against the new epoch and
-		// attach to the live agent, instead of clinging to the previous epoch's
-		// exited terminal (the "connected but TERMINAL ENDED / can't type" loop,
-		// which then idle-pauses the session again because nothing attached).
-		// Stable within an epoch, so it does not churn the pane between resumes.
-		terminalGeneration: session.workerEpoch ? String(session.workerEpoch) : undefined,
-		workspaceId: project.id,
-		workspaceName: project.displayName,
-		title: session.displayName || session.id,
-		provider: toAgentProvider(session.harness),
-		reviewerHarness: toReviewerHarnessId(session.reviewerHarness),
-		autoReviewEnabled: session.autoReviewEnabled ?? false,
-		kind: session.kind === "orchestrator" ? "orchestrator" : "worker",
-		mode: session.interfaceMode ?? "tui",
-		branch: session.branch || undefined,
-		status: toSessionStatus(session.status, session.isTerminated),
-		isTerminated: session.isTerminated,
-		autoInjectCI: session.autoInjectCI ?? true,
-		autoInjectReview: session.autoInjectReview ?? true,
-		terminateOnPrMerge: session.terminateOnPrMerge ?? true,
-		runtimeConnected: session.runtimeConnected,
-		createdAt: session.createdAt,
-		updatedAt: session.updatedAt,
-		activity: toSessionActivity({ state: session.activityState }),
-		prs: (session.prs ?? []).map((pr) => ({
-			url: pr.url,
-			number: pr.number,
-			state: pr.state as PRState,
-			ci: pr.ci,
-			review: pr.review,
-			mergeability: pr.mergeability,
-			failingChecks: pr.failingChecks,
-			reviewComments: pr.reviewComments,
-			updatedAt: pr.updatedAt,
-		})),
-		// Marks this as a control-plane session so the terminal opens against the
-		// CP (ticket + sandbox WebSocket) instead of the local daemon mux.
-		cloud: {
-			orgId,
-			permissionMode: session.mode === "read-only" || session.mode === "standard" || session.mode === "trusted" ? session.mode : undefined,
-			sandboxProvider: session.sandboxProvider,
-			desiredState: session.desiredState,
-			observedState: session.observedState,
-			runtimeState: session.runtimeState,
-			runtimeError: session.runtimeError,
-			startupError: session.startupError,
-			coderWorkspaceUrl: session.coderWorkspaceUrl,
-		},
-		outputType: session.outputType,
-		requestedOutput: session.requestedOutput,
-		// The list route sends only a count; useCloudSessionsQuery fills in the
-		// files from each session's own artifact list query. File URLs come from a short-lived access prefix when a file is
-		// opened (useCloudArtifactAccess), not from the list.
-		artifactFiles: session.artifactFiles?.map((file) => ({
-			kind: file.kind,
-			name: file.name,
-			path: file.path,
-			size: file.size,
-			updatedAt: file.updatedAt,
-		})),
-	};
-}
-
-export function toCloudWorkspace(project: CloudCpProject, sessions: CloudCpSession[], orgId: string): WorkspaceSummary {
-	return {
-		id: project.id,
-		cloudOrgId: orgId,
-		name: project.displayName,
-		kind: "cloud",
-		// Cloud projects run in control-plane sandboxes; there is no local folder.
-		path: "",
-		sessions: sessions
-			.filter((session) => session.projectId === project.id)
-			.map((session) => toCloudWorkspaceSession(session, project, orgId)),
-	};
-}
-
 type WorkspaceSubscriptionOptions = {
 	subscribed?: boolean;
 	enabled?: boolean;
-	includeCloud?: boolean;
 };
-
-// How long sightings of unknown projects are gathered into one project-list
-// refetch.
-export const UNKNOWN_CLOUD_PROJECT_REFETCH_DEBOUNCE_MS = 500;
-
-type UnknownProjectRefetches = { asked: Set<string>; timers: Map<string, ReturnType<typeof setTimeout>> };
-// Per query client, so each client (and each test's) starts afresh.
-const unknownProjectRefetches = new WeakMap<QueryClient, UnknownProjectRefetches>();
-
-/**
- * Refetches the cloud project list when a cloud session (from the session
- * list, a session lookup, or a session's events) belongs to a project the
- * cached list does not have: one created elsewhere (the API, another device,
- * an automation) since the list was fetched, which nothing else refetches.
- * Without it the project and its sessions stay out of the sidebar and the
- * board until a reload. Each unknown project asks once per org, and the
- * sightings within UNKNOWN_CLOUD_PROJECT_REFETCH_DEBOUNCE_MS make one refetch,
- * so a project the list never returns (past its first page) cannot loop. A
- * list not fetched yet is left alone: its own fetch brings the project.
- */
-export function refetchCloudProjectsForUnknownSessions(
-	queryClient: QueryClient,
-	baseUrl: string,
-	orgId: string,
-	sessions: ReadonlyArray<Pick<CloudCpSession, "projectId">>,
-): boolean {
-	const queryKey = [...cloudProjectsQueryKey, baseUrl, orgId];
-	const projects = queryClient.getQueryData<CloudCpProject[]>(queryKey);
-	if (projects === undefined) return false;
-	const known = new Set(projects.map((project) => project.id));
-	let state = unknownProjectRefetches.get(queryClient);
-	if (!state) {
-		state = { asked: new Set(), timers: new Map() };
-		unknownProjectRefetches.set(queryClient, state);
-	}
-	let unknown = false;
-	for (const { projectId } of sessions) {
-		const marker = `${baseUrl}|${orgId}|${projectId}`;
-		if (!projectId || known.has(projectId) || state.asked.has(marker)) continue;
-		state.asked.add(marker);
-		unknown = true;
-	}
-	if (!unknown) return false;
-	const timerKey = `${baseUrl}|${orgId}`;
-	if (!state.timers.has(timerKey)) {
-		const timers = state.timers;
-		timers.set(timerKey, setTimeout(() => {
-			timers.delete(timerKey);
-			void queryClient.invalidateQueries({ queryKey, exact: true });
-		}, UNKNOWN_CLOUD_PROJECT_REFETCH_DEBOUNCE_MS));
-	}
-	return true;
-}
-
-export function useCloudProjectsQuery(options: WorkspaceSubscriptionOptions = {}) {
-	const { client, ready, baseUrl } = useCloudCp();
-	const { org } = useCloudOrg();
-	const orgId = org?.id;
-	return useQuery({
-		queryKey: [...cloudProjectsQueryKey, baseUrl, orgId ?? ""],
-		enabled: options.enabled !== false && ready && orgId !== undefined,
-		subscribed: options.subscribed,
-		retry: 1,
-		// Projects change rarely and are not polled; returning to the app picks up
-		// one made elsewhere meanwhile, as the cloud org and offering do.
-		refetchOnWindowFocus: true,
-		queryFn: async (): Promise<CloudCpProject[]> => {
-			if (orgId === undefined) return [];
-			// First page only (control-plane max page size); pagination UI is a
-			// later phase alongside cloud sessions.
-			const response = await client.listProjects(orgId, { limit: 100 });
-			return response.items;
-		},
-	});
-}
-
-/** At most this many cloud artifact lists are read at once. */
-const CLOUD_ARTIFACT_LIST_CONCURRENCY = 4;
-let cloudArtifactListsRunning = 0;
-const cloudArtifactListWaiters: Array<() => void> = [];
-
-async function withCloudArtifactListSlot<T>(read: () => Promise<T>): Promise<T> {
-	if (cloudArtifactListsRunning >= CLOUD_ARTIFACT_LIST_CONCURRENCY) {
-		await new Promise<void>((resolve) => cloudArtifactListWaiters.push(resolve));
-	}
-	cloudArtifactListsRunning++;
-	try {
-		return await read();
-	} finally {
-		cloudArtifactListsRunning--;
-		cloudArtifactListWaiters.shift()?.();
-	}
-}
-
-/** A cloud session's artifact version: its file count and newest commit time. */
-function cloudArtifactVersion(session: CloudCpSession): string {
-	return `${session.artifactCount ?? 0}:${session.artifactsUpdatedAt ?? session.updatedAt}`;
-}
-
-/** Each query's data. useQueries keeps the array while no query changes. */
-function queryResultsData<T>(results: { data?: T }[]): (T | undefined)[] {
-	return results.map((result) => result.data);
-}
-
-export function useCloudSessionsQuery(options: WorkspaceSubscriptionOptions = {}) {
-	const { client, ready, baseUrl } = useCloudCp();
-	const { org } = useCloudOrg();
-	const orgId = org?.id;
-	const list = useQuery({
-		queryKey: [...cloudSessionsQueryKey, baseUrl, orgId ?? ""],
-		enabled: options.enabled !== false && ready && orgId !== undefined,
-		subscribed: options.subscribed,
-		retry: 1,
-		// A provisioning sandbox changes state without a client action, so poll to
-		// reflect requested -> running -> ready the same way local sessions stream.
-		refetchInterval: 5000,
-		queryFn: async (): Promise<CloudCpSession[]> => {
-			if (orgId === undefined) return [];
-			const response = await client.listSessions(orgId, { limit: 100 });
-			return response.items;
-		},
-	});
-	// The list carries only an artifact count. Each live session's files are
-	// read in their own query, once per artifact version, without holding up
-	// the list.
-	const withFiles = (list.data ?? []).filter((session) => (session.artifactCount ?? 0) > 0 && !session.isTerminated);
-	const fileData = useQueries({
-		queries: withFiles.map((session) => ({
-			queryKey: cloudArtifactFilesQueryKey(baseUrl, orgId ?? "", session.id, cloudArtifactVersion(session)),
-			enabled: orgId !== undefined && options.enabled !== false,
-			subscribed: options.subscribed,
-			staleTime: Infinity,
-			retry: 1,
-			queryFn: ({ signal }: { signal: AbortSignal }) =>
-				withCloudArtifactListSlot(async () => (await client.listSessionArtifacts(orgId ?? "", session.id, { signal })).artifacts),
-		})),
-		combine: queryResultsData,
-	});
-	// A session keeps its last good list while a new version loads or after a
-	// failed read, so its Artifacts tab and open file stay.
-	const lastFiles = useRef(new Map<string, CloudCpSessionArtifact[]>());
-	const data = useMemo(() => {
-		if (list.data === undefined) return undefined;
-		const read = new Map(withFiles.map((session, index) => [session.id, fileData[index]] as const));
-		return list.data.map((session) => {
-			const files = read.get(session.id) ?? lastFiles.current.get(session.id);
-			if (read.get(session.id)) lastFiles.current.set(session.id, read.get(session.id)!);
-			return files && (session.artifactCount ?? 0) > 0 ? { ...session, artifactFiles: files } : session;
-		});
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [list.data, fileData]);
-	return { ...list, data };
-}
 
 export function useRemoteWorkspaces(options: WorkspaceSubscriptionOptions = {}) {
 	const connected = useConnectedHosts();
@@ -702,92 +445,9 @@ export function useRemoteProjectQuery(hostId: string, projectId: string) {
 	});
 }
 
-// Route-level recovery for a Cloud session that has just been created or whose
-// list cache is stale. The session screen must resolve it through the control
-// plane, never try the local daemon just because the list query has not caught
-// up yet.
-export function useCloudSessionQuery(
-	orgId: string | undefined,
-	sessionId: string,
-	enabled = true,
-	// Poll like the sessions list does while the caller shows this lookup
-	// rather than the list's row (a session opened before the list has it):
-	// otherwise its lifecycle stays where it was when the view opened.
-	poll = false,
-) {
-	const { client, ready, baseUrl } = useCloudCp();
-	const queryClient = useQueryClient();
-	const projects = useCloudProjectsQuery({ enabled });
-	const lookup = useQuery({
-		queryKey: ["cloud-session", baseUrl, orgId ?? "", sessionId],
-		enabled: enabled && ready && orgId !== undefined && sessionId !== "",
-		// A session the control plane does not have (deleted) is not asked for
-		// again.
-		retry: (failures, error) => failures < 1 && !isCloudNotFound(error),
-		// The poll stops once the lookup fails (a deleted session, or the
-		// control plane unreachable: a window focus refetch resumes it once it
-		// answers again) or the session is terminated, whose lifecycle no longer
-		// moves on its own.
-		refetchInterval: (query) =>
-			poll && query.state.status !== "error" && !query.state.data?.isTerminated ? 5000 : false,
-		queryFn: async (): Promise<CloudCpSession | undefined> => {
-			if (orgId === undefined) return undefined;
-			const response = await client.getSession(orgId, sessionId);
-			return response.session;
-		},
-	});
-	// A session of a project made elsewhere (opened from a link, or right after
-	// the API made it) brings that project into the list. Checked once both are
-	// in, whichever arrives last.
-	const lookedUp = lookup.data;
-	const projectsLoaded = projects.data !== undefined;
-	useEffect(() => {
-		if (orgId === undefined || !lookedUp || !projectsLoaded) return;
-		refetchCloudProjectsForUnknownSessions(queryClient, baseUrl, orgId, [lookedUp]);
-	}, [baseUrl, lookedUp, orgId, projectsLoaded, queryClient]);
-	return lookup;
-}
-
-function isCloudNotFound(error: unknown): boolean {
-	return error instanceof CloudCpError && error.status === 404;
-}
 
 export function useWorkspaceQuery(options: WorkspaceSubscriptionOptions = {}) {
-	const local = useQuery({ ...workspaceQueryOptions, subscribed: options.subscribed, enabled: options.enabled });
-	const includeCloud = options.includeCloud !== false;
-	const cloudOptions = { ...options, enabled: includeCloud && options.enabled !== false };
-	const cloud = useCloudProjectsQuery(cloudOptions);
-	const cloudSessions = useCloudSessionsQuery(cloudOptions);
-	const { org, ready } = useCloudOrg();
-	const orgId = org?.id;
-	const localData = local.data;
-	const cloudData = cloud.data;
-	const cloudSessionData = cloudSessions.data;
-	const queryClient = useQueryClient();
-	const { baseUrl: cloudBaseUrl } = useCloudCp();
-	// Checked where both lists meet, so it runs whichever arrives last: the
-	// session list can resolve before the project list on the first load.
-	useEffect(() => {
-		if (!includeCloud || !ready || orgId === undefined || cloudData === undefined || !cloudSessionData) return;
-		refetchCloudProjectsForUnknownSessions(queryClient, cloudBaseUrl, orgId, cloudSessionData);
-	}, [cloudBaseUrl, cloudData, cloudSessionData, includeCloud, orgId, queryClient, ready]);
-	const data = useMemo(() => {
-		if (!includeCloud) return localData;
-		// Local stays authoritative for loading/error semantics: cloud items only
-		// render once the local list exists, and never replace it.
-		if (localData === undefined) return localData;
-		if (cloudData === undefined || cloudData.length === 0) return localData;
-		// Signing out (or turning the offering off) disables the cloud queries,
-		// but react-query keeps their last data; without this gate the stale
-		// cloud projects would keep rendering for a signed-out user.
-		if (!ready || orgId === undefined) return localData;
-		const sessions = cloudSessionData ?? [];
-		return placeStandaloneWorkspaceLast([
-			...localData,
-			...cloudData.map((project) => toCloudWorkspace(project, sessions, orgId)),
-		]);
-	}, [localData, cloudData, cloudSessionData, includeCloud, orgId, ready]);
-	return { ...local, data };
+	return useQuery({ ...workspaceQueryOptions, subscribed: options.subscribed, enabled: options.enabled });
 }
 
 /**
@@ -836,22 +496,12 @@ export function useWorkspaceSession(sessionId: string, hostId?: string, localLoo
 			return toWorkspaceSession(session, project);
 		},
 	});
-	const cloud = useCloudProjectsQuery({ enabled: !hostId });
-	const cloudSessions = useCloudSessionsQuery({ enabled: !hostId });
-	const { org, ready } = useCloudOrg();
 	const resolvedDirectSession = useMemo(() => {
 		if (!direct.data) return undefined;
 		const workspace = localWorkspaces.data?.find((candidate) => candidate.id === direct.data?.workspaceId);
 		if (!workspace || direct.data.workspaceName === workspace.name) return direct.data;
 		return { ...direct.data, workspaceName: workspace.name };
 	}, [direct.data, localWorkspaces.data]);
-	const cloudSession = useMemo(() => {
-		if (!ready || !org?.id || !cloud.data || !cloudSessions.data) return undefined;
-		const session = cloudSessions.data.find((candidate) => candidate.id === sessionId);
-		if (!session) return undefined;
-		const project = cloud.data.find((candidate) => candidate.id === session.projectId);
-		return project ? toCloudWorkspaceSession(session, project, org.id) : undefined;
-	}, [cloud.data, cloudSessions.data, org?.id, ready, sessionId]);
 	useEffect(() => {
 		if (hostId || !localLookupEnabled) return;
 		if (!resolvedDirectSession) return;
@@ -873,7 +523,7 @@ export function useWorkspaceSession(sessionId: string, hostId?: string, localLoo
 	if (hostId) return remote;
 	return {
 		...local,
-		data: local.data ?? resolvedDirectSession ?? cloudSession,
+		data: local.data ?? resolvedDirectSession,
 		isLoading: local.isLoading || direct.isLoading,
 	};
 }
@@ -942,20 +592,7 @@ export function useWorkspaceScope(projectId?: string, sessionId?: string, hostId
 	);
 	const local = useQuery({ ...workspaceQueryOptions, select: selectLocalScope, enabled: !hostId });
 	const remote = useQuery({ queryKey: remoteWorkspaceQueryKey(hostId ?? ""), queryFn: () => fetchRemoteWorkspaces(hostId ?? ""), select: selectLocalScope, enabled: Boolean(hostId) });
-	const cloud = useCloudProjectsQuery({ enabled: !hostId });
-	const cloudSessions = useCloudSessionsQuery({ enabled: !hostId });
-	const { org, ready } = useCloudOrg();
-	const cloudScope = useMemo(() => {
-		if (!ready || !org?.id || !cloud.data) return undefined;
-		const workspaces = cloud.data.map((project) => toCloudWorkspace(project, cloudSessions.data ?? [], org.id));
-		return selectWorkspaceScope(workspaces, projectId, sessionId);
-	}, [cloud.data, cloudSessions.data, org?.id, projectId, ready, sessionId]);
-	// Match useWorkspaceQuery's local-first semantics: do not reveal cloud
-	// records before the local workspace query has resolved successfully.
-	const data = local.data?.project || local.data?.session || !local.isSuccess
-		? local.data
-		: cloudScope ?? local.data;
-	return hostId ? remote : { ...local, data };
+	return hostId ? remote : local;
 }
 
 function selectTraySessions(workspaces: WorkspaceSummary[]): TraySessionEntry[] {
@@ -986,16 +623,5 @@ export function useWorkspaceTraySessions() {
 		...workspaceQueryOptions,
 		select: selectTraySessions,
 	});
-	const cloud = useCloudProjectsQuery();
-	const cloudSessions = useCloudSessionsQuery();
-	const { org, ready } = useCloudOrg();
-	const cloudEntries = useMemo(() => {
-		if (!ready || !org?.id || !cloud.data) return [];
-		return selectTraySessions(cloud.data.map((project) => toCloudWorkspace(project, cloudSessions.data ?? [], org.id)));
-	}, [cloud.data, cloudSessions.data, org?.id, ready]);
-	const data = useMemo(() => {
-		if (local.data === undefined) return undefined;
-		return cloudEntries.length === 0 ? local.data : [...local.data, ...cloudEntries];
-	}, [cloudEntries, local.data]);
-	return { ...local, data };
+	return local;
 }

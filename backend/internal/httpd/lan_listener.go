@@ -174,29 +174,6 @@ func (m *LANManager) SetPasswordHash(hash string) {
 	}
 }
 
-// SetAccountTokenHash rotates the separate account credential without changing
-// the password used for direct/mobile pairing. Only connections authenticated
-// with the retired account token are closed; the pairing request must survive.
-func (m *LANManager) SetAccountTokenHash(hash string) {
-	m.transitionMu.Lock()
-	defer m.transitionMu.Unlock()
-	previous := m.state.accountHash()
-	if previous == hash {
-		return
-	}
-	m.state.setAccountHash(hash)
-	m.lock.resetAll()
-	m.mu.Lock()
-	ln := m.ln
-	m.mu.Unlock()
-	if ln != nil && previous != "" {
-		_ = ln.closeConnections(previous)
-	}
-}
-
-// AccountTokenHash returns the currently accepted account credential digest.
-func (m *LANManager) AccountTokenHash() string { return m.state.accountHash() }
-
 // PasswordHash returns the current connection password hash. Used to snapshot the
 // prior hash before an enable/regenerate so a failed persist can be rolled back.
 // Satisfies controllers.LANController.
@@ -356,8 +333,8 @@ func (l *lanListener) Close() error {
 	return l.closeErr
 }
 
-// An empty tokenHash closes every connection; account rotation passes the
-// retired token's hash so password-authenticated clients keep their connections.
+// An empty tokenHash closes every connection; otherwise only
+// connections authenticated with that token hash are closed.
 func (l *lanListener) closeConnections(tokenHash string) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()

@@ -11,7 +11,6 @@ const remotes = vi.hoisted(() => ({
 const account = vi.hoisted(() => ({ status: "authenticated" as "authenticated" | "unauthenticated" }));
 
 vi.mock("../lib/bridge", () => ({ aoBridge: { remotes } }));
-vi.mock("../lib/cloud-session", () => ({ useCloudSession: () => ({ status: account.status, session: account.status === "authenticated" ? { user: { id: "user-a" } } : null }) }));
 vi.mock("./useSettings", () => ({ useSettings: () => ({ settings: { cloudControlPlaneUrl: "" } }) }));
 
 import { baseUrlForHost, connectedHosts } from "../lib/host-clients";
@@ -46,20 +45,6 @@ it("does not connect to saved boxes until Remote hosts is enabled", async () => 
 	expect(remotes.connect).not.toHaveBeenCalled();
 });
 
-it("requires AO sign-in and disconnects remote hosts on sign-out", async () => {
-	useUiStore.setState({ remoteHosts: true });
-	account.status = "unauthenticated";
-	const { result, rerender } = renderHook(() => useRemoteHosts());
-	expect(result.current.hosts).toEqual([]);
-	expect(remotes.list).not.toHaveBeenCalled();
-	account.status = "authenticated";
-	rerender();
-	await waitFor(() => expect(result.current.hosts).toHaveLength(2));
-	account.status = "unauthenticated";
-	rerender();
-	await waitFor(() => expect(result.current.hosts).toEqual([]));
-	expect(connectedHosts()).toEqual([]);
-});
 
 it("keeps remote hosts disconnected until Developer mode is enabled", async () => {
 	useUiStore.setState({ developerMode: false, remoteHosts: true });

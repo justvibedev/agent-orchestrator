@@ -549,7 +549,6 @@ export function FileContentPane({
 
 function artifactOriginOf(source: FilesSource): string | undefined {
 	if (source.kind !== "artifact") return undefined;
-	if (source.artifactRoot) return source.artifactRoot.replace(/\/+$/, "");
 	if (!source.rawUrl) return undefined;
 	try {
 		return new URL(source.rawUrl).origin;

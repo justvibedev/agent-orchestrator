@@ -32,7 +32,7 @@ export function SessionAccountSummary({ session }: { session: WorkspaceSession }
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [settledPhase, accountMove?.id, session.id]);
 
-	if (!provider || session.cloud || session.isTerminated) return null;
+	if (!provider || session.isTerminated) return null;
 	const options = (accounts.data ?? []).filter((account) => account.provider === provider);
 	const currentId = current.data?.[provider];
 	const account = options.find((option) => option.id === currentId);

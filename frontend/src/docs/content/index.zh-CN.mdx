@@ -59,12 +59,10 @@ Connect Mobile 是一个独立的、需要主动开启的监听器，并由连�
 
 本手册以最新的稳定版 [v0.13.3](https://github.com/Untrivial-ai/agent-orchestrator/releases/tag/v0.13.3)（2026 年 10 月 1 日发布）为准进行核对。`main` 上较新的控件可能与该版本不同。使用新控件之前，请查看[更新日志](/changelog)及其发布说明。
 
-云端会话是一项独立的服务，对账户访问有要求。设置方法请参阅 [Cloud 指南](/guides/cloud)。
-
 <span id="supported-agents" />
 ## 支持的代理
 
-Orchestrator 支持 Claude Code、Codex、Cursor、Aider、OpenCode、Droid、Kimi Code 和 GitHub Copilot 等编程代理。它们对 worker、Chat 和审查者角色的支持各不相同。详情请查看[代理目录](/plugins/agents)。Cloud 提供的[提供方](/guides/cloud#before-you-start)较少。
+Orchestrator 支持 Claude Code、Codex、Cursor、Aider、OpenCode、Droid、Kimi Code 和 GitHub Copilot 等编程代理。它们对 worker、Chat 和审查者角色的支持各不相同。详情请查看[代理目录](/plugins/agents)。
 
 GitHub 和 GitLab 提供源代码管理的观察和 issue 导入。导入需要主动开启，并且对 issue 跟踪器是只读的；不支持 Linear 和旧版 Node 插件包。
 
@@ -75,7 +73,6 @@ GitHub 和 GitLab 提供源代码管理的观察和 issue 导入。导入需要�
 	<Card title="安装" description="下载桌面应用并连接你的工具。" href="/installation" />
 	<Card title="快速开始" description="把一个 worker 会话从任务推进到拉取请求。" href="/quickstart" />
 	<Card title="仪表板" description="了解桌面看板、会话视图、Chat、终端和检查器。" href="/dashboard" />
-	<Card title="云端会话" description="当你的账户可以使用 Cloud 时，设置远程项目。" href="/guides/cloud" />
 	<Card title="架构" description="了解 Go 守护进程、Electron 应用、存储和会话模式。" href="/architecture" />
 	<Card title="故障排除" description="解决桌面应用、守护进程、代理和会话的常见问题。" href="/troubleshooting" />
 </Cards>

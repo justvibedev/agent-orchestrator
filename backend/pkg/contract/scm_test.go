@@ -10,8 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/aoagents/agent-orchestrator/backend/pkg/contract"
 )
 
@@ -64,33 +62,8 @@ func TestSCMContractJSONUsesProviderNeutralFields(t *testing.T) {
 	}
 }
 
-func TestSharedSCMVocabulariesAndCloudReadRoutesMatch(t *testing.T) {
+func TestSharedSCMVocabulariesMatchProductUI(t *testing.T) {
 	repoRoot := scmRepoRoot(t)
-	specData, err := os.ReadFile(filepath.Join(repoRoot, "contracts", "cloud", "openapi.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var document struct {
-		Paths      map[string]any `yaml:"paths"`
-		Components struct {
-			Schemas map[string]struct {
-				Enum []string `yaml:"enum"`
-			} `yaml:"schemas"`
-		} `yaml:"components"`
-	}
-	if err := yaml.Unmarshal(specData, &document); err != nil {
-		t.Fatal(err)
-	}
-
-	for _, path := range []string{
-		"/api/cloud/v1/orgs/{orgId}/sessions/{sessionId}/pull-requests",
-		"/api/cloud/v1/orgs/{orgId}/sessions/{sessionId}/reviews",
-	} {
-		if _, ok := document.Paths[path]; !ok {
-			t.Fatalf("Cloud schema has no session-scoped read path %s", path)
-		}
-	}
-
 	productData, err := os.ReadFile(filepath.Join(repoRoot, "packages", "product-ui", "src", "scm-models.ts"))
 	if err != nil {
 		t.Fatal(err)
@@ -141,9 +114,6 @@ func TestSharedSCMVocabulariesAndCloudReadRoutesMatch(t *testing.T) {
 
 	for _, check := range checks {
 		t.Run(check.schema, func(t *testing.T) {
-			if got := document.Components.Schemas[check.schema].Enum; !slices.Equal(got, check.want) {
-				t.Fatalf("Cloud %s = %q, want %q", check.schema, got, check.want)
-			}
 			if got := typescriptStringArray(t, productData, check.productConst); !slices.Equal(got, check.want) {
 				t.Fatalf("product UI %s = %q, want %q", check.productConst, got, check.want)
 			}

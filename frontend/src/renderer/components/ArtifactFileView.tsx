@@ -15,7 +15,7 @@ function initialModeFor(path: string): FileViewMode {
  * Content view for one file in a session's artifact directory, reusing the
  * same `FileContentPane` the workspace/PR Files flow uses (source-agnostic:
  * dispatches on `source.kind`). Local artifacts fetch raw content through the
- * daemon API with the artifact root selected; remote and cloud artifacts keep
+ * daemon API with the artifact root selected; remote artifacts keep
  * their provided content URL. Neither uses the workspace-diff machinery, since artifacts
  * live outside the git workspace and have no diff/status.
  *
@@ -33,10 +33,6 @@ export function ArtifactFileView({
 	path,
 	rawUrl,
 	readOnly = false,
-	cloud = false,
-	artifactRoot,
-	onAccessRefused,
-	sendMessage,
 	sessionId,
 	toolbarHost,
 }: {
@@ -46,24 +42,16 @@ export function ArtifactFileView({
 	onFeedbackRequestConsumed?: (key: number) => void;
 	path: string;
 	rawUrl?: string;
-	/** Hides the edit action, as for a cloud session's artifacts. */
+	/** Hides the edit action. */
 	readOnly?: boolean;
-	/** Fetches rawUrl through the cloud control-plane bridge. */
-	cloud?: boolean;
-	/** The URL the file's relative links resolve against. */
-	artifactRoot?: string;
-	/** Called when a cloud media file fails to load, to take a fresh link. */
-	onAccessRefused?: () => void;
-	/** Sends feedback to the worker; without it feedback goes through the daemon. */
-	sendMessage?: (message: string) => Promise<void>;
 	sessionId: string;
 	/** The header the pane renders its mode and action buttons into. */
 	toolbarHost?: HTMLElement | null;
 }) {
-	const annotation = useFileAnnotation(sessionId, { hostId, source: artifactName, sendMessage });
+	const annotation = useFileAnnotation(sessionId, { hostId, source: artifactName });
 	const source = useMemo(
-		() => ({ kind: "artifact" as const, rawUrl, readOnly, cloud, artifactRoot, onAccessRefused }),
-		[rawUrl, readOnly, cloud, artifactRoot, onAccessRefused],
+		() => ({ kind: "artifact" as const, rawUrl, readOnly }),
+		[rawUrl, readOnly],
 	);
 	const scrollRef = useRef<HTMLDivElement>(null);
 

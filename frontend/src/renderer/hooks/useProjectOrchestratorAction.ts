@@ -2,9 +2,8 @@ import { useEffect, useRef } from "react";
 import { useMutation, useMutationState, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { CLOUD_PROJECT_KIND, hasConfiguredOrchestratorAgent, type WorkspaceSession } from "../types/workspace";
-import { cloudSessionsQueryKey, workspaceQueryKeyForHost, type WorkspaceScope } from "./useWorkspaceQuery";
-import { spawnCloudOrchestrator } from "../lib/cloud-orchestrator";
+import { hasConfiguredOrchestratorAgent, type WorkspaceSession } from "../types/workspace";
+import { workspaceQueryKeyForHost, type WorkspaceScope } from "./useWorkspaceQuery";
 import {
 	isChatPreflightError,
 	resumeOrchestrator,
@@ -70,7 +69,7 @@ export function useProjectOrchestratorAction({
 	});
 	const isSpawning = mutations.some((mutation) => mutation.status === "pending");
 	const resumableOrchestrator =
-		orchestrator && canResumeOrchestrator && project?.kind !== CLOUD_PROJECT_KIND
+		orchestrator && canResumeOrchestrator
 			? orchestrator
 			: undefined;
 	const latest = mutations.at(-1);
@@ -93,12 +92,8 @@ export function useProjectOrchestratorAction({
 				? await openRemoteOrchestrator(hostId, projectId, orchestrator, mode, false, source)
 				: resumableOrchestrator
 				? (await earlyResume, resumableOrchestrator.id)
-				: project?.kind === CLOUD_PROJECT_KIND
-					? await spawnCloudOrchestrator(queryClient, projectId)
-					: await spawnOrchestrator(projectId, source, false, mode);
-			await queryClient.invalidateQueries({
-				queryKey: project?.kind === CLOUD_PROJECT_KIND ? cloudSessionsQueryKey : workspaceQueryKeyForHost(hostId),
-			});
+				: await spawnOrchestrator(projectId, source, false, mode);
+			await queryClient.invalidateQueries({ queryKey: workspaceQueryKeyForHost(hostId) });
 			setStartupError(projectId, null, hostId);
 			// A completed request belongs to its original route, even if this
 			// component survived a project or session change while it was pending.
@@ -118,7 +113,7 @@ export function useProjectOrchestratorAction({
 			mutation.mutate(mode);
 		} else if (orchestrator) {
 			void navigate(sessionNavigateTarget(projectId, orchestrator.id, hostId));
-		} else if (project?.kind !== CLOUD_PROJECT_KIND && !hasConfiguredOrchestratorAgent(project)) {
+		} else if (!hasConfiguredOrchestratorAgent(project)) {
 			if (project) useUiStore.getState().openProjectSettings(projectId, hostId);
 		} else {
 			mutation.mutate(mode);

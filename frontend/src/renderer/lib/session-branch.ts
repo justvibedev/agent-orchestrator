@@ -5,7 +5,7 @@ export function sessionBranchPresentation(session?: WorkspaceSession): { branch?
 	// the worktree step completes, and while its generated name is on the way.
 	const launched = session?.provisionState !== "provisioning" && session?.provisionState !== "failed"
 		&& Boolean(session?.terminalHandleId || session?.chatProviderPreserved);
-	const unfinished = session && !launched && !session.cloud && session.kind !== "orchestrator"
+	const unfinished = session && !launched && session.kind !== "orchestrator"
 		&& session.workspaceId !== STANDALONE_WORKSPACE_ID
 		&& (session.provisionSteps?.some((step) => step.id === "worktree" && step.status !== "done")
 			|| (!session.provisionSteps?.length && (session.provisionState === "provisioning" || session.provisionState === "failed")));

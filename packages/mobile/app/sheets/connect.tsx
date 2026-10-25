@@ -2,9 +2,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import { ManualConnectSheet } from "../../lib/ManualConnectSheet";
-import { activeHost, findHost, type Host } from "../../lib/hosts";
-import { loadAccount } from "../../lib/account";
-import { syncAccountHosts, unignoreAccountHost } from "../../lib/accountHosts";
+import { findHost, type Host } from "../../lib/hosts";
 import { releaseSheetResult, takeSheetResult } from "../../lib/sheetResult";
 import { backOr } from "../../lib/backNavigation";
 import { useApp } from "../../lib/store";
@@ -37,13 +35,6 @@ export default function ConnectSheetRoute() {
 			editingHost={editingHost ?? undefined}
 			editingEndpointIndex={activeEndpointIndex < 0 ? 0 : activeEndpointIndex}
 				onConnected={() => {
-					void loadAccount().then(async (account) => {
-						if (account) {
-							const pairedId = editingHost?.id ?? (await activeHost())?.id;
-							if (pairedId) await unignoreAccountHost(account.id, pairedId);
-							await syncAccountHosts(account);
-						}
-					}).catch(() => {});
 				const done = takeSheetResult<void>(resultKey);
 				if (editingHost) void reloadConfig().catch(() => {});
 				backOr(router);

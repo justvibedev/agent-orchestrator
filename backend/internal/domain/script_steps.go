@@ -13,11 +13,9 @@ import (
 // DefaultScriptStepTimeoutMinutes; a Cleanup step without one keeps running
 // without a limit, as Cleanup always has.
 //
-// The limit is stored with the step, as the Cloud control plane stores it
-// (cloud/internal/domain.TimedScriptCommand): the step's first line is the
-// shell comment "# ao-timeout: <N>m". So a step keeps its limit through any
-// reordering, and the Settings editor reads and writes local and Cloud steps
-// alike.
+// The limit is stored with the step: the step's first line is the shell
+// comment "# ao-timeout: <N>m". So a step keeps its limit through any
+// reordering, and the Settings editor reads and writes it with the step.
 const (
 	DefaultScriptStepTimeoutMinutes = 30
 	MinScriptStepTimeoutMinutes     = 1

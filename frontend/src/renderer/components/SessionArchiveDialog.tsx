@@ -35,11 +35,8 @@ export function SessionArchiveDialog({
 	useEffect(() => {
 		if (open) setDeleteArtifacts(false);
 	}, [open]);
-	// A cloud session's teardown is restorable too — the control plane keeps its
-	// conversation and work so it can be re-provisioned later.
-	const isCloud = session?.cloud !== undefined;
-	const body = isCloud ? t("archive.bodyCloud") : t("archive.body");
-	const artifactCount = session && !isCloud ? sessionArtifacts(session).length : 0;
+	const body = t("archive.body");
+	const artifactCount = session ? sessionArtifacts(session).length : 0;
 	const deleting = artifactCount > 0 && deleteArtifacts;
 	return (
 		<>

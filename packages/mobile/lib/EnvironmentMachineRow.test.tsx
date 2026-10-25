@@ -444,19 +444,6 @@ describe("EnvironmentMachineRow", () => {
 		}));
 	});
 
-	it("keeps an account-synced machine's route and password out of the editor", async () => {
-		const onSave = vi.fn(async () => {});
-		const { renderer } = render(onSave, { host: { ...host, accountUserId: "user-a" } });
-		act(() => renderer.root.findByProps({ testID: "environment-edit-host-1" }).props.onPress());
-
-		expect(renderer.root.findByProps({ testID: "environment-account-managed-host-1" })).toBeTruthy();
-		expect(renderer.root.findAllByProps({ testID: "environment-host-host-1" })).toHaveLength(0);
-		expect(renderer.root.findAllByProps({ accessibilityLabel: "Password" })).toHaveLength(0);
-
-		act(() => renderer.root.findByProps({ testID: "environment-name-host-1" }).props.onChangeText("Studio"));
-		await act(async () => renderer.root.findByProps({ testID: "environment-save-host-1" }).props.onPress());
-		expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ machineName: "Studio", config: expect.objectContaining({ host: "studio.tail123.ts.net", password: "secret" }) }));
-	});
 
 	it("restores the saved symbol in the summary when editing is cancelled", () => {
 		const { renderer } = render();

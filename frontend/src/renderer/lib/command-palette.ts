@@ -38,7 +38,6 @@ export type WorkspaceFileSearchTarget = {
 	projectId: string;
 	sessionId: string;
 	hostId?: string;
-	cloudOrgId?: string;
 };
 
 export type WorkspaceFileSearchItem = {
@@ -168,7 +167,6 @@ export function workspaceFileSearchTarget(
 		projectId: workspace.id,
 		sessionId: session.id,
 		...(workspace.hostId ? { hostId: workspace.hostId } : {}),
-		...(session.cloud?.orgId ? { cloudOrgId: session.cloud.orgId } : {}),
 	};
 }
 

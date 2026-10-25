@@ -10,8 +10,6 @@ on:
   pull_request:
     paths:
       - "frontend/**"
-      - "contracts/cloud/**"
-      - "packages/cloud-client/**"
       - "packages/product-ui/**"
       - ".github/workflows/frontend.yml"
   workflow_dispatch:
@@ -77,7 +75,6 @@ jobs:
           cache-dependency-path: |
             frontend/package-lock.json
             frontend/src/docs/package-lock.json
-            packages/cloud-client/package-lock.json
             packages/product-ui/package-lock.json
 
       - name: Install frontend dependencies
@@ -92,22 +89,9 @@ jobs:
             echo "npm ci failed; retrying Electron dependency download ($attempt/3)"
           done
 
-      - name: Install Cloud client dependencies
-        run: npm ci
-        working-directory: packages/cloud-client
-
       - name: Install product UI dependencies
         run: npm ci
         working-directory: packages/product-ui
-
-      - name: Verify Cloud contract and client
-        run: |
-          npm run generate
-          git diff --exit-code -- src/schema.ts
-          npm run typecheck
-          npm test
-          npm pack --dry-run
-        working-directory: packages/cloud-client
 
       - name: Verify product UI package
         run: |

@@ -4,7 +4,6 @@ import { StrictMode, type ReactElement } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ActivityRow, AssistantMessage, ChatHostId, HumanMessage, ProviderSwitchMarker, TurnOutcome } from "./ChatTimelineItems";
 import { agentModelsQueryKey } from "../../hooks/useAgentModelsQuery";
-import { groupScriptRuns } from "../../lib/cloud-script-runs";
 import type { ConversationMessage } from "../../types/conversation";
 import { TooltipProvider } from "../ui/tooltip";
 
@@ -411,23 +410,6 @@ describe("ActivityRow", () => {
 		expect(screen.getByText(/compose up/)).toBeInTheDocument();
 	});
 
-	it("draws a script run as the step log panel", () => {
-		const run = groupScriptRuns([{
-			sessionId: "s1", sequence: 1, type: "workspace.script.step", createdAt: "2026-10-13T00:00:00Z",
-			payload: { phase: "setup", runId: "r", step: 1, total: 1, command: "make", repository: "", status: "failed", exitCode: 2, durationMs: 1000, output: "boom" },
-		}])[0];
-		render(
-			<ActivityRow activity={{
-				kind: "activity", id: "run", sequence: 1, revision: 1, createdAt: "2026-10-13T00:00:00Z",
-				activityKind: "system", status: "failed", summary: "Setup failed",
-				detail: { event: "workspace.script.run", scriptRun: run },
-			}} />,
-		);
-		expect(screen.getByTestId("script-run-panel")).toHaveAttribute("data-run-status", "failed");
-		expect(screen.getByText("Failed at step 1")).toBeInTheDocument();
-		expect(screen.getByText("boom")).toBeInTheDocument();
-		expect(screen.queryByTestId("project-setup-row")).toBeNull();
-	});
 
 	it("shows the failed setup step with its exit code", () => {
 		render(

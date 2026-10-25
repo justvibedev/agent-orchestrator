@@ -1,6 +1,4 @@
 import { clearConfig } from "./config";
-import { loadAccount } from "./account";
-import { ignoreAccountHost } from "./accountHostPreferences";
 import { activeHostMetadata, removeHost, type HostMetadata } from "./hosts";
 import { clearOnboardingSkipped } from "./onboardingStore";
 import { retryPendingUnpairs, unpairFromServer } from "./push";
@@ -8,14 +6,9 @@ import { markMachineUnpaired } from "./pendingUnpair";
 import { clearEventCursorsForHost } from "./chat/eventCursor";
 
 /** Forget one saved machine without disturbing the currently selected machine. */
-export async function forgetPairedHost(host: HostMetadata, options?: { ignoreAccount?: boolean }): Promise<void> {
+export async function forgetPairedHost(host: HostMetadata): Promise<void> {
 	// Do not erase the only credential if durable remote cleanup cannot be saved.
 	await unpairFromServer(host);
-	if (options?.ignoreAccount !== false) {
-		const account = await loadAccount();
-		const accountId = account?.id ?? host.accountUserId;
-		if (accountId) await ignoreAccountHost(accountId, host.id);
-	}
 
 	const cleanup = await Promise.allSettled([
 		removeHost(host.id).then(() => markMachineUnpaired(host.id)),
@@ -29,7 +22,7 @@ export async function forgetPairedHost(host: HostMetadata, options?: { ignoreAcc
 // Persist remote cleanup before deleting the selected machine's stored token.
 // Network work is retried separately and never holds the UI in a busy state.
 // A caller that already chose the machine passes it, so a selection change in
-// the meantime (account sync, another screen) cannot redirect the forget.
+// the meantime (another screen) cannot redirect the forget.
 export async function forgetServer(target?: HostMetadata): Promise<void> {
 	// The host record and its token are the actual pairing now; the legacy
 	// config is only the last resolved address. Clearing that alone left the
@@ -47,11 +40,6 @@ export async function forgetServer(target?: HostMetadata): Promise<void> {
 		}
 	}
 	await unpairFromServer(host);
-	if (host) {
-		const account = await loadAccount();
-		const accountId = account?.id ?? host.accountUserId;
-		if (accountId) await ignoreAccountHost(accountId, host.id);
-	}
 
 	// Each local deletion is independent. A rejected SecureStore operation must
 	// not prevent the config, event cursor, or onboarding flag from being

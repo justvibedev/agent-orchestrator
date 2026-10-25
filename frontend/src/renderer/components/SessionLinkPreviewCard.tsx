@@ -194,14 +194,12 @@ function TerminatedCard({ session, hostId }: { session: WorkspaceSession; hostId
 export function SessionLinkPreviewCard({
 	href,
 	sourceHostId,
-	sourceKind,
 }: {
 	href: string;
 	sourceHostId?: string;
-	sourceKind?: "cloud";
 }) {
 	const target = parseSessionLink(href);
-	const source = useSessionLinkSource(sourceHostId, sourceKind);
+	const source = useSessionLinkSource(sourceHostId);
 	const workspace = target ? source.workspaces.find((candidate) => candidate.id === target.projectId) : undefined;
 	const session = workspace?.sessions.find((candidate) => candidate.id === target?.sessionId);
 	const restoreHostId = sourceHostId && sourceHostId !== LOCAL_HOST ? sourceHostId : undefined;
@@ -410,7 +408,7 @@ export function ArtifactPreviewCard({ artifact, session }: { artifact: SessionAr
 		// React bubbles portal clicks through the component tree, so stop them
 		// before they reach a clickable parent such as the board card.
 		<HoverCardContent collisionPadding={8} sideOffset={6} className="w-80 p-3" onClick={(event) => event.stopPropagation()}>
-			<ArtifactCardBody artifact={artifact} session={session} remote={Boolean(session.cloud || (session.hostId && session.hostId !== LOCAL_HOST))} />
+			<ArtifactCardBody artifact={artifact} session={session} remote={Boolean(session.hostId && session.hostId !== LOCAL_HOST)} />
 		</HoverCardContent>
 	);
 }
@@ -418,21 +416,19 @@ export function ArtifactPreviewCard({ artifact, session }: { artifact: SessionAr
 export function ArtifactLinkPreviewCard({
 	href,
 	sourceHostId,
-	sourceKind,
 }: {
 	href: string;
 	sourceHostId?: string;
-	sourceKind?: "cloud";
 }) {
 	const { t } = useTranslation();
 	const target = parseArtifactLink(href);
-	const source = useSessionLinkSource(sourceHostId, sourceKind);
+	const source = useSessionLinkSource(sourceHostId);
 	const workspace = target ? source.workspaces.find((candidate) => candidate.id === target.projectId) : undefined;
 	const session = workspace?.sessions.find((candidate) => candidate.id === target?.sessionId);
 	const artifact = session?.artifactFiles?.find((candidate) => candidate.path === target?.path);
 	if (session && artifact) return (
 		<HoverCardContent collisionPadding={8} sideOffset={6} className="w-80 p-3">
-			<ArtifactCardBody artifact={artifact} session={session} remote={sourceKind === "cloud" || Boolean(sourceHostId && sourceHostId !== LOCAL_HOST)} />
+			<ArtifactCardBody artifact={artifact} session={session} remote={Boolean(sourceHostId && sourceHostId !== LOCAL_HOST)} />
 		</HoverCardContent>
 	);
 	if (session) return (

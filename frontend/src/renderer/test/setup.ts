@@ -189,10 +189,6 @@ if (typeof window !== "undefined") {
 			fetch: async () => ({ bytes: new Uint8Array(), mimeType: "image/png" }),
 			save: async () => true,
 		},
-		cloudArtifact: {
-			fetch: async () => new Uint8Array(),
-			onFrameNavigated: () => () => undefined,
-		},
 		daemon: {
 			getStatus: async () => ({ state: "stopped" }),
 			start: async () => ({ state: "starting" }),
@@ -389,9 +385,6 @@ if (typeof window !== "undefined") {
 		},
 		remotes: {
 			list: async () => [],
-			importAccountHost: async () => undefined,
-			pruneAccountHosts: async () => undefined,
-			issueAccountToken: async () => "",
 			add: async () => "offline" as const,
 			update: async () => "offline" as const,
 			remove: async () => undefined,
@@ -402,28 +395,6 @@ if (typeof window !== "undefined") {
 			resolvePreviewUrl: async (_hostId: string, _sessionId: string, viewedUrl: string) => viewedUrl,
 		agentBrowserUrl: async () => "",
 			externalUrl: async (_hostId: string, url: string) => url,
-		},
-		cloud: {
-			getSession: async () => null,
-			signIn: async () => undefined,
-			signOut: async () => undefined,
-			cancelProviderAuth: async () => undefined,
-			connectProviderAuth: async () => undefined,
-			localAuthAvailable: async () => false,
-			localRegister: async () => {
-				throw new Error("not available in tests");
-			},
-			localLogin: async () => {
-				throw new Error("not available in tests");
-			},
-			onSessionChanged: () => () => undefined,
-		},
-		cloudCp: {
-			request: async () => ({ status: 401, headers: {}, body: "" }),
-			openStream: async () => ({ streamId: "stream_test" }),
-			closeStream: () => undefined,
-			onStreamEvent: () => () => undefined,
-			agentBrowserUrl: async () => "",
 		},
 	};
 } // end if (typeof window !== "undefined")

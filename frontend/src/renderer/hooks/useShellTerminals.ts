@@ -12,7 +12,6 @@ import { LOCAL_HOST, type HostId } from "../lib/hosts";
 import { mockShellTerminals } from "../lib/mock-data";
 import { isWindowsPlatform } from "../lib/platform";
 import { terminalShellRequestValue, useTerminalShellStore } from "../stores/terminal-shell-store";
-import { useCloudCp } from "./useCloudCp";
 
 export type ShellTerminal = {
 	/** Runtime handle the terminal mux attaches to, exactly like a session pane's. */
@@ -23,10 +22,8 @@ export type ShellTerminal = {
 	workingDir: string;
 	title: string;
 	createdAt: string;
-	/** Owning daemon; absent for local and cloud shells. */
+	/** Owning daemon; absent for local shells. */
 	hostId?: HostId;
-	/** Present when the shell lives in a control-plane sandbox, not the local daemon. */
-	cloud?: { orgId: string };
 	/**
 	 * Exists only in the renderer while the daemon is creating the PTY. It lets
 	 * the tab strip respond to the click immediately without ever attempting to
@@ -66,10 +63,6 @@ export function toShellTerminal(t: components["schemas"]["ShellTerminalResponse"
 // suite drives.
 let previewShellTerminals: ShellTerminal[] = [...mockShellTerminals];
 let previewShellSeq = 0;
-// Cloud workspace shells are connection-scoped rather than daemon-owned. Keep
-// their tab metadata for this Electron renderer lifetime; the terminal itself
-// is created when its ticketed control-plane WebSocket connects.
-let cloudShellTerminals: ShellTerminal[] = [];
 // Shells whose close is still in flight, per host. Closing several tabs in a
 // row refetches the list as each close settles, and the daemon can answer one
 // refetch before it has processed the other pending deletes; without this, a
@@ -133,7 +126,6 @@ async function fetchListedShellTerminals(hostId?: HostId): Promise<ShellTerminal
 		...(data?.shellTerminals ?? [])
 			.filter((terminal) => !closing?.has(terminal.handleId))
 			.map((terminal) => toShellTerminal(terminal, hostId)),
-		...(remote ? [] : cloudShellTerminals),
 	];
 }
 
@@ -158,13 +150,7 @@ export type OpenShellTerminalInput = {
 	projectId?: string;
 	sessionId?: string;
 	shell?: string;
-	cloud?: { orgId: string };
 };
-
-function nextCloudShellTitle(terminals: ShellTerminal[], sessionId: string): string {
-	const count = terminals.filter((terminal) => terminal.cloud && terminal.sessionId === sessionId).length;
-	return `Terminal ${count + 1}`;
-}
 
 type OpenShellTerminalMutationInput = OpenShellTerminalInput & {
 	optimisticShell?: ShellTerminal;
@@ -172,13 +158,8 @@ type OpenShellTerminalMutationInput = OpenShellTerminalInput & {
 	request?: Promise<ShellTerminal>;
 };
 
-/** Destroys a shell this renderer owns: daemon, cloud, or preview. */
+/** Destroys a shell this renderer owns: daemon or preview. */
 async function destroyShellTerminal(handleId: string, hostId?: HostId): Promise<void> {
-	const remote = Boolean(hostId && hostId !== LOCAL_HOST);
-	if (!remote && cloudShellTerminals.some((shell) => shell.handleId === handleId)) {
-		cloudShellTerminals = cloudShellTerminals.filter((shell) => shell.handleId !== handleId);
-		return;
-	}
 	await closeShellTerminal(handleId, hostId);
 }
 
@@ -228,12 +209,10 @@ export function useOpenShellTerminal(hostId?: HostId) {
 	const queryClient = useQueryClient();
 	const queryKey = shellTerminalsQueryKeyForHost(hostId);
 	const remote = Boolean(hostId && hostId !== LOCAL_HOST);
-	const { client: cloudCpClient } = useCloudCp();
 	const createShell = async ({
 		projectId,
 		sessionId,
 		shell,
-		cloud,
 		optimisticShell,
 	}: OpenShellTerminalMutationInput): Promise<ShellTerminal> => {
 		if (usePreviewData && !remote) {
@@ -247,24 +226,6 @@ export function useOpenShellTerminal(hostId?: HostId) {
 				createdAt: new Date().toISOString(),
 			};
 			previewShellTerminals = [...previewShellTerminals, shell];
-			return shell;
-		}
-		if (cloud) {
-			if (!sessionId) throw new Error("A cloud shell terminal must belong to a session");
-			// Explicitly resume the cloud session before opening its shell, so a
-			// paused sandbox is woken rather than the shell attaching to nothing.
-			await cloudCpClient.resumeSession(cloud.orgId, sessionId);
-			const current = queryClient.getQueryData<ShellTerminal[]>(queryKey) ?? [];
-			const shell: ShellTerminal = {
-				handleId: `cloud-shell-${crypto.randomUUID()}`,
-				projectId,
-				sessionId,
-				workingDir: "/workspace/repository",
-				title: nextCloudShellTitle(current, sessionId),
-				createdAt: new Date().toISOString(),
-				cloud,
-			};
-			cloudShellTerminals = [...cloudShellTerminals, shell];
 			return shell;
 		}
 		// This renderer attaches every shell it opens with its measured grid, so
@@ -345,8 +306,8 @@ export function useOpenShellTerminal(hostId?: HostId) {
 				void useTerminalShellStore.getState().setPreference({ kind: "auto" });
 			}
 		},
-		onSettled: (_data, _error, input) => {
-			if (!input?.cloud) void queryClient.invalidateQueries({ queryKey });
+		onSettled: () => {
+			void queryClient.invalidateQueries({ queryKey });
 		},
 	});
 
@@ -416,7 +377,6 @@ export function useCloseShellTerminal(hostId?: HostId) {
 			if (!closing) closingShellHandles.set(key, (closing = new Set()));
 			closing.add(handleId);
 			const previous = queryClient.getQueryData<ShellTerminal[]>(queryKey);
-			const isCloud = Boolean(previous?.find((shell) => shell.handleId === handleId)?.cloud);
 			const removeClosedShell = () => {
 				queryClient.setQueryData<ShellTerminal[]>(queryKey, (current) =>
 					current?.filter((shell) => shell.handleId !== handleId),
@@ -429,7 +389,7 @@ export function useCloseShellTerminal(hostId?: HostId) {
 			// A request that resolved while cancellation was being scheduled may have
 			// restored its stale snapshot; make the optimistic state authoritative.
 			removeClosedShell();
-			return { previous, isCloud };
+			return { previous };
 		},
 		onError: (error, _handleId, context) => {
 			// A 404 means the daemon has already removed the shell, so restoring its
@@ -441,14 +401,14 @@ export function useCloseShellTerminal(hostId?: HostId) {
 		},
 		// Settled, not success: a close that 404s means the daemon already lost
 		// the shell, and the stale tab still needs to disappear.
-		onSettled: (_data, _error, handleId, context) => {
+		onSettled: (_data, _error, handleId) => {
 			const key = hostKey(hostId);
 			const closing = closingShellHandles.get(key);
 			closing?.delete(handleId);
 			if (closing?.size === 0) closingShellHandles.delete(key);
 			// A pending tab closed nothing on the daemon; its create request settles
 			// the list once the shell it created is destroyed.
-			if (!context?.isCloud && !isPendingShellHandle(handleId)) void queryClient.invalidateQueries({ queryKey });
+			if (!isPendingShellHandle(handleId)) void queryClient.invalidateQueries({ queryKey });
 		},
 	});
 }
@@ -466,14 +426,6 @@ export function useRenameShellTerminal(hostId?: HostId) {
 				previewShellTerminals = previewShellTerminals.map((s) => (s.handleId === handleId ? { ...s, title } : s));
 				const shell = previewShellTerminals.find((s) => s.handleId === handleId);
 				if (!shell) throw new Error("No such shell terminal");
-				return shell;
-			}
-			const cloudIndex = remote ? -1 : cloudShellTerminals.findIndex((shell) => shell.handleId === handleId);
-			if (cloudIndex >= 0) {
-				const shell = { ...cloudShellTerminals[cloudIndex], title };
-				cloudShellTerminals = cloudShellTerminals.map((candidate, index) =>
-					index === cloudIndex ? shell : candidate,
-				);
 				return shell;
 			}
 			const { data, error } = await clientForSessionHost(hostId).PATCH("/api/v1/shell-terminals/{handleId}", {
@@ -499,7 +451,7 @@ export function useRenameShellTerminal(hostId?: HostId) {
 			queryClient.setQueryData<ShellTerminal[]>(queryKey, (current) =>
 				current?.map((candidate) => (candidate.handleId === shell.handleId ? shell : candidate)),
 			);
-			if (!shell.cloud) void queryClient.invalidateQueries({ queryKey });
+			void queryClient.invalidateQueries({ queryKey });
 		},
 	});
 }

@@ -78,7 +78,6 @@ import { isWebLink, openLinkInSystemBrowser } from "../../lib/external-link-poli
 import { ActivityTitle, ChatMarkdown, OriginPreviewMarkdown, SessionLabelLink, SessionLinkedText } from "./ChatMarkdown";
 import { HighlightedCode } from "./HighlightedCode";
 import { CopyButton } from "./CopyButton";
-import { ScriptRunPanel } from "../ScriptRunPanel";
 import { HumanMessageEditor } from "./HumanMessageEditor";
 import { RenderFrame } from "./RenderFrame";
 import { ConversationBranchNavigator } from "./ConversationBranchNavigator";
@@ -1150,8 +1149,8 @@ export function ActivityRow({ activity }: { activity: ConversationActivity }) {
 		activity.activityKind === "mcp_tool" ||
 		activity.activityKind === "auto_review" ||
 		activity.activityKind === "ao_action";
-	// AO records pages as system rows; a page named by any other row (a cloud
-	// session's, say) is not one this daemon serves.
+	// AO records pages as system rows; a page named by any other row is
+	// not one this daemon serves.
 	const renderRef = activity.activityKind === "system" ? readRenderRef(activity.detail) : undefined;
 	const artifactRef = activity.activityKind === "system" ? readArtifactRef(activity.detail) : undefined;
 
@@ -1163,7 +1162,6 @@ export function ActivityRow({ activity }: { activity: ConversationActivity }) {
 	else if (activity.activityKind === "ao_action") content = <AOActionRow activity={activity} />;
 	else if (activity.detail?.event === "model.rerouted") content = <RerouteRow activity={activity} />;
 	else if (activity.detail?.event === "auth.reauth_required") content = <ReauthRow activity={activity} />;
-	else if (activity.detail?.event === "workspace.script.run" && activity.detail.scriptRun) content = <ScriptRunPanel collapsible run={activity.detail.scriptRun} />;
 	else if (activity.detail?.event === "workspace.setup") content = <ProjectSetupRow activity={activity} />;
 	else if (activity.detail?.event === "account.switched") content = <AccountSwitchedRow accountId={activity.detail.accountId} />;
 	else if (renderRef) content = <RenderFrame render={renderRef} />;
@@ -2517,8 +2515,7 @@ function setupDuration(durationMs: number): { minutes: number; seconds: number }
  * How the project's Setup commands (Project settings > Scripts) ended, before
  * the agent started. Compact like the other system rows; the failed step's
  * output (the tail the worker kept, already redacted) opens below it in
- * monospace. Workers that publish workspace.script.step events get the
- * ScriptRunPanel instead; this row stays for workers that predate them.
+ * monospace.
  */
 function ProjectSetupRow({ activity }: { activity: ConversationActivity }) {
 	const { t } = useTranslation();

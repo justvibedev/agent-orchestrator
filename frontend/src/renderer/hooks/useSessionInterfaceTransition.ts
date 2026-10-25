@@ -9,10 +9,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { components } from "../../api/schema";
 import { apiErrorMessage, hasTrustedApiBaseUrl } from "../lib/api-client";
 import { clientForSessionHost } from "../lib/host-clients";
-import type { CloudCpInterfaceTransition } from "../lib/cloud-cp";
 import { conversationQueryKey } from "./useConversation";
-import { useCloudCp } from "./useCloudCp";
-import { cloudSessionsQueryKey, workspaceQueryKeyForHost } from "./useWorkspaceQuery";
+import { workspaceQueryKeyForHost } from "./useWorkspaceQuery";
 
 export type SessionInterfaceTransition = components["schemas"]["SessionInterfaceTransition"];
 export type SessionInterfaceTransitionStatus =
@@ -32,13 +30,12 @@ type StartInterfaceTransitionInput = {
 type InterfaceTransitionMutationTarget = {
 	targetSessionId: string;
 	targetHostId?: string;
-	targetCloudOrgId?: string;
 };
 
-export type SessionInterfaceContext = string | { orgId: string } | null;
+export type SessionInterfaceContext = string | null;
 
 function mutationContext(target: InterfaceTransitionMutationTarget): SessionInterfaceContext {
-	return target.targetCloudOrgId ? { orgId: target.targetCloudOrgId } : target.targetHostId ?? null;
+	return target.targetHostId ?? null;
 }
 
 type StartInterfaceTransitionMutationInput = StartInterfaceTransitionInput & InterfaceTransitionMutationTarget;
@@ -61,17 +58,6 @@ type InterfaceTransitionMutationState<TInput> = {
 	submittedAt: number;
 };
 
-// Cloud and the local daemon deliberately expose the same state-machine
-// vocabulary. Keep this conversion at the control-plane boundary rather than
-// dropping the Cloud transition: without it, the first status refetch after a
-// successful POST erased the optimistic active state, re-enabled the action,
-// and let a second click race the still-running handoff.
-function toSessionInterfaceTransition(
-	transition: CloudCpInterfaceTransition | undefined,
-): SessionInterfaceTransition | undefined {
-	return transition as SessionInterfaceTransition | undefined;
-}
-
 function useInterfaceTransitionMutations<TInput>(mutationKey: readonly unknown[]) {
 	return useMutationState<InterfaceTransitionMutationState<TInput>>({
 		filters: { mutationKey },
@@ -86,12 +72,12 @@ function useInterfaceTransitionMutations<TInput>(mutationKey: readonly unknown[]
 
 function summarizeInterfaceTransitionMutations<
 	TInput extends InterfaceTransitionMutationTarget,
->(mutations: InterfaceTransitionMutationState<TInput>[], sessionId: string | undefined, hostId?: string, cloudOrgId?: string) {
+>(mutations: InterfaceTransitionMutationState<TInput>[], sessionId: string | undefined, hostId?: string) {
 	let latest: InterfaceTransitionMutationState<TInput> | undefined;
 	let pending: InterfaceTransitionMutationState<TInput> | undefined;
 	for (const mutation of mutations) {
 		const input = mutation.input;
-		if (!input || input.targetSessionId !== sessionId || input.targetHostId !== hostId || input.targetCloudOrgId !== cloudOrgId) continue;
+		if (!input || input.targetSessionId !== sessionId || input.targetHostId !== hostId) continue;
 		if (!latest || mutation.submittedAt >= latest.submittedAt) latest = mutation;
 		if (
 			mutation.status === "pending" &&
@@ -114,13 +100,12 @@ function clearInterfaceTransitionMutationState(
 	mutationKey: readonly unknown[],
 	sessionId: string | undefined,
 	hostId?: string,
-	cloudOrgId?: string,
 ) {
 	if (!sessionId) return;
 	const mutationCache = queryClient.getMutationCache();
 	for (const mutation of mutationCache.findAll({ mutationKey })) {
 		const input = mutation.state.variables as InterfaceTransitionMutationTarget | undefined;
-		if (input?.targetSessionId === sessionId && input.targetHostId === hostId && input.targetCloudOrgId === cloudOrgId && mutation.state.status !== "pending") {
+		if (input?.targetSessionId === sessionId && input.targetHostId === hostId && mutation.state.status !== "pending") {
 			mutationCache.remove(mutation);
 		}
 	}
@@ -175,50 +160,20 @@ export function interfaceTransitionHasUnacknowledgedNotice(
 
 export function sessionInterfaceTransitionQueryKey(sessionId: string, context?: SessionInterfaceContext) {
 	if (typeof context === "string") return ["session-interface-transition", context, sessionId] as const;
-	if (context) return ["session-interface-transition", "cloud", context.orgId, sessionId] as const;
 	return ["session-interface-transition", sessionId] as const;
 }
 
 function useSessionInterfaceTransitionStatusQuery(
 	sessionId: string | undefined,
-	cloudCp: ReturnType<typeof useCloudCp>,
 	context?: SessionInterfaceContext,
 	hasSessionContext = false,
 ) {
-	const queryClient = useQueryClient();
 	const hostId = typeof context === "string" ? context : undefined;
-	const cloud = context && typeof context === "object" ? context : undefined;
-	const isCloud = Boolean(cloud && cloudCp.ready);
 	const isLocal = context === null || !hasSessionContext;
 	return useQuery({
 		queryKey: sessionInterfaceTransitionQueryKey(sessionId ?? "", context),
-		enabled: Boolean(sessionId && (hostId || isCloud || (isLocal && hasTrustedApiBaseUrl()))),
+		enabled: Boolean(sessionId && (hostId || (isLocal && hasTrustedApiBaseUrl()))),
 		queryFn: async () => {
-			if (isCloud && cloud) {
-				const [sessionResponse, transitionStatus] = await Promise.all([
-					cloudCp.client.getSession(cloud.orgId, sessionId as string),
-					cloudCp.client.getInterfaceTransition(cloud.orgId, sessionId as string),
-				]);
-				const previousTransition = queryClient.getQueryData<SessionInterfaceTransitionStatus>(
-					sessionInterfaceTransitionQueryKey(sessionId as string, context),
-				)?.transition;
-				// Cloud omits completed transitions from status. Keep the handoff
-				// visible until the workspace session list reflects its target mode;
-				// otherwise the old surface flashes after the loader disappears.
-				const completedTransition = !transitionStatus.transition && previousTransition &&
-					(interfaceTransitionIsActive(previousTransition) || previousTransition.phase === "completed") &&
-					sessionResponse.session.interfaceMode === previousTransition.targetMode
-					? { ...previousTransition, phase: "completed" as const }
-					: undefined;
-				return {
-					supported: transitionStatus.supported,
-					targetMode: transitionStatus.targetMode,
-					reasonCode: transitionStatus.reasonCode,
-					reason: transitionStatus.reason,
-					transition: toSessionInterfaceTransition(transitionStatus.transition) ?? completedTransition,
-					currentMode: sessionResponse.session.interfaceMode,
-				} as SessionInterfaceTransitionStatus & { currentMode?: SessionInterfaceMode };
-			}
 			const { data, error } = await clientForSessionHost(hostId).GET(
 				"/api/v1/sessions/{sessionId}/interface-transition",
 				{ params: { path: { sessionId: sessionId as string } } },
@@ -246,7 +201,7 @@ function useSessionInterfaceTransitionStatusQuery(
 }
 
 export function useSessionInterfaceTransitionStatus(sessionId: string | undefined, context?: SessionInterfaceContext) {
-	const query = useSessionInterfaceTransitionStatusQuery(sessionId, useCloudCp(Boolean(context && typeof context === "object")), context, context !== undefined);
+	const query = useSessionInterfaceTransitionStatusQuery(sessionId, context, context !== undefined);
 	return {
 		status: query.data,
 		transition: query.data?.transition,
@@ -264,19 +219,15 @@ export function useSessionInterfaceTransitionStatus(sessionId: string | undefine
 export function useSessionInterfaceTransition(
 	sessionId: string | undefined,
 	// undefined: session row is still resolving; null: resolved local session.
-	// This prevents unresolved Cloud tabs from probing the local daemon.
+	// This prevents unresolved tabs from probing the local daemon.
 	context?: SessionInterfaceContext,
 ) {
 	const queryClient = useQueryClient();
 	const hostId = typeof context === "string" ? context : undefined;
-	const cloud = context && typeof context === "object" ? context : undefined;
-	const cloudOrgId = cloud?.orgId;
-	const cloudCp = useCloudCp(Boolean(cloud));
 	// Keep the two-argument call site backwards-compatible for local sessions.
 	// SessionView deliberately passes `undefined` while a tab is unresolved, so
 	// distinguish an omitted context from that explicit unresolved value.
 	const hasSessionContext = arguments.length >= 2;
-	const isCloud = Boolean(cloud);
 	const settledRef = useRef<string>("");
 	const refreshAttemptRef = useRef(0);
 	const [refreshingTransition, setRefreshingTransition] = useState<{
@@ -285,7 +236,6 @@ export function useSessionInterfaceTransition(
 	}>();
 	const query = useSessionInterfaceTransitionStatusQuery(
 		sessionId,
-		cloudCp,
 		context,
 		hasSessionContext,
 	);
@@ -295,23 +245,8 @@ export function useSessionInterfaceTransition(
 		mutationFn: async ({
 			targetSessionId,
 			targetHostId,
-			targetCloudOrgId,
 			...input
 		}: StartInterfaceTransitionMutationInput) => {
-			if (targetCloudOrgId) {
-				const response = await cloudCp.client.startInterfaceTransition(
-					targetCloudOrgId,
-					targetSessionId,
-					{
-						targetMode: input.targetMode, policy: input.policy,
-						...(input.model ? { model: input.model } : {}),
-						...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}),
-					},
-				);
-				return {
-					transition: toSessionInterfaceTransition(response.transition),
-				};
-			}
 			const { data, error } = await clientForSessionHost(targetHostId).POST(
 				"/api/v1/sessions/{sessionId}/interface-transition",
 				{
@@ -341,25 +276,13 @@ export function useSessionInterfaceTransition(
 					queryKey: sessionInterfaceTransitionQueryKey(variables.targetSessionId, mutationContext(variables)),
 				}),
 			];
-			if (variables.targetCloudOrgId) {
-				// Cloud's session projection owns interfaceMode. Refetch it as soon
-				// as POST accepts the handoff rather than leaving the source TUI
-				// mounted until the ordinary five-second Cloud polling interval.
-				refreshes.push(
-					queryClient.invalidateQueries({ queryKey: cloudSessionsQueryKey }),
-					queryClient.invalidateQueries({ queryKey: ["cloud-session"] }),
-				);
-			}
 			return Promise.all(refreshes).catch(() => undefined);
 		},
 	});
 
 	const cancel = useMutation({
 		mutationKey: cancelInterfaceTransitionMutationKey,
-		mutationFn: async ({ targetSessionId, targetHostId, targetCloudOrgId }: InterfaceTransitionMutationTarget) => {
-			if (targetCloudOrgId) {
-				return cloudCp.client.cancelInterfaceTransition(targetCloudOrgId, targetSessionId);
-			}
+		mutationFn: async ({ targetSessionId, targetHostId }: InterfaceTransitionMutationTarget) => {
 			const { error } = await clientForSessionHost(targetHostId).DELETE(
 				"/api/v1/sessions/{sessionId}/interface-transition",
 				{ params: { path: { sessionId: targetSessionId } } },
@@ -379,16 +302,8 @@ export function useSessionInterfaceTransition(
 		mutationFn: async ({
 			targetSessionId,
 			targetHostId,
-			targetCloudOrgId,
 			transitionId,
 		}: AcknowledgeInterfaceTransitionNoticeMutationInput) => {
-			if (targetCloudOrgId) {
-				return cloudCp.client.acknowledgeInterfaceTransitionNotice(
-					targetCloudOrgId,
-					targetSessionId,
-					transitionId,
-				);
-			}
 			const { data, error } = await clientForSessionHost(targetHostId).PUT(
 				"/api/v1/sessions/{sessionId}/interface-transition/{transitionId}/notice-acknowledgement",
 				{
@@ -401,7 +316,7 @@ export function useSessionInterfaceTransition(
 			return data;
 		},
 		onSuccess: (response, variables) => {
-			if (!response || variables.targetCloudOrgId) return;
+			if (!response) return;
 			const localResponse = response as unknown as { transition: SessionInterfaceTransition };
 			queryClient.setQueryData<SessionInterfaceTransitionStatus>(
 				sessionInterfaceTransitionQueryKey(variables.targetSessionId, mutationContext(variables)),
@@ -423,7 +338,6 @@ export function useSessionInterfaceTransition(
 		),
 		sessionId,
 		hostId,
-		cloudOrgId,
 	);
 	const cancelState = summarizeInterfaceTransitionMutations(
 		useInterfaceTransitionMutations<InterfaceTransitionMutationTarget>(
@@ -431,7 +345,6 @@ export function useSessionInterfaceTransition(
 		),
 		sessionId,
 		hostId,
-		cloudOrgId,
 	);
 	const acknowledgeNoticeState = summarizeInterfaceTransitionMutations(
 		useInterfaceTransitionMutations<AcknowledgeInterfaceTransitionNoticeMutationInput>(
@@ -439,14 +352,13 @@ export function useSessionInterfaceTransition(
 		),
 		sessionId,
 		hostId,
-		cloudOrgId,
 	);
 
 	const transition = query.data?.transition;
 	const transitionActive = interfaceTransitionIsActive(transition);
 	const transitionID = transition?.id;
 	const transitionKey =
-		sessionId && transitionID ? JSON.stringify([hostId, cloudOrgId, sessionId, transitionID]) : "";
+		sessionId && transitionID ? JSON.stringify([hostId, sessionId, transitionID]) : "";
 	// A completed handoff is not visually settled until the queries invalidated by
 	// it have returned. In particular, switching TUI -> Chat necessarily has a
 	// small interval after mode=chat commits and before the Chat controller is in
@@ -469,12 +381,6 @@ export function useSessionInterfaceTransition(
 			queryClient.invalidateQueries({ queryKey: workspaceQueryKeyForHost(hostId) }),
 			queryClient.invalidateQueries({ queryKey: conversationQueryKey(sessionId, hostId) }),
 		];
-		if (isCloud) {
-			refreshes.push(
-				queryClient.invalidateQueries({ queryKey: cloudSessionsQueryKey }),
-				queryClient.invalidateQueries({ queryKey: ["cloud-session"] }),
-			);
-		}
 		void Promise.all(refreshes).finally(() => {
 			setRefreshingTransition((refreshing) =>
 				refreshing?.key === transitionKey && refreshing.attempt === attempt
@@ -482,7 +388,7 @@ export function useSessionInterfaceTransition(
 					: refreshing,
 			);
 		});
-	}, [isCloud, queryClient, sessionId, hostId, transitionActive, transitionKey]);
+	}, [queryClient, sessionId, hostId, transitionActive, transitionKey]);
 	// A local start refusal records a durable-free error. If any client then opens
 	// a real transition, that newer durable row supersedes the stale refusal: the
 	// switch is running or done, so the "could not switch" notice must not linger.
@@ -499,9 +405,8 @@ export function useSessionInterfaceTransition(
 			startInterfaceTransitionMutationKey,
 			sessionId,
 			hostId,
-			cloudOrgId,
 		);
-	}, [queryClient, sessionId, hostId, cloudOrgId, startErrorSuperseded]);
+	}, [queryClient, sessionId, hostId, startErrorSuperseded]);
 
 	const refreshStatus = useCallback(
 		async (): Promise<SessionInterfaceTransitionStatus | undefined> => {
@@ -521,7 +426,7 @@ export function useSessionInterfaceTransition(
 		statusError: query.error ? apiErrorMessage(query.error) : undefined,
 		start: (input: StartInterfaceTransitionInput) => {
 			if (!sessionId) return Promise.reject(new Error("No session is selected."));
-			return start.mutateAsync({ ...input, targetSessionId: sessionId, targetHostId: hostId, targetCloudOrgId: cloudOrgId });
+			return start.mutateAsync({ ...input, targetSessionId: sessionId, targetHostId: hostId });
 		},
 		starting: startState.isPending,
 		startingPolicy: startState.pendingInput?.policy,
@@ -533,18 +438,17 @@ export function useSessionInterfaceTransition(
 				startInterfaceTransitionMutationKey,
 				sessionId,
 				hostId,
-				cloudOrgId,
 			);
 		},
 		cancel: () => {
 			if (!sessionId) return Promise.reject(new Error("No session is selected."));
-			return cancel.mutateAsync({ targetSessionId: sessionId, targetHostId: hostId, targetCloudOrgId: cloudOrgId });
+			return cancel.mutateAsync({ targetSessionId: sessionId, targetHostId: hostId });
 		},
 		cancelling: cancelState.isPending,
 		cancelError: cancelState.error,
 		acknowledgeNotice: (transitionId: string) => {
 			if (!sessionId) return Promise.reject(new Error("No session is selected."));
-			return acknowledgeNotice.mutateAsync({ targetSessionId: sessionId, targetHostId: hostId, targetCloudOrgId: cloudOrgId, transitionId });
+			return acknowledgeNotice.mutateAsync({ targetSessionId: sessionId, targetHostId: hostId, transitionId });
 		},
 		acknowledgingNotice: acknowledgeNoticeState.isPending,
 		acknowledgeNoticeError: acknowledgeNoticeState.error,

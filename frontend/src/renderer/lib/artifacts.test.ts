@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-	CLOUD_PROJECT_KIND,
 	STANDALONE_WORKSPACE_ID,
 	type SessionArtifact,
 	type WorkspaceSession,
-	type WorkspaceSummary,
+	type WorkspaceSummary
 } from "../types/workspace";
 import { artifactCount, filterArtifactGroups, groupArtifactsByProject } from "./artifacts";
 
@@ -92,16 +91,6 @@ describe("groupArtifactsByProject", () => {
 		expect(groups).toEqual([]);
 	});
 
-	it("includes cloud projects' artifacts", () => {
-		const [group] = groupArtifactsByProject([
-			workspace("cloud", "cloud-project", [
-				session("c-1", [artifact("cloud.md", "2026-10-09T10:00:00Z")], { cloud: { orgId: "org-1" } }),
-			], { kind: CLOUD_PROJECT_KIND, cloudOrgId: "org-1" }),
-		]);
-
-		expect(group).toMatchObject({ id: "cloud", isScratchpad: false });
-		expect(group.rows[0]).toMatchObject({ name: "cloud.md", sessionId: "c-1", projectId: "cloud" });
-	});
 
 	it("marks rows from a working session as generating", () => {
 		const [group] = groupArtifactsByProject([

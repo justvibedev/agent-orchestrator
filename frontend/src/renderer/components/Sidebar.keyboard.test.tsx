@@ -16,10 +16,6 @@ vi.mock("motion/react", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("motion/react")>();
 	return { ...actual, AnimatePresence: ({ children }: { children: React.ReactNode }) => children };
 });
-vi.mock("../lib/cloud-session", () => ({
-	useCloudSession: () => ({ configured: false, session: null, status: "unauthenticated", signIn: vi.fn(), signOut: vi.fn() }),
-}));
-vi.mock("../hooks/useCloudGate", () => ({ useCloudGate: () => ({ cloudEnabled: true, localEnabled: true, client: "" }) }));
 vi.mock("../hooks/useSettings", () => ({
 	useSettings: () => ({ settings: { trackerIntakeEnabled: true }, isLoading: false, error: undefined }),
 }));

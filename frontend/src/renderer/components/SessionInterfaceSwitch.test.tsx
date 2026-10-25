@@ -195,26 +195,6 @@ describe("SessionInterfaceSwitchButton", () => {
 });
 
 describe("SessionInterfaceSwitchDialog", () => {
-	it("requires an explicit Terminal stop for Cloud without claiming the agent is busy", () => {
-		const onChoose = vi.fn();
-		render(
-			<SessionInterfaceSwitchDialog
-				open
-				target="chat"
-				requireExplicitTerminalStop
-				onOpenChange={vi.fn()}
-				onChoose={onChoose}
-			/>,
-		);
-
-		const dialog = screen.getByRole("dialog", { name: "Switch to Chat UI?" });
-		expect(dialog).toHaveTextContent("AO cannot verify whether this Terminal is idle.");
-		expect(within(dialog).queryByRole("button", { name: /^Finish work, then switch/ })).not.toBeInTheDocument();
-		const action = within(dialog).getByRole("button", { name: /^Terminate and then switch/ });
-		expect(onChoose).not.toHaveBeenCalled();
-		fireEvent.click(action);
-		expect(onChoose).toHaveBeenCalledWith("interrupt");
-	});
 
 	it("focuses Finish work as the safe default", async () => {
 		render(<SessionInterfaceSwitchDialog open target="tui" onOpenChange={vi.fn()} onChoose={vi.fn()} />);

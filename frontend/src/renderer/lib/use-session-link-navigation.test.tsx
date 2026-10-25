@@ -19,7 +19,6 @@ vi.mock("../hooks/useWorkspaceQuery", () => ({
 	}),
 	remoteWorkspaceQueryKey: (hostId: string) => ["remote-workspaces", hostId],
 }));
-vi.mock("../hooks/useCloudOrg", () => ({ useCloudOrg: () => ({ ready: true, org: { id: "org-1" } }) }));
 
 describe("useSessionLinkNavigation", () => {
 	beforeEach(() => {
@@ -60,16 +59,6 @@ describe("useSessionLinkNavigation", () => {
 		expect(mocks.cloudSessions).not.toHaveBeenCalled();
 	});
 
-	it("resolves a Cloud chat link without querying local or remote workspaces", () => {
-			mocks.workspace.mockReturnValue({ isSuccess: false, data: undefined });
-			mocks.cloudProjects.mockReturnValue({ isSuccess: true, data: [{ id: "project" }] });
-			mocks.cloudSessions.mockReturnValue({ isSuccess: true, data: [{ id: "session", projectId: "project", isTerminated: false }] });
-			const { result } = renderHook(() => useSessionLinkNavigation(undefined, "cloud"));
-			act(() => expect(result.current("ao://sessions/project/session")).toBe(true));
-			expect(mocks.navigate).toHaveBeenCalledWith("project", "session");
-			expect(useUiStore.getState().globalToasts).toEqual([]);
-			expect(mocks.workspace).not.toHaveBeenCalled();
-	});
 
 	it("shows feedback instead of navigating to a terminated session", () => {
 		const { result } = renderHook(() => useSessionLinkNavigation());

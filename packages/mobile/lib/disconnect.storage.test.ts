@@ -12,7 +12,6 @@ vi.mock("expo-secure-store", () => ({
 	setItemAsync: async (key: string, value: string) => void secure.set(key, value),
 	deleteItemAsync: async (key: string) => void secure.delete(key),
 }));
-vi.mock("./account", () => ({ loadAccount: async () => null }));
 vi.mock("./push", () => ({ unpairFromServer: async () => {}, retryPendingUnpairs: async () => {} }));
 vi.mock("./pendingUnpair", () => ({ markMachineUnpaired: async () => {} }));
 vi.mock("./chat/eventCursor", () => ({ clearEventCursorsForHost: async () => {} }));
@@ -25,23 +24,7 @@ import { resolveActiveConfig } from "./resolveConfig";
 const host = { id: "h_one", name: "One", platform: "darwin", endpoints: [{ kind: "lan" as const, host: "host-one", port: 3011, secure: false }], token: "secret", lastConnected: 1, accountUserId: "user-a" };
 beforeEach(() => { plain.clear(); secure.clear(); });
 
-it("does not resurrect the last account host from cached connection data after sign-out", async () => {
-	await saveHost(host);
-	await saveConfig({ hostId: host.id, host: "host-one", httpPort: "3011", muxPort: "3011", password: host.token });
-	await forgetPairedHost(host, { ignoreAccount: false });
-	await migrateLegacyConfig();
-	expect(await loadHosts()).toEqual([]);
-	expect((await loadConfig()).password).toBe("");
-});
 
-it("keeps another machine's cached connection when removing a stale account host", async () => {
-	await saveHost(host);
-	await saveHost({ ...host, id: "h_other", token: "other", accountUserId: undefined });
-	await saveConfig({ hostId: "h_other", host: "other-host", httpPort: "3011", muxPort: "3011", password: "other" });
-	await forgetPairedHost(host, { ignoreAccount: false });
-	expect((await loadConfig()).password).toBe("other");
-	expect((await loadHosts()).map((item) => item.id)).toEqual(["h_other"]);
-});
 
 it("does not restore a forgotten machine when its pending connection finishes late", async () => {
 	await saveHost(host);
@@ -50,7 +33,7 @@ it("does not restore a forgotten machine when its pending connection finishes la
 	const { runtimeResolveDeps } = await import("./resolveConfig");
 	const pending = resolveActiveConfig({ ...runtimeResolveDeps(), migrate: migrateLegacyConfig, activeHost, connect: connecting });
 	await vi.waitFor(() => expect(connecting).toHaveBeenCalledOnce());
-	await forgetPairedHost(host, { ignoreAccount: false });
+	await forgetPairedHost(host);
 	finish({ ok: true, hostId: host.id, endpoint: host.endpoints[0], config: { hostId: host.id, host: "host-one", httpPort: "3011", muxPort: "3011", password: host.token } });
 	expect(await pending).toBeNull();
 	await migrateLegacyConfig();
@@ -68,7 +51,7 @@ it("clears an already-writing connection before Forget finishes", async () => {
 	});
 	const persistence = persistResolvedConfig({ hostId: host.id, host: "host-one", httpPort: "3011", muxPort: "3011", password: host.token });
 	await vi.waitFor(() => expect(release).toBeTypeOf("function"));
-	const removal = forgetPairedHost(host, { ignoreAccount: false });
+	const removal = forgetPairedHost(host);
 	release();
 	await Promise.all([persistence, removal]);
 	await migrateLegacyConfig();
