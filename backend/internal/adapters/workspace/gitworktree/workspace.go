@@ -1341,7 +1341,8 @@ func (w *Workspace) ObserveWorkspace(ctx context.Context, info ports.WorkspaceIn
 // landed: it is trivially contained in the base it was cut from.
 func (w *Workspace) observeLanded(ctx context.Context, path, head string, info ports.WorkspaceInfo) bool {
 	base := strings.TrimSpace(info.BaseRef)
-	if base == "" || head == "" || head == strings.TrimSpace(info.BaseSHA) {
+	// "HEAD" is the spawn fallback when no default branch resolved, not a base.
+	if base == "" || base == "HEAD" || base == "@" || head == "" || head == strings.TrimSpace(info.BaseSHA) {
 		return false
 	}
 	out, err := w.run(ctx, w.binary, "-C", path, "rev-list", "-n", "1", "HEAD", "--not", base, "--")

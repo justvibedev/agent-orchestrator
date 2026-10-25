@@ -192,6 +192,9 @@ func TestGitHeadLanded(t *testing.T) {
 	if gitHeadLanded(ctx, repo, "main", creation) {
 		t.Fatal("unmerged commits must not read as landed")
 	}
+	if gitHeadLanded(ctx, repo, "HEAD", creation) {
+		t.Fatal("HEAD fallback base must not read as landed")
+	}
 	if gitHeadLanded(ctx, repo, "", creation) || gitHeadLanded(ctx, repo, "refs/remotes/origin/nope", creation) {
 		t.Fatal("missing base must not read as landed")
 	}

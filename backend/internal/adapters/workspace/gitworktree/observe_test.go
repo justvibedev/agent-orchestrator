@@ -96,6 +96,7 @@ func TestObserveWorkspaceLanded(t *testing.T) {
 		{name: "contained in base", info: ports.WorkspaceInfo{BaseRef: "origin/main", BaseSHA: "old"}, want: true, wantProbe: true},
 		{name: "unmerged commits", info: ports.WorkspaceInfo{BaseRef: "origin/main", BaseSHA: "old"}, revList: "abc123\n", wantProbe: true},
 		{name: "base ref missing locally", info: ports.WorkspaceInfo{BaseRef: "origin/gone", BaseSHA: "old"}, revErr: errors.New("bad revision"), wantProbe: true},
+		{name: "HEAD fallback base", info: ports.WorkspaceInfo{BaseRef: "HEAD", BaseSHA: "old"}},
 		{name: "no base ref", info: ports.WorkspaceInfo{BaseSHA: "old"}},
 		{name: "head still at creation commit", info: ports.WorkspaceInfo{BaseRef: "origin/main", BaseSHA: "abc123"}},
 	}

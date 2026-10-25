@@ -2330,7 +2330,9 @@ func parseCommitNumstatLog(out string) map[string]map[string][2]int {
 // and any failure or empty baseRef reads as not landed.
 func gitHeadLanded(ctx context.Context, root, baseRef, baseSHA string) bool {
 	baseRef = strings.TrimSpace(baseRef)
-	if baseRef == "" {
+	// "HEAD" is the spawn fallback when no default branch resolved: it is not a
+	// real base, and HEAD is trivially contained in itself.
+	if baseRef == "" || baseRef == "HEAD" || baseRef == "@" {
 		return false
 	}
 	head, err := gitWorkspaceOutput(ctx, root, "rev-parse", "--verify", "HEAD")
