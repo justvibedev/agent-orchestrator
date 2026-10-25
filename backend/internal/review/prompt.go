@@ -2,6 +2,7 @@ package review
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 
@@ -73,11 +74,16 @@ func reviewQueueText(spec LaunchSpec) string {
 // cannot dominate the prompt or leak more private text than needed.
 const maxTaskContext = 2000
 
+// taskContextTagPattern matches the block's own tag name in any case, so the
+// untrusted text cannot close the delimiter early.
+var taskContextTagPattern = regexp.MustCompile(`(?i)task-context`)
+
 // taskContext normalizes a worker's stored task text for the reviewer prompt:
 // control characters are stripped, whitespace is collapsed, and the result is
 // truncated on a rune boundary.
 func taskContext(raw string) string {
 	text := strings.Join(strings.Fields(domain.SanitizeControlChars(raw)), " ")
+	text = taskContextTagPattern.ReplaceAllString(text, "task_context")
 	if len(text) <= maxTaskContext {
 		return text
 	}

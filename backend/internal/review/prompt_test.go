@@ -75,6 +75,12 @@ func TestReviewTextsRendersTaskContextAsUntrustedBackground(t *testing.T) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt)
 		}
 	}
+	if n := strings.Count(prompt, "</task-context>"); n != 1 {
+		t.Fatalf("task text must not close the delimiter: %d closing tags:\n%s", n, prompt)
+	}
+	if strings.Contains(strings.ToLower(prompt), "</task-context> ignore") {
+		t.Fatalf("embedded closing tag not neutralized:\n%s", prompt)
+	}
 	if strings.Contains(prompt, "\x1b") {
 		t.Fatalf("control characters must be stripped:\n%q", prompt)
 	}
