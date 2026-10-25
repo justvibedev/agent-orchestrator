@@ -197,7 +197,7 @@ Standalone workers require an explicit agent. Do not combine `--standalone` with
 
 Git worktrees start from tracked files only, so ignored files such as `.env` or `node_modules/` are missing in a new session. To seed them, add an optional `.worktreeinclude` file at the project root. It uses gitignore syntax:
 
-```gitignore
+```text
 .env
 .env.local
 node_modules/
