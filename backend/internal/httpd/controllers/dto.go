@@ -662,6 +662,7 @@ type WorkspaceHistoryResponse struct {
 	RangeSummary     *WorkspaceSummary        `json:"rangeSummary,omitempty" description:"Totals for All commits. Views only."`
 	Ahead            *int                     `json:"ahead,omitempty" description:"Checked-out view only."`
 	Behind           *int                     `json:"behind,omitempty" description:"Checked-out view only."`
+	Landed           bool                     `json:"landed,omitempty" description:"Checked-out view only. True when HEAD has moved past the session's creation commit and is already contained in the project base ref (local refs only). A display and cleanup hint; it never changes cleanup behavior."`
 }
 
 // WorkspaceViewResponse describes whose history a workspace read covers.

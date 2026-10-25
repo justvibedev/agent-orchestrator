@@ -820,6 +820,8 @@
 	"inspector.git.pushing": "プッシュ中…",
 	"inspector.git.someNotPushed_one": "{{count}} 件未プッシュ",
 	"inspector.git.someNotPushed_other": "{{count}} 件未プッシュ",
+	"inspector.git.landed": "マージ済み",
+	"inspector.git.landedHint": "このブランチはすでにベースブランチに含まれています",
 	"inspector.git.uncommittedFiles_one": "未コミット {{count}} ファイル",
 	"inspector.git.uncommittedFiles_other": "未コミット {{count}} ファイル",
 	"inspector.issue": "Issue",

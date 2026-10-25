@@ -3038,7 +3038,7 @@ func workspaceHistoryResponse(history sessionsvc.WorkspaceHistory) WorkspaceHist
 	}
 	return WorkspaceHistoryResponse{
 		SessionID: history.SessionID, View: WorkspaceViewResponse(history.View), Commits: workspaceCommitsResponse(history.Commits),
-		CommitsTruncated: history.CommitsTruncated, RangeSummary: rangeSummary, Ahead: history.Ahead, Behind: history.Behind,
+		CommitsTruncated: history.CommitsTruncated, RangeSummary: rangeSummary, Ahead: history.Ahead, Behind: history.Behind, Landed: history.Landed,
 	}
 }
 

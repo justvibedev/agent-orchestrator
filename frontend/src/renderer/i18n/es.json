@@ -827,6 +827,8 @@
 	"inspector.git.someNotPushed_one": "{{count}} sin subir",
 	"inspector.git.someNotPushed_many": "{{count}} sin subir",
 	"inspector.git.someNotPushed_other": "{{count}} sin subir",
+	"inspector.git.landed": "fusionada",
+	"inspector.git.landedHint": "Esta rama ya está incluida en la rama base",
 	"inspector.git.uncommittedFiles_one": "{{count}} archivo sin confirmar",
 	"inspector.git.uncommittedFiles_many": "{{count}} archivos sin confirmar",
 	"inspector.git.uncommittedFiles_other": "{{count}} archivos sin confirmar",

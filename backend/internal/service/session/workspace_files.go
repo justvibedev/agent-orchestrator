@@ -193,6 +193,10 @@ type WorkspaceHistory struct {
 	// Ahead and Behind are only filled for the checked-out view.
 	Ahead  *int
 	Behind *int
+	// Landed is only filled for the checked-out view: HEAD moved past the
+	// session's creation commit and is fully contained in the project base ref
+	// (local refs only). Display and cleanup hint only.
+	Landed bool
 }
 
 // WorkspaceFileSummary is one file row in the session workspace browser.
@@ -383,6 +387,7 @@ func (s *Service) GetWorkspaceHistory(ctx context.Context, id domain.SessionID, 
 	}
 	var commits workspaceCommits
 	var ahead, behind *int
+	var landed bool
 	g, gctx := errgroup.WithContext(ctx)
 	if resolved.rangeBefore != "" {
 		g.Go(func() (err error) {
@@ -394,13 +399,27 @@ func (s *Service) GetWorkspaceHistory(ctx context.Context, id domain.SessionID, 
 		ahead, behind = gitAheadBehind(gctx, resolved.root)
 		return nil
 	})
+	g.Go(func() error {
+		landed = s.workspaceHeadLanded(gctx, id, resolved.root)
+		return nil
+	})
 	if err := g.Wait(); err != nil {
 		return WorkspaceHistory{}, err
 	}
 	if commits.list == nil {
 		commits.list = []CommitSummary{}
 	}
-	return WorkspaceHistory{SessionID: id, View: resolved.WorkspaceViewInfo, Commits: commits.list, CommitsTruncated: commits.truncated, Ahead: ahead, Behind: behind}, nil
+	return WorkspaceHistory{SessionID: id, View: resolved.WorkspaceViewInfo, Commits: commits.list, CommitsTruncated: commits.truncated, Ahead: ahead, Behind: behind, Landed: landed}, nil
+}
+
+// workspaceHeadLanded is gitHeadLanded against the session's recorded base.
+// An unreadable session reads as not landed.
+func (s *Service) workspaceHeadLanded(ctx context.Context, id domain.SessionID, root string) bool {
+	rec, err := s.sessionWorkspaceRecord(ctx, id)
+	if err != nil {
+		return false
+	}
+	return gitHeadLanded(ctx, root, rec.Metadata.DiffBaseRef, rec.Metadata.DiffBaseSHA)
 }
 
 func workspaceDegradedCode(err error) string {
@@ -2306,6 +2325,22 @@ func parseCommitNumstatLog(out string) map[string]map[string][2]int {
 // back to origin/<branch> when no upstream is configured. Both return values
 // are nil when neither can be resolved (detached HEAD, no remote, git
 // failure) — that means "no push/pull data," not an error worth propagating.
+// gitHeadLanded reports whether HEAD is contained in baseRef using local refs
+// only. A HEAD still at baseSHA (the session's creation commit) is not landed,
+// and any failure or empty baseRef reads as not landed.
+func gitHeadLanded(ctx context.Context, root, baseRef, baseSHA string) bool {
+	baseRef = strings.TrimSpace(baseRef)
+	if baseRef == "" {
+		return false
+	}
+	head, err := gitWorkspaceOutput(ctx, root, "rev-parse", "--verify", "HEAD")
+	if err != nil || strings.TrimSpace(head) == "" || strings.TrimSpace(head) == strings.TrimSpace(baseSHA) {
+		return false
+	}
+	out, err := gitWorkspaceOutput(ctx, root, "rev-list", "-n", "1", "HEAD", "--not", baseRef, "--")
+	return err == nil && strings.TrimSpace(out) == ""
+}
+
 func gitAheadBehind(ctx context.Context, root string) (*int, *int) {
 	ref, err := gitWorkspaceOutput(ctx, root, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
 	upstream := strings.TrimSpace(ref)

@@ -819,6 +819,8 @@
 	"inspector.git.pushing": "正在推送…",
 	"inspector.git.someNotPushed_one": "{{count}} 个未推送",
 	"inspector.git.someNotPushed_other": "{{count}} 个未推送",
+	"inspector.git.landed": "已合并",
+	"inspector.git.landedHint": "此分支已包含在基础分支中",
 	"inspector.git.uncommittedFiles_one": "{{count}} 个未提交文件",
 	"inspector.git.uncommittedFiles_other": "{{count}} 个未提交文件",
 	"inspector.issue": "议题",

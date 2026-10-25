@@ -820,6 +820,8 @@
 	"inspector.git.pushing": "Wird gepusht…",
 	"inspector.git.someNotPushed_one": "{{count}} nicht gepusht",
 	"inspector.git.someNotPushed_other": "{{count}} nicht gepusht",
+	"inspector.git.landed": "gemergt",
+	"inspector.git.landedHint": "Dieser Branch ist bereits im Basis-Branch enthalten",
 	"inspector.git.uncommittedFiles_one": "{{count}} nicht committete Datei",
 	"inspector.git.uncommittedFiles_other": "{{count}} nicht committete Dateien",
 	"inspector.issue": "Issue",

@@ -820,6 +820,8 @@
 	"inspector.git.pushing": "푸시 중…",
 	"inspector.git.someNotPushed_one": "{{count}}개 푸시 안 됨",
 	"inspector.git.someNotPushed_other": "{{count}}개 푸시 안 됨",
+	"inspector.git.landed": "병합됨",
+	"inspector.git.landedHint": "이 브랜치는 이미 기준 브랜치에 포함되어 있습니다",
 	"inspector.git.uncommittedFiles_one": "커밋되지 않은 파일 {{count}}개",
 	"inspector.git.uncommittedFiles_other": "커밋되지 않은 파일 {{count}}개",
 	"inspector.issue": "이슈",

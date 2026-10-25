@@ -816,6 +816,8 @@
 	"inspector.git.pushing": "Pushing…",
 	"inspector.git.someNotPushed_one": "{{count}} not pushed",
 	"inspector.git.someNotPushed_other": "{{count}} not pushed",
+	"inspector.git.landed": "merged",
+	"inspector.git.landedHint": "This branch is already contained in the base branch",
 	"inspector.git.uncommittedFiles_one": "{{count}} uncommitted file",
 	"inspector.git.uncommittedFiles_other": "{{count}} uncommitted files",
 	"inspector.issue": "Issue",
