@@ -236,3 +236,33 @@ func TestReportStoreInterruptLimitSurvivesRestart(t *testing.T) {
 		t.Fatalf("boundary acquired = %v, err = %v", acquired, err)
 	}
 }
+
+func TestReportStoreScheduleListsEarliestPendingPerProject(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+	create := func(project string, id string, at time.Time) {
+		t.Helper()
+		sess, err := s.CreateSession(ctx, sampleRecord(project))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.CreateReport(ctx, domain.ReportRecord{ID: id, SessionID: sess.ID, ProjectID: domain.ProjectID(project), Message: id, CreatedAt: at, DeliveryState: domain.ReportPending, AvailableAt: at, RepeatCount: 1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seedProject(t, s, "orphan")
+	seedProject(t, s, "live")
+	create("orphan", "orphan-1", now.Add(-3*time.Hour))
+	create("orphan", "orphan-2", now.Add(-2*time.Hour))
+	create("live", "live-1", now.Add(-time.Hour))
+	create("live", "live-2", now)
+
+	got, err := s.ListPendingReportSchedule(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].ID != "orphan-1" || got[1].ID != "live-1" {
+		t.Fatalf("schedule = %+v, want earliest pending per project", got)
+	}
+}
